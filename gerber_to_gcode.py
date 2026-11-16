@@ -1,12 +1,30 @@
 #!/usr/bin/env python3
 """
-Gerber to G-Code Converter for CNC PCB Isolation Milling
+Gerber and Excellon to G-Code Converter for CNC PCB Isolation Routing and Drilling
 Built from the ground up without outdated or broken third-party packages.
-Supports RS-274X, Gerber X2/X3, Aperture Macros (including KiCad RoundRect),
-G36/G37 polygon regions, multi-pass isolation, path optimization, and mirroring.
+
+Features:
+- RS-274X, Gerber X2/X3, Aperture Macros (including KiCad RoundRect), G36/G37 polygon regions
+- Excellon drill files (.drl, .txt, .xln) with automatic hole sorting and tool changes
+- Board outline cutout milling (Edge_Cuts) with multi-pass depth levels
+- Board edge engraving on both front and back copper layers
+- SVG previews generated for EVERY single G-code file produced
+- Sub-micron coordinate alignment across all layers (Top, Bottom, Drills, Cutout)
+- Automatic X-mirroring for bottom-side milling and drilling
+- Standard G-code compatible with GRBL, Candle, UGS, LinuxCNC, and Mach3
 
 Usage:
-    python gerber_to_gcode.py input.gbr output.gcode [options]
+    # Process an entire project folder into <FolderName>_gcode:
+    python gerber_to_gcode.py ./project01
+
+    # Process an entire folder with custom output directory:
+    python gerber_to_gcode.py ./project01 ./my_pcb_gcode
+
+    # Convert a single Gerber file:
+    python gerber_to_gcode.py ./AirCooler-B_Cu.gbr output-B_Cu.gcode
+
+    # Convert a single drill file:
+    python gerber_to_gcode.py ./AirCooler-PTH.drl output-PTH.gcode
 """
 
 import sys
@@ -14,6 +32,7 @@ import os
 import re
 import math
 import time
+import glob
 import argparse
 import shapely
 from shapely.geometry import Point, LineString, Polygon, MultiPolygon, box
@@ -22,7 +41,7 @@ import shapely.affinity
 
 
 # -----------------------------------------------------------------------------
-# Utility Functions
+# Geometric Utilities
 # -----------------------------------------------------------------------------
 
 def clean_geometry(geom):
@@ -47,7 +66,6 @@ def eval_macro_expr(expr, params):
         return str(params[idx]) if 0 <= idx < len(params) else "0.0"
 
     expr_str = re.sub(r"\$(\d+)", repl, expr.strip())
-    # Sanitize characters to only numbers, operators, parens, spaces
     if not re.match(r"^[\d\.\+\-\*\/\(\)\s]+$", expr_str):
         return 0.0
     try:
@@ -67,7 +85,6 @@ def arc_interpolate(xs, ys, xe, ye, i, j, is_cw, max_step=0.08):
     a_start = math.atan2(ys - yc, xs - xc)
     a_end = math.atan2(ye - yc, xe - xc)
 
-    # 360-degree circle check (multi-quadrant G75)
     if abs(xs - xe) < 1e-6 and abs(ys - ye) < 1e-6:
         sweep = -2 * math.pi if is_cw else 2 * math.pi
     else:
@@ -100,6 +117,8 @@ class GerberParser:
         self.macros = {}
         self.apertures = {}
         self.copper = None
+        self.raw_paths = []    # Continuous vector centerline paths
+        self.raw_bounds = None
 
     def _parse_macro_shape(self, macro_body, param_str):
         """Build Shapely shape from RS-274X aperture macro primitives."""
@@ -109,14 +128,14 @@ class GerberParser:
         for line in macro_body.strip().split("*"):
             line = line.strip()
             if not line or line.startswith("0"):
-                continue  # Skip comments
+                continue
             parts = [p.strip() for p in line.split(",")]
             if not parts or not parts[0]:
                 continue
 
             p_code = int(eval_macro_expr(parts[0], params))
 
-            if p_code == 1:  # Circle: 1, exposure, dia, cx, cy [, rot]
+            if p_code == 1:  # Circle
                 exposure = int(eval_macro_expr(parts[1], params)) if len(parts) > 1 else 1
                 dia = eval_macro_expr(parts[2], params)
                 cx = eval_macro_expr(parts[3], params)
@@ -125,7 +144,7 @@ class GerberParser:
                 if exposure == 1:
                     shapes.append(c_geom)
 
-            elif p_code in (2, 20):  # Vector Line: 20, exposure, width, xs, ys, xe, ye, rot
+            elif p_code in (2, 20):  # Vector Line
                 exposure = int(eval_macro_expr(parts[1], params)) if len(parts) > 1 else 1
                 w = eval_macro_expr(parts[2], params)
                 xs = eval_macro_expr(parts[3], params)
@@ -136,7 +155,7 @@ class GerberParser:
                 if exposure == 1:
                     shapes.append(vl_geom)
 
-            elif p_code == 4:  # Outline: 4, exposure, num_vertices, x1, y1, ...
+            elif p_code == 4:  # Outline
                 exposure = int(eval_macro_expr(parts[1], params)) if len(parts) > 1 else 1
                 n = int(eval_macro_expr(parts[2], params))
                 pts = []
@@ -150,7 +169,7 @@ class GerberParser:
                     if exposure == 1:
                         shapes.append(poly)
 
-            elif p_code == 21:  # Center line / rectangle: 21, exposure, w, h, cx, cy, rot
+            elif p_code == 21:  # Center line / rectangle
                 exposure = int(eval_macro_expr(parts[1], params)) if len(parts) > 1 else 1
                 w = eval_macro_expr(parts[2], params)
                 h = eval_macro_expr(parts[3], params)
@@ -163,15 +182,13 @@ class GerberParser:
         return unary_union(shapes) if shapes else None
 
     def parse(self):
-        """Parse Gerber file into a unified Shapely copper geometry."""
+        """Parse Gerber file into unified Shapely copper geometry and centerline vector paths."""
         with open(self.filepath, "r", encoding="utf-8", errors="ignore") as f:
             content = f.read()
 
-        # Tokenize into extended commands (%...%) and standard commands (...*)
         token_pattern = re.compile(r"%([^%]+)%|([^%*]+)\*")
         tokens = token_pattern.findall(content)
 
-        # Regex matchers
         re_fs = re.compile(r"FSLA(?:[A-Z]*)X(\d)(\d)Y(\d)(\d)")
         re_add = re.compile(r"ADD(\d+)([A-Za-z0-9_]+)(?:,(.*))?")
         re_x = re.compile(r"X([\+\-]?[0-9]+)")
@@ -181,7 +198,7 @@ class GerberParser:
         re_d = re.compile(r"D([0-9]+)")
         re_g = re.compile(r"G([0-9]+)")
 
-        # First pass: parse headers, format specification, units, macros, and apertures
+        # First pass: headers, units, macros, apertures
         for ext, norm in tokens:
             if not ext:
                 continue
@@ -197,9 +214,9 @@ class GerberParser:
                         self.scale_y = 10.0 ** int(m_fs.group(4))
 
                 elif sub == "MOIN":
-                    self.unit_scale = 25.4  # Inches -> mm
+                    self.unit_scale = 25.4
                 elif sub == "MOMM":
-                    self.unit_scale = 1.0   # Millimeters
+                    self.unit_scale = 1.0
 
                 elif sub.startswith("AM"):
                     parts = ext.split("*", 1)
@@ -213,15 +230,15 @@ class GerberParser:
                         ap_type = m_add.group(2)
                         ap_params = m_add.group(3) or ""
 
-                        if ap_type == "C":  # Circle: dia [X hole]
+                        if ap_type == "C":
                             dia = float(ap_params.split("X")[0]) * self.unit_scale
                             self.apertures[d_code] = ("C", dia)
-                        elif ap_type == "R":  # Rectangle: w X h [X hole]
+                        elif ap_type == "R":
                             p_parts = ap_params.split("X")
                             w = float(p_parts[0]) * self.unit_scale
                             h = float(p_parts[1]) * self.unit_scale
                             self.apertures[d_code] = ("R", (w, h))
-                        elif ap_type == "O":  # Obround: w X h [X hole]
+                        elif ap_type == "O":
                             p_parts = ap_params.split("X")
                             w = float(p_parts[0]) * self.unit_scale
                             h = float(p_parts[1]) * self.unit_scale
@@ -238,15 +255,19 @@ class GerberParser:
                                 )
                             self.apertures[d_code] = ("MACRO", macro_geom)
 
-        # Second pass: execute commands and build geometric features with polarity
+        # Second pass: commands and polarity
         layers = [{"polarity": "D", "shapes": []}]
         current_polarity = "D"
 
         cur_x, cur_y = 0.0, 0.0
         cur_aper = None
-        g_mode = 1  # 1: Linear, 2: CW arc, 3: CCW arc
+        g_mode = 1
         in_region = False
         cur_contour = []
+        cur_stroke_path = []
+
+        all_coords_x = []
+        all_coords_y = []
 
         for ext, norm in tokens:
             if ext:
@@ -264,24 +285,23 @@ class GerberParser:
             if not cmd or cmd.startswith("G04"):
                 continue
 
-            # Process G-codes
             for g_str in re_g.findall(cmd):
                 g_val = int(g_str)
                 if g_val in (1, 2, 3):
                     g_mode = g_val
-                elif g_val == 36:  # Start polygon region
+                elif g_val == 36:
                     in_region = True
                     cur_contour = []
-                elif g_val == 37:  # End polygon region
+                elif g_val == 37:
                     in_region = False
                     if len(cur_contour) >= 3:
                         poly = Polygon(cur_contour)
                         poly = clean_geometry(poly)
                         if poly:
                             layers[-1]["shapes"].append(poly)
+                            self.raw_paths.append(list(cur_contour))
                     cur_contour = []
 
-            # Process Coordinates
             mx = re_x.search(cmd)
             my = re_y.search(cmd)
             mi = re_i.search(cmd)
@@ -292,42 +312,59 @@ class GerberParser:
             i_val = int(mi.group(1)) / self.scale_x * self.unit_scale if mi else 0.0
             j_val = int(mj.group(1)) / self.scale_y * self.unit_scale if mj else 0.0
 
-            # Process D-codes
+            if mx or my:
+                all_coords_x.append(new_x)
+                all_coords_y.append(new_y)
+
             md = re_d.search(cmd)
             if md:
                 d_val = int(md.group(1))
                 if d_val >= 10:
                     cur_aper = d_val
                 elif d_val == 2:  # Move (rapid)
+                    if cur_stroke_path and len(cur_stroke_path) >= 2:
+                        self.raw_paths.append(cur_stroke_path)
+                    cur_stroke_path = [(new_x, new_y)]
                     cur_x, cur_y = new_x, new_y
+
                     if in_region:
                         if len(cur_contour) >= 3:
                             p = Polygon(cur_contour)
                             p = clean_geometry(p)
                             if p:
                                 layers[-1]["shapes"].append(p)
+                                self.raw_paths.append(list(cur_contour))
                         cur_contour = [(cur_x, cur_y)]
+
                 elif d_val == 1:  # Interpolate / Stroke
+                    if not cur_stroke_path:
+                        cur_stroke_path = [(cur_x, cur_y)]
+
                     if in_region:
                         if g_mode in (2, 3):
                             arc_pts = arc_interpolate(cur_x, cur_y, new_x, new_y, i_val, j_val, is_cw=(g_mode == 2))
                             cur_contour.extend(arc_pts[1:])
+                            cur_stroke_path.extend(arc_pts[1:])
                         else:
                             cur_contour.append((new_x, new_y))
+                            cur_stroke_path.append((new_x, new_y))
                     else:
                         ap = self.apertures.get(cur_aper)
                         if ap:
                             ap_type, ap_val = ap
                             if g_mode in (2, 3):
                                 arc_pts = arc_interpolate(cur_x, cur_y, new_x, new_y, i_val, j_val, is_cw=(g_mode == 2))
+                                cur_stroke_path.extend(arc_pts[1:])
                                 if ap_type == "C":
                                     stroke = LineString(arc_pts).buffer(ap_val / 2.0)
                                     layers[-1]["shapes"].append(stroke)
                             else:
+                                cur_stroke_path.append((new_x, new_y))
                                 if ap_type == "C":
                                     stroke = LineString([(cur_x, cur_y), (new_x, new_y)]).buffer(ap_val / 2.0)
                                     layers[-1]["shapes"].append(stroke)
                     cur_x, cur_y = new_x, new_y
+
                 elif d_val == 3:  # Flash aperture
                     cur_x, cur_y = new_x, new_y
                     ap = self.apertures.get(cur_aper)
@@ -345,7 +382,9 @@ class GerberParser:
                         if flash_geom:
                             layers[-1]["shapes"].append(flash_geom)
 
-        # Combine polarity layers
+        if cur_stroke_path and len(cur_stroke_path) >= 2:
+            self.raw_paths.append(cur_stroke_path)
+
         copper_geom = None
         for layer in layers:
             shapes = layer["shapes"]
@@ -368,17 +407,161 @@ class GerberParser:
             copper_geom = clean_geometry(copper_geom)
 
         self.copper = copper_geom
+
+        # Record bounds: prefer centerline path coordinates, fallback to copper bounds
+        if all_coords_x and all_coords_y:
+            self.raw_bounds = (min(all_coords_x), min(all_coords_y), max(all_coords_x), max(all_coords_y))
+        elif self.copper and not self.copper.is_empty:
+            self.raw_bounds = self.copper.bounds
+
         return self.copper
 
 
 # -----------------------------------------------------------------------------
-# Toolpath Generator & Path Optimizer
+# Excellon Drill Parser
+# -----------------------------------------------------------------------------
+
+class ExcellonParser:
+    def __init__(self, filepath):
+        self.filepath = filepath
+        self.tools = {}        # {tool_id: dia_mm}
+        self.holes = []        # [(tool_id, x, y)]
+        self.slots = []        # [(tool_id, x1, y1, x2, y2)]
+        self.unit_scale = 1.0  # mm default
+        self.raw_bounds = None
+
+    def parse(self):
+        """Parse Excellon drill file."""
+        with open(self.filepath, "r", encoding="utf-8", errors="ignore") as f:
+            lines = f.readlines()
+
+        in_header = True
+        cur_tool = None
+        cur_x = 0.0
+        cur_y = 0.0
+        is_slot = False
+        slot_start = None
+
+        all_x = []
+        all_y = []
+
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith(";"):
+                continue
+            if line == "%":
+                in_header = False
+                continue
+
+            if in_header:
+                if "INCH" in line:
+                    self.unit_scale = 25.4
+                elif "METRIC" in line:
+                    self.unit_scale = 1.0
+                m_t = re.match(r"T(\d+)C([\d\.]+)", line)
+                if m_t:
+                    t_id = int(m_t.group(1))
+                    self.tools[t_id] = float(m_t.group(2)) * self.unit_scale
+            else:
+                m_sel = re.match(r"^T(\d+)$", line)
+                if m_sel:
+                    cur_tool = int(m_sel.group(1))
+                    continue
+                if line == "M15":
+                    is_slot = True
+                    slot_start = (cur_x, cur_y)
+                    continue
+                if line == "M16":
+                    is_slot = False
+                    slot_start = None
+                    continue
+                if line.startswith("G05") or line.startswith("G90"):
+                    continue
+                if line.startswith("M30"):
+                    break
+
+                mx = re.search(r"X([\+\-]?[0-9\.]+)", line)
+                my = re.search(r"Y([\+\-]?[0-9\.]+)", line)
+                if mx:
+                    cur_x = float(mx.group(1)) * self.unit_scale
+                if my:
+                    cur_y = float(my.group(1)) * self.unit_scale
+
+                all_x.append(cur_x)
+                all_y.append(cur_y)
+
+                if is_slot and slot_start:
+                    self.slots.append((cur_tool, slot_start[0], slot_start[1], cur_x, cur_y))
+                    slot_start = (cur_x, cur_y)
+                elif "X" in line or "Y" in line:
+                    if not line.startswith("G00"):
+                        self.holes.append((cur_tool, cur_x, cur_y))
+
+        if all_x and all_y:
+            self.raw_bounds = (min(all_x), min(all_y), max(all_x), max(all_y))
+
+        return {
+            "tools": self.tools,
+            "holes": self.holes,
+            "slots": self.slots,
+            "bounds": self.raw_bounds
+        }
+
+
+# -----------------------------------------------------------------------------
+# Coordinate Transformer
+# -----------------------------------------------------------------------------
+
+def transform_coords(x, y, master_bounds, margin=0.0, mirror_x=False):
+    """
+    Transform raw coordinates to unified workpiece coordinates.
+    All layers in a PCB align precisely around master_bounds.
+    """
+    minx, miny, maxx, maxy = master_bounds
+    if mirror_x:
+        tx = (maxx - x) + margin
+    else:
+        tx = (x - minx) + margin
+    ty = (y - miny) + margin
+    return tx, ty
+
+
+def transform_pts_list(pts, master_bounds, margin=0.0, mirror_x=False):
+    """Transform a list of (x, y) coordinates."""
+    return [transform_coords(x, y, master_bounds, margin, mirror_x) for x, y in pts]
+
+
+def transform_shapely_geometry(geom, master_bounds, margin=0.0, mirror_x=False):
+    """
+    Transform a Shapely geometry using master reference bounds.
+    Uses exact affine matrix:
+    - Unmirrored: x' = (x - minx) + margin, y' = (y - miny) + margin
+    - Mirrored X: x' = (maxx - x) + margin, y' = (y - miny) + margin
+    """
+    if geom is None or geom.is_empty:
+        return geom
+    minx, miny, maxx, maxy = master_bounds
+
+    if mirror_x:
+        return shapely.affinity.affine_transform(
+            geom, [-1.0, 0.0, 0.0, 1.0, maxx + margin, -miny + margin]
+        )
+    else:
+        return shapely.affinity.affine_transform(
+            geom, [1.0, 0.0, 0.0, 1.0, -minx + margin, -miny + margin]
+        )
+
+
+# -----------------------------------------------------------------------------
+# Isolation Toolpath Generator
 # -----------------------------------------------------------------------------
 
 class ToolpathGenerator:
-    def __init__(self, copper_geom, tool_dia=0.2, passes=1, stepover=0.7,
-                 mirror_x=False, zero_origin=True, margin=2.0):
+    def __init__(self, copper_geom, master_bounds=None, tool_dia=0.2, passes=1,
+                 stepover=0.7, mirror_x=False, zero_origin=True, margin=0.0,
+                 edge_engrave_paths=None):
         self.copper = copper_geom
+        self.master_bounds = master_bounds or copper_geom.bounds
         self.tool_dia = tool_dia
         self.tool_rad = tool_dia / 2.0
         self.passes = max(1, passes)
@@ -386,11 +569,12 @@ class ToolpathGenerator:
         self.mirror_x = mirror_x
         self.zero_origin = zero_origin
         self.margin = margin
+        self.edge_engrave_paths = edge_engrave_paths or []
         self.transformed_copper = None
+        self.transformed_edge_paths = []
         self.bounds = None
 
     def _extract_rings(self, geom):
-        """Extract closed coordinate loops from Polygon or MultiPolygon."""
         rings = []
         if geom is None or geom.is_empty:
             return rings
@@ -409,26 +593,23 @@ class ToolpathGenerator:
         return rings
 
     def generate(self):
-        """Generate optimized isolation milling loops."""
+        """Generate isolation milling loops and edge engrave paths."""
         if self.copper is None or self.copper.is_empty:
-            return []
+            return [], [], 0.0
 
-        # 1. Coordinate transformations
-        geom = self.copper
-        minx, miny, maxx, maxy = geom.bounds
-
-        if self.mirror_x:
-            # Mirror horizontally around minx
-            geom = shapely.affinity.scale(geom, xfact=-1.0, yfact=1.0, origin=(minx, 0))
-
+        minx, miny, maxx, maxy = self.master_bounds
         if self.zero_origin:
-            t_minx, t_miny, t_maxx, t_maxy = geom.bounds
-            geom = shapely.affinity.translate(geom, xoff=-t_minx + self.margin, yoff=-t_miny + self.margin)
+            geom = transform_shapely_geometry(self.copper, self.master_bounds, self.margin, self.mirror_x)
+            self.bounds = (self.margin, self.margin, self.margin + (maxx - minx), self.margin + (maxy - miny))
+        else:
+            geom = self.copper
+            if self.mirror_x:
+                geom = shapely.affinity.affine_transform(
+                    geom, [-1.0, 0.0, 0.0, 1.0, maxx + minx, 0.0]
+                )
+            self.bounds = geom.bounds
 
-        self.transformed_copper = geom
-        self.bounds = geom.bounds
-
-        # 2. Multi-pass isolation buffering
+        # Multi-pass isolation
         raw_rings = []
         for pass_idx in range(self.passes):
             offset = self.tool_rad + pass_idx * (self.tool_dia * self.stepover)
@@ -437,12 +618,15 @@ class ToolpathGenerator:
             if iso_geom:
                 raw_rings.extend(self._extract_rings(iso_geom))
 
-        # 3. Path optimization (Greedy Nearest Neighbor with loop start rotation)
+        # Transform edge engrave paths
+        for ep in self.edge_engrave_paths:
+            t_ep = transform_pts_list(ep, self.master_bounds, self.margin, self.mirror_x)
+            self.transformed_edge_paths.append(t_ep)
+
         optimized_loops, total_rapid = self._optimize_paths(raw_rings)
-        return optimized_loops, total_rapid
+        return optimized_loops, self.transformed_edge_paths, total_rapid
 
     def _optimize_paths(self, rings, start_pos=(0.0, 0.0)):
-        """Sort loops and pick best start vertex to minimize rapid travel."""
         unvisited = [r for r in rings if len(r) >= 3]
         ordered = []
         cur_x, cur_y = start_pos
@@ -455,7 +639,6 @@ class ToolpathGenerator:
 
             for i, ring in enumerate(unvisited):
                 pts = ring[:-1] if ring[0] == ring[-1] else ring
-                # Subsample vertices for large contours to keep sorting instantaneous
                 step = max(1, len(pts) // 30)
                 for v_idx in range(0, len(pts), step):
                     vx, vy = pts[v_idx]
@@ -474,14 +657,16 @@ class ToolpathGenerator:
 
 
 # -----------------------------------------------------------------------------
-# G-Code Generator
+# G-Code Writers
 # -----------------------------------------------------------------------------
 
 class GcodeWriter:
+    """Writes standard isolation milling G-code, including optional board edge engrave."""
     def __init__(self, output_path, loops, total_rapid_dist, bounds,
                  tool_dia=0.2, cut_depth=-0.04, safe_z=2.0, travel_z=1.0,
                  feed_rate=120.0, plunge_rate=60.0, spindle_speed=10000,
-                 source_filename="", mirrored=False, zeroed=True):
+                 source_filename="", mirrored=False, zeroed=True,
+                 edge_engrave_loops=None):
         self.output_path = output_path
         self.loops = loops
         self.total_rapid_dist = total_rapid_dist
@@ -489,32 +674,32 @@ class GcodeWriter:
         self.tool_dia = tool_dia
         self.cut_depth = cut_depth
         self.safe_z = safe_z
-        self.travel_z = travel_z
         self.feed_rate = feed_rate
         self.plunge_rate = plunge_rate
         self.spindle_speed = spindle_speed
         self.source_filename = source_filename
         self.mirrored = mirrored
         self.zeroed = zeroed
+        self.edge_engrave_loops = edge_engrave_loops or []
 
     def write(self):
-        """Write standards-compliant G-code file."""
         total_cut_dist = sum(
             sum(math.hypot(p2[0] - p1[0], p2[1] - p1[1]) for p1, p2 in zip(loop[:-1], loop[1:]))
             for loop in self.loops
         )
-        total_plunges = len(self.loops)
-        plunge_dist = total_plunges * (self.safe_z - self.cut_depth)
-        retract_dist = total_plunges * (self.safe_z - self.cut_depth)
+        edge_cut_dist = sum(
+            sum(math.hypot(p2[0] - p1[0], p2[1] - p1[1]) for p1, p2 in zip(loop[:-1], loop[1:]))
+            for loop in self.edge_engrave_loops
+        )
+        total_cut_dist += edge_cut_dist
 
-        # Estimate run time (minutes)
-        rapid_rate = 1000.0  # mm/min standard rapid
+        total_plunges = len(self.loops) + len(self.edge_engrave_loops)
+        rapid_rate = 1000.0
         est_time_min = (
             (total_cut_dist / self.feed_rate) +
-            (plunge_dist / self.plunge_rate) +
-            (retract_dist / rapid_rate) +
+            (total_plunges * (self.safe_z - self.cut_depth) / self.plunge_rate) +
             (self.total_rapid_dist / rapid_rate) +
-            0.1  # spindle dwell
+            0.1
         )
 
         minx, miny, maxx, maxy = self.bounds if self.bounds else (0, 0, 0, 0)
@@ -523,8 +708,8 @@ class GcodeWriter:
 
         lines = [
             "( ========================================================== )",
-            "(  Generated by Gerber-to-GCode PCB Isolation Router        )",
-            f"(  Source Gerber    : {self.source_filename} )",
+            "(  Generated by Gerber2GCode - PCB Isolation Router         )",
+            f"(  Source File      : {self.source_filename} )",
             f"(  Date             : {time.strftime('%Y-%m-%d %H:%M:%S')} )",
             f"(  Tool Tip Dia     : {self.tool_dia:.3f} mm )",
             f"(  Milling Cut Depth: {self.cut_depth:.4f} mm )",
@@ -532,14 +717,15 @@ class GcodeWriter:
             f"(  Feed Rate (XY)   : {self.feed_rate:.1f} mm/min )",
             f"(  Plunge Rate (Z)  : {self.plunge_rate:.1f} mm/min )",
             f"(  Spindle Speed    : {self.spindle_speed} RPM )",
-            f"(  Mirrored X       : {'YES (Bottom Copper)' if self.mirrored else 'NO'} )",
+            f"(  Mirrored X       : {'YES (Bottom Layer)' if self.mirrored else 'NO (Top Layer)'} )",
             f"(  Zeroed Origin    : {'YES (Workpiece 0,0)' if self.zeroed else 'NO'} )",
+            f"(  Edge Engrave     : {'YES (' + str(len(self.edge_engrave_loops)) + ' loops)' if self.edge_engrave_loops else 'NO'} )",
             f"(  Board Dimensions : {width:.2f} mm x {height:.2f} mm )",
             f"(  Bounding Box     : X [{minx:.2f}, {maxx:.2f}], Y [{miny:.2f}, {maxy:.2f}] )",
-            f"(  Total Contours   : {len(self.loops)} )",
-            f"(  Cut Distance     : {total_cut_dist:.2f} mm )",
-            f"(  Rapid Distance   : {self.total_rapid_dist:.2f} mm )",
-            f"(  Est. Cut Time    : {est_time_min:.1f} min )",
+            f"(  Isolation Loops  : {len(self.loops)} )",
+            f"(  Total Cut Dist   : {total_cut_dist:.2f} mm )",
+            f"(  Total Rapid Dist : {self.total_rapid_dist:.2f} mm )",
+            f"(  Est. Machining   : {est_time_min:.1f} min )",
             "( ========================================================== )",
             "",
             "G21          (Units in Millimeters)",
@@ -552,11 +738,12 @@ class GcodeWriter:
             ""
         ]
 
+        # 1. Isolation Contours
         for idx, loop in enumerate(self.loops, 1):
             if not loop:
                 continue
             start_x, start_y = loop[0]
-            lines.append(f"( --- Contour {idx}/{len(self.loops)} --- )")
+            lines.append(f"( --- Isolation Contour {idx}/{len(self.loops)} --- )")
             lines.append(f"G00 X{start_x:.4f} Y{start_y:.4f}")
             lines.append(f"G01 Z{self.cut_depth:.4f} F{self.plunge_rate:.1f}")
 
@@ -565,6 +752,26 @@ class GcodeWriter:
 
             lines.append(f"G00 Z{self.safe_z:.4f}")
             lines.append("")
+
+        # 2. Board Edge Outline Engraving Pass
+        if self.edge_engrave_loops:
+            lines.extend([
+                "( ========================================================== )",
+                "(  BOARD EDGE OUTLINE ENGRAVE PASS                           )",
+                f"(  Engraving Depth: {self.cut_depth:.4f} mm | Feed: {self.feed_rate:.1f} mm/min )",
+                "( ========================================================== )",
+                ""
+            ])
+            for e_idx, e_loop in enumerate(self.edge_engrave_loops, 1):
+                if not e_loop:
+                    continue
+                lines.append(f"( --- Edge Outline Loop {e_idx}/{len(self.edge_engrave_loops)} --- )")
+                lines.append(f"G00 X{e_loop[0][0]:.4f} Y{e_loop[0][1]:.4f}")
+                lines.append(f"G01 Z{self.cut_depth:.4f} F{self.plunge_rate:.1f}")
+                for pt in e_loop[1:]:
+                    lines.append(f"G01 X{pt[0]:.4f} Y{pt[1]:.4f} F{self.feed_rate:.1f}")
+                lines.append(f"G00 Z{self.safe_z:.4f}")
+                lines.append("")
 
         lines.extend([
             "( --- Milling Completed --- )",
@@ -578,7 +785,7 @@ class GcodeWriter:
             f.write("\n".join(lines) + "\n")
 
         return {
-            "contours": len(self.loops),
+            "contours": len(self.loops) + len(self.edge_engrave_loops),
             "cut_dist_mm": total_cut_dist,
             "rapid_dist_mm": self.total_rapid_dist,
             "est_time_min": est_time_min,
@@ -587,31 +794,301 @@ class GcodeWriter:
         }
 
 
+class DrillGcodeWriter:
+    """Writes standard CNC drilling G-code with tool change prompts."""
+    def __init__(self, output_path, drill_data, master_bounds,
+                 drill_depth=-1.8, drill_feed=200.0, safe_z=2.0, tool_change_z=15.0,
+                 spindle_speed=10000, mirror_x=False, margin=0.0,
+                 source_filename=""):
+        self.output_path = output_path
+        self.tools = drill_data["tools"]
+        self.holes = drill_data["holes"]
+        self.slots = drill_data["slots"]
+        self.master_bounds = master_bounds
+        self.drill_depth = drill_depth
+        self.drill_feed = drill_feed
+        self.safe_z = safe_z
+        self.tool_change_z = tool_change_z
+        self.spindle_speed = spindle_speed
+        self.mirror_x = mirror_x
+        self.margin = margin
+        self.source_filename = source_filename
+        self.transformed_by_tool = {}
+
+    def _sort_holes(self, holes, start_pos=(0.0, 0.0)):
+        unvisited = list(holes)
+        sorted_holes = []
+        cur_x, cur_y = start_pos
+        total_rapid = 0.0
+
+        while unvisited:
+            best_idx = 0
+            best_dist_sq = float("inf")
+            for i, (hx, hy) in enumerate(unvisited):
+                d_sq = (hx - cur_x) ** 2 + (hy - cur_y) ** 2
+                if d_sq < best_dist_sq:
+                    best_dist_sq = d_sq
+                    best_idx = i
+            total_rapid += math.sqrt(best_dist_sq)
+            hx, hy = unvisited.pop(best_idx)
+            sorted_holes.append((hx, hy))
+            cur_x, cur_y = hx, hy
+
+        return sorted_holes, total_rapid
+
+    def write(self):
+        self.transformed_by_tool = {}
+        for t_id in self.tools:
+            self.transformed_by_tool[t_id] = {"holes": [], "slots": []}
+
+        for t_id, raw_x, raw_y in self.holes:
+            tx, ty = transform_coords(raw_x, raw_y, self.master_bounds, self.margin, self.mirror_x)
+            if t_id not in self.transformed_by_tool:
+                self.transformed_by_tool[t_id] = {"holes": [], "slots": []}
+            self.transformed_by_tool[t_id]["holes"].append((tx, ty))
+
+        for t_id, x1, y1, x2, y2 in self.slots:
+            tx1, ty1 = transform_coords(x1, y1, self.master_bounds, self.margin, self.mirror_x)
+            tx2, ty2 = transform_coords(x2, y2, self.master_bounds, self.margin, self.mirror_x)
+            if t_id not in self.transformed_by_tool:
+                self.transformed_by_tool[t_id] = {"holes": [], "slots": []}
+            self.transformed_by_tool[t_id]["slots"].append((tx1, ty1, tx2, ty2))
+
+        total_holes = sum(len(d["holes"]) for d in self.transformed_by_tool.values())
+        total_slots = sum(len(d["slots"]) for d in self.transformed_by_tool.values())
+        total_rapid_dist = 0.0
+
+        minx, miny, maxx, maxy = self.master_bounds
+        width = maxx - minx
+        height = maxy - miny
+
+        lines = [
+            "( ========================================================== )",
+            "(  Generated by Gerber2GCode - PCB Drilling Router           )",
+            f"(  Source File      : {self.source_filename} )",
+            f"(  Date             : {time.strftime('%Y-%m-%d %H:%M:%S')} )",
+            f"(  Drill Depth      : {self.drill_depth:.4f} mm )",
+            f"(  Drill Plunge Feed: {self.drill_feed:.1f} mm/min )",
+            f"(  Safe Height (Z)  : {self.safe_z:.2f} mm )",
+            f"(  Tool Change Z    : {self.tool_change_z:.2f} mm )",
+            f"(  Spindle Speed    : {self.spindle_speed} RPM )",
+            f"(  Mirrored X       : {'YES (Bottom-Side Drilling)' if self.mirror_x else 'NO (Top-Side Drilling)'} )",
+            f"(  Board Dimensions : {width:.2f} mm x {height:.2f} mm )",
+            f"(  Total Holes      : {total_holes} )",
+            f"(  Total Slots      : {total_slots} )",
+            "(  Tool Table:                                               )"
+        ]
+
+        for t_id in sorted(self.tools.keys()):
+            dia = self.tools[t_id]
+            h_cnt = len(self.transformed_by_tool.get(t_id, {}).get("holes", []))
+            s_cnt = len(self.transformed_by_tool.get(t_id, {}).get("slots", []))
+            lines.append(f"(    T{t_id:02d}: Dia {dia:6.3f} mm -> {h_cnt} holes, {s_cnt} slots )")
+
+        lines.extend([
+            "( ========================================================== )",
+            "",
+            "G21          (Units in Millimeters)",
+            "G90          (Absolute Coordinates)",
+            "G94          (Feed Rate per Minute)",
+            "G17          (XY Work Plane Selection)",
+            f"G00 Z{self.safe_z:.4f} (Rapid to Safe Z)",
+            ""
+        ])
+
+        cur_pos = (0.0, 0.0)
+        for t_id in sorted(self.tools.keys()):
+            tool_data = self.transformed_by_tool.get(t_id, {})
+            t_holes = tool_data.get("holes", [])
+            t_slots = tool_data.get("slots", [])
+            if not t_holes and not t_slots:
+                continue
+
+            dia = self.tools[t_id]
+            lines.extend([
+                f"( ------------------------------------------------------------- )",
+                f"(  TOOL CHANGE: T{t_id} - Diameter: {dia:.3f} mm ({len(t_holes)} holes)  )",
+                f"( ------------------------------------------------------------- )",
+                "M05          (Spindle Stop for Tool Change)",
+                f"G00 Z{self.tool_change_z:.4f} (Retract to Tool Change Height)",
+                f"M00 (MSG, Insert Drill Bit T{t_id} Dia {dia:.3f}mm, Zero Z, Resume)",
+                f"M03 S{self.spindle_speed} (Spindle Start CW)",
+                "G04 P2.0     (Dwell 2.0s for Spindle Ramp-Up)",
+                ""
+            ])
+
+            sorted_holes, rapid = self._sort_holes(t_holes, start_pos=cur_pos)
+            total_rapid_dist += rapid
+
+            for hx, hy in sorted_holes:
+                lines.append(f"G00 X{hx:.4f} Y{hy:.4f}")
+                lines.append(f"G01 Z{self.drill_depth:.4f} F{self.drill_feed:.1f}")
+                lines.append(f"G00 Z{self.safe_z:.4f}")
+                cur_pos = (hx, hy)
+
+            for s_idx, (sx1, sy1, sx2, sy2) in enumerate(t_slots, 1):
+                lines.append(f"( Slot {s_idx} )")
+                lines.append(f"G00 X{sx1:.4f} Y{sy1:.4f}")
+                lines.append(f"G01 Z{self.drill_depth:.4f} F{self.drill_feed:.1f}")
+                lines.append(f"G01 X{sx2:.4f} Y{sy2:.4f} F{self.drill_feed*0.8:.1f}")
+                lines.append(f"G00 Z{self.safe_z:.4f}")
+                cur_pos = (sx2, sy2)
+
+            lines.append("")
+
+        lines.extend([
+            "( --- Drilling Completed --- )",
+            f"G00 Z{self.tool_change_z:.4f}",
+            "M05          (Spindle Stop)",
+            "G00 X0.0000 Y0.0000 (Return to Workpiece Origin)",
+            "M02          (End of Program)"
+        ])
+
+        with open(self.output_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+
+        est_time_min = (
+            (total_holes * 2.0 * (self.safe_z - self.drill_depth) / self.drill_feed) +
+            (total_rapid_dist / 1000.0) +
+            (len([t for t in self.tools if self.transformed_by_tool.get(t, {}).get("holes")]) * 0.5)
+        )
+
+        return {
+            "total_holes": total_holes,
+            "total_slots": total_slots,
+            "rapid_dist_mm": total_rapid_dist,
+            "est_time_min": est_time_min
+        }
+
+
+class CutoutGcodeWriter:
+    """Writes board outline cutout profile G-code with multiple Z passes."""
+    def __init__(self, output_path, edge_paths, master_bounds,
+                 cutout_depth=-1.8, passes=3, feed_rate=150.0, plunge_rate=60.0,
+                 safe_z=2.0, spindle_speed=10000, tool_dia=1.0,
+                 mirror_x=False, margin=0.0, source_filename=""):
+        self.output_path = output_path
+        self.edge_paths = edge_paths
+        self.master_bounds = master_bounds
+        self.cutout_depth = cutout_depth
+        self.passes = max(1, passes)
+        self.feed_rate = feed_rate
+        self.plunge_rate = plunge_rate
+        self.safe_z = safe_z
+        self.spindle_speed = spindle_speed
+        self.tool_dia = tool_dia
+        self.mirror_x = mirror_x
+        self.margin = margin
+        self.source_filename = source_filename
+        self.transformed_paths = []
+
+    def write(self):
+        self.transformed_paths = [
+            transform_pts_list(ep, self.master_bounds, self.margin, self.mirror_x)
+            for ep in self.edge_paths
+        ]
+
+        total_cut_dist = 0.0
+        depth_step = self.cutout_depth / self.passes
+
+        lines = [
+            "( ========================================================== )",
+            "(  Generated by Gerber2GCode - Board Cutout Router          )",
+            f"(  Source File      : {self.source_filename} )",
+            f"(  Date             : {time.strftime('%Y-%m-%d %H:%M:%S')} )",
+            f"(  Cutout Depth     : {self.cutout_depth:.4f} mm )",
+            f"(  Number of Passes : {self.passes} (Step: {depth_step:.4f} mm) )",
+            f"(  Tool Tip Dia     : {self.tool_dia:.3f} mm )",
+            f"(  XY Feed Rate     : {self.feed_rate:.1f} mm/min )",
+            f"(  Plunge Feed Rate : {self.plunge_rate:.1f} mm/min )",
+            f"(  Safe Height (Z)  : {self.safe_z:.2f} mm )",
+            f"(  Mirrored X       : {'YES (Mirrored Cutout)' if self.mirror_x else 'NO (Top-Side Cutout)'} )",
+            "( ========================================================== )",
+            "",
+            "G21          (Units in Millimeters)",
+            "G90          (Absolute Coordinates)",
+            "G94          (Feed Rate per Minute)",
+            "G17          (XY Work Plane Selection)",
+            f"G00 Z{self.safe_z:.4f} (Rapid to Safe Z)",
+            f"M03 S{self.spindle_speed} (Spindle Start CW)",
+            "G04 P2.0     (Dwell 2 seconds for spindle ramp-up)",
+            ""
+        ]
+
+        for p_idx, path in enumerate(self.transformed_paths, 1):
+            if len(path) < 2:
+                continue
+            start_x, start_y = path[0]
+            lines.append(f"G00 X{start_x:.4f} Y{start_y:.4f}")
+
+            for pass_no in range(1, self.passes + 1):
+                cur_z = depth_step * pass_no
+                lines.append(f"( --- Pass {pass_no}/{self.passes} at Z={cur_z:.4f} --- )")
+                lines.append(f"G01 Z{cur_z:.4f} F{self.plunge_rate:.1f}")
+                for pt in path[1:]:
+                    lines.append(f"G01 X{pt[0]:.4f} Y{pt[1]:.4f} F{self.feed_rate:.1f}")
+                total_cut_dist += sum(
+                    math.hypot(p2[0] - p1[0], p2[1] - p1[1]) for p1, p2 in zip(path[:-1], path[1:])
+                )
+
+            lines.append(f"G00 Z{self.safe_z:.4f}")
+            lines.append("")
+
+        lines.extend([
+            "( --- Cutout Completed --- )",
+            f"G00 Z{self.safe_z:.4f}",
+            "M05          (Spindle Stop)",
+            "G00 X0.0000 Y0.0000 (Return to Workpiece Origin)",
+            "M02          (End of Program)"
+        ])
+
+        with open(self.output_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+
+        est_time_min = (total_cut_dist / self.feed_rate) + 0.2
+        return {
+            "cut_dist_mm": total_cut_dist,
+            "est_time_min": est_time_min
+        }
+
+
 # -----------------------------------------------------------------------------
-# Optional SVG Preview Generator
+# SVG Preview Generator
 # -----------------------------------------------------------------------------
 
-def export_svg_preview(svg_path, copper_geom, loops, bounds, margin=5.0):
-    """Render an SVG preview showing copper areas and isolation toolpaths."""
-    if not bounds:
-        return
-    minx, miny, maxx, maxy = bounds
-    vb_x = minx - margin
-    vb_y = miny - margin
-    vb_w = (maxx - minx) + 2 * margin
-    vb_h = (maxy - miny) + 2 * margin
+def export_svg_preview(svg_path, master_bounds, margin=0.0, title="",
+                       copper_geom=None, milling_loops=None, edge_loops=None,
+                       holes=None, slots=None, mirrored=False):
+    """
+    Renders an SVG preview showing workpiece bounds, board outline,
+    copper areas, isolation milling toolpaths, and drill holes.
+    """
+    minx, miny, maxx, maxy = master_bounds
+    width = maxx - minx
+    height = maxy - miny
+
+    vb_pad = max(8.0, margin + 6.0)
+    vb_x = -vb_pad
+    vb_y = -height - vb_pad
+    vb_w = width + 2 * vb_pad
+    vb_h = height + 2 * vb_pad
 
     svg = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb_x:.2f} {-maxy - margin:.2f} {vb_w:.2f} {vb_h:.2f}" width="1000" height="{1000 * vb_h / vb_w:.1f}" style="background:#131c19;">',
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb_x:.2f} {vb_y:.2f} {vb_w:.2f} {vb_h:.2f}" width="1100" height="{1100 * vb_h / vb_w:.1f}" style="background:#090d16; font-family: monospace;">',
         '  <defs>',
         '    <pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse">',
-        '      <path d="M 10 0 L 0 0 0 10" fill="none" stroke="#1f2d29" stroke-width="0.3"/>',
+        '      <path d="M 10 0 L 0 0 0 10" fill="none" stroke="#172033" stroke-width="0.25"/>',
         '    </pattern>',
         '  </defs>',
-        f'  <rect x="{vb_x:.2f}" y="{-maxy - margin:.2f}" width="{vb_w:.2f}" height="{vb_h:.2f}" fill="url(#grid)" />'
+        f'  <rect x="{vb_x:.2f}" y="{vb_y:.2f}" width="{vb_w:.2f}" height="{vb_h:.2f}" fill="url(#grid)" />'
     ]
 
-    # Render copper geometry in amber/copper color
+    # PCB Board Substrate Background
+    bx = margin
+    by = margin
+    svg.append(f'  <rect x="{bx:.2f}" y="{-by - height:.2f}" width="{width:.2f}" height="{height:.2f}" fill="#102a20" stroke="#059669" stroke-width="0.3" rx="0.5" />')
+
+    # Copper Geometry
     def poly_to_svg_path(poly):
         paths = []
         ext_d = "M " + " L ".join(f"{x:.3f},{-y:.3f}" for x, y in poly.exterior.coords) + " Z"
@@ -624,25 +1101,50 @@ def export_svg_preview(svg_path, copper_geom, loops, bounds, margin=5.0):
     if copper_geom:
         if copper_geom.geom_type == "Polygon":
             d_str = poly_to_svg_path(copper_geom)
-            svg.append(f'  <path d="{d_str}" fill="#d97706" fill-rule="evenodd" opacity="0.85" />')
+            svg.append(f'  <path d="{d_str}" fill="#d97706" fill-rule="evenodd" opacity="0.88" />')
         elif copper_geom.geom_type == "MultiPolygon":
             for p in copper_geom.geoms:
                 d_str = poly_to_svg_path(p)
-                svg.append(f'  <path d="{d_str}" fill="#d97706" fill-rule="evenodd" opacity="0.85" />')
+                svg.append(f'  <path d="{d_str}" fill="#d97706" fill-rule="evenodd" opacity="0.88" />')
 
-    # Render CNC isolation toolpaths in cyan
-    for loop in loops:
-        if len(loop) < 2:
-            continue
-        d = "M " + " L ".join(f"{x:.3f},{-y:.3f}" for x, y in loop)
-        svg.append(f'  <path d="{d}" fill="none" stroke="#22d3ee" stroke-width="0.25" opacity="0.9" />')
-        # Mark plunge point
-        svg.append(f'  <circle cx="{loop[0][0]:.3f}" cy="{-loop[0][1]:.3f}" r="0.2" fill="#ef4444" />')
+    # Isolation Toolpaths
+    if milling_loops:
+        for loop in milling_loops:
+            if len(loop) < 2:
+                continue
+            d = "M " + " L ".join(f"{x:.3f},{-y:.3f}" for x, y in loop)
+            svg.append(f'  <path d="{d}" fill="none" stroke="#22d3ee" stroke-width="0.25" opacity="0.9" />')
+            svg.append(f'  <circle cx="{loop[0][0]:.3f}" cy="{-loop[0][1]:.3f}" r="0.25" fill="#ef4444" />')
 
-    # Workpiece origin marker (0, 0)
-    svg.append('  <circle cx="0" cy="0" r="1.0" fill="none" stroke="#22c55e" stroke-width="0.3" />')
-    svg.append('  <line x1="-2" y1="0" x2="2" y2="0" stroke="#22c55e" stroke-width="0.2" />')
-    svg.append('  <line x1="0" y1="-2" x2="0" y2="2" stroke="#22c55e" stroke-width="0.2" />')
+    # Board Edge Cut Engraving / Cutout Paths
+    if edge_loops:
+        for el in edge_loops:
+            if len(el) < 2:
+                continue
+            d = "M " + " L ".join(f"{x:.3f},{-y:.3f}" for x, y in el)
+            svg.append(f'  <path d="{d}" fill="none" stroke="#facc15" stroke-width="0.4" stroke-dasharray="2,1" opacity="0.95" />')
+            svg.append(f'  <circle cx="{el[0][0]:.3f}" cy="{-el[0][1]:.3f}" r="0.3" fill="#facc15" />')
+
+    # Drill Slots
+    if slots:
+        for sx1, sy1, sx2, sy2, dia in slots:
+            svg.append(f'  <line x1="{sx1:.3f}" y1="{-sy1:.3f}" x2="{sx2:.3f}" y2="{-sy2:.3f}" stroke="#38bdf8" stroke-width="{dia:.3f}" stroke-linecap="round" />')
+
+    # Drill Holes
+    if holes:
+        for hx, hy, dia in holes:
+            svg.append(f'  <circle cx="{hx:.3f}" cy="{-hy:.3f}" r="{dia/2.0:.3f}" fill="#38bdf8" stroke="#ffffff" stroke-width="0.1" />')
+            svg.append(f'  <circle cx="{hx:.3f}" cy="{-hy:.3f}" r="0.12" fill="#090d16" />')
+
+    # Workpiece Origin (0, 0) - placed directly at bottom-left corner
+    svg.append('  <circle cx="0" cy="0" r="1.2" fill="none" stroke="#22c55e" stroke-width="0.35" />')
+    svg.append('  <line x1="-4" y1="0" x2="4" y2="0" stroke="#22c55e" stroke-width="0.25" />')
+    svg.append('  <line x1="0" y1="-4" x2="0" y2="4" stroke="#22c55e" stroke-width="0.25" />')
+    svg.append('  <text x="1.5" y="4.5" fill="#22c55e" font-size="2.4" font-weight="bold">(0,0) Origin</text>')
+
+    # Board Dimensions Labels
+    svg.append(f'  <text x="{margin:.2f}" y="{-height - margin - 2.5:.2f}" fill="#94a3b8" font-size="2.4">{title} | {width:.1f} x {height:.1f} mm {"(Mirrored)" if mirrored else "(Top View)"}</text>')
+
     svg.append('</svg>')
 
     with open(svg_path, "w", encoding="utf-8") as f:
@@ -650,19 +1152,528 @@ def export_svg_preview(svg_path, copper_geom, loops, bounds, margin=5.0):
 
 
 # -----------------------------------------------------------------------------
-# Main CLI
+# Batch Folder Processor
+# -----------------------------------------------------------------------------
+
+def detect_layer_type(filename):
+    """Categorize file by name and extension."""
+    fn = filename.lower()
+    ext = os.path.splitext(fn)[1]
+
+    if ext in (".drl", ".txt", ".xln", ".exc"):
+        return "drill"
+    if "edge_cuts" in fn or "edge.cuts" in fn or "outline" in fn or "profile" in fn or ext in (".gm1", ".gko"):
+        return "edge_cuts"
+    if "b_cu" in fn or "bottom" in fn or "bot" in fn or "b.cu" in fn or ext == ".gbl":
+        return "bottom_copper"
+    if "f_cu" in fn or "top" in fn or "f.cu" in fn or ext == ".gtl":
+        return "top_copper"
+    if "silkscreen" in fn or "silk" in fn or ext in (".gto", ".gbo"):
+        return "silkscreen"
+    if ext == ".gbr":
+        return "gerber_generic"
+    return "other"
+
+
+def process_folder(input_folder, output_folder, args):
+    """Process an entire PCB project folder and generate individual aligned G-code and SVG files."""
+    os.makedirs(output_folder, exist_ok=True)
+    files = sorted(glob.glob(os.path.join(input_folder, "*")))
+
+    categorized = {
+        "bottom_copper": [],
+        "top_copper": [],
+        "edge_cuts": [],
+        "drill": [],
+        "silkscreen": [],
+        "gerber_generic": []
+    }
+
+    for f in files:
+        if os.path.isdir(f):
+            continue
+        ltype = detect_layer_type(f)
+        if ltype in categorized:
+            categorized[ltype].append(f)
+
+    print("==========================================================")
+    print(" Gerber & Drill to G-Code Project Batch Converter")
+    print("==========================================================")
+    print(f" Source Project : {input_folder}")
+    print(f" Target G-Code  : {output_folder}")
+    print(f" Tool Dia (Cut) : {args.tool_dia:.3f} mm")
+    print(f" Cut Depth (Cu) : {args.cut_depth:.4f} mm")
+    print(f" Drill Depth    : {args.drill_depth:.4f} mm")
+    print(f" Cutout Depth   : {args.cutout_depth:.4f} mm")
+    print(f" Margin (0,0)   : {args.margin:.2f} mm")
+    print(f" Edge Engraving : {not args.no_engrave_edge} (Front & Back copper)")
+    print("==========================================================")
+
+    # 1. Determine unified Master Bounding Box and extract Edge_Cuts outline paths
+    master_bounds = None
+    edge_cuts_file = categorized["edge_cuts"][0] if categorized["edge_cuts"] else None
+    edge_cut_raw_paths = []
+
+    if edge_cuts_file:
+        print(f"--> Parsing master board outline from '{os.path.basename(edge_cuts_file)}'...")
+        p_edge = GerberParser(edge_cuts_file)
+        p_edge.parse()
+        if p_edge.raw_bounds:
+            master_bounds = p_edge.raw_bounds
+            edge_cut_raw_paths = p_edge.raw_paths
+            print(f"    Master bounds set from Edge_Cuts: X=[{master_bounds[0]:.2f}, {master_bounds[2]:.2f}], Y=[{master_bounds[1]:.2f}, {master_bounds[3]:.2f}]")
+
+    if master_bounds is None:
+        print("--> Computing master bounds from all copper and drill layers...")
+        all_minx, all_miny, all_maxx, all_maxy = [], [], [], []
+        for cf in (categorized["bottom_copper"] + categorized["top_copper"]):
+            gp = GerberParser(cf)
+            gp.parse()
+            if gp.raw_bounds:
+                all_minx.append(gp.raw_bounds[0])
+                all_miny.append(gp.raw_bounds[1])
+                all_maxx.append(gp.raw_bounds[2])
+                all_maxy.append(gp.raw_bounds[3])
+        for df in categorized["drill"]:
+            dp = ExcellonParser(df)
+            dp.parse()
+            if dp.raw_bounds:
+                all_minx.append(dp.raw_bounds[0])
+                all_miny.append(dp.raw_bounds[1])
+                all_maxx.append(dp.raw_bounds[2])
+                all_maxy.append(dp.raw_bounds[3])
+
+        if all_minx:
+            master_bounds = (min(all_minx), min(all_miny), max(all_maxx), max(all_maxy))
+        else:
+            print("Error: Could not determine valid PCB bounding box.", file=sys.stderr)
+            sys.exit(1)
+
+    width = master_bounds[2] - master_bounds[0]
+    height = master_bounds[3] - master_bounds[1]
+    print(f"    Master Dimensions: {width:.2f} mm x {height:.2f} mm")
+
+    # If edge cuts file wasn't present, build a synthetic rectangular outline
+    if not edge_cut_raw_paths:
+        minx, miny, maxx, maxy = master_bounds
+        edge_cut_raw_paths = [[(minx, miny), (maxx, miny), (maxx, maxy), (minx, maxy), (minx, miny)]]
+
+    # Pre-calculate transformed edge loops for Top (unmirrored) and Bottom (mirrored)
+    top_edge_loops = [transform_pts_list(ep, master_bounds, args.margin, mirror_x=False) for ep in edge_cut_raw_paths]
+    bot_edge_loops = [transform_pts_list(ep, master_bounds, args.margin, mirror_x=True) for ep in edge_cut_raw_paths]
+
+    results = []
+
+    # 2. Process Bottom Copper (Isolation Routing + Edge Engrave, Mirrored)
+    for bf in categorized["bottom_copper"]:
+        bname = os.path.splitext(os.path.basename(bf))[0]
+        out_gcode = os.path.join(output_folder, f"{bname}.gcode")
+        out_svg = os.path.join(output_folder, f"{bname}.svg")
+        print(f"\n[Layer] Bottom Copper: {os.path.basename(bf)} (Isolation + Edge Engrave)")
+
+        gp = GerberParser(bf)
+        copper = gp.parse()
+        engrave_loops = bot_edge_loops if not args.no_engrave_edge else []
+
+        tg = ToolpathGenerator(
+            copper_geom=copper,
+            master_bounds=master_bounds,
+            tool_dia=args.tool_dia,
+            passes=args.passes,
+            stepover=args.stepover,
+            mirror_x=True,
+            zero_origin=True,
+            margin=args.margin,
+            edge_engrave_paths=[]  # Handled directly in GcodeWriter and SVG
+        )
+        loops, _, rapid = tg.generate()
+
+        gw = GcodeWriter(
+            output_path=out_gcode,
+            loops=loops,
+            total_rapid_dist=rapid,
+            bounds=tg.bounds,
+            tool_dia=args.tool_dia,
+            cut_depth=args.cut_depth,
+            safe_z=args.safe_z,
+            feed_rate=args.feed_rate,
+            plunge_rate=args.plunge_rate,
+            spindle_speed=args.spindle_speed,
+            source_filename=os.path.basename(bf),
+            mirrored=True,
+            zeroed=True,
+            edge_engrave_loops=engrave_loops
+        )
+        stats = gw.write()
+
+        export_svg_preview(
+            svg_path=out_svg,
+            master_bounds=master_bounds,
+            margin=args.margin,
+            title=f"{bname} (Bottom Copper)",
+            copper_geom=tg.transformed_copper,
+            milling_loops=loops,
+            edge_loops=bot_edge_loops,
+            mirrored=True
+        )
+
+        op_desc = "Isolation + Edge Engrave (Mirrored)" if engrave_loops else "Isolation (Mirrored)"
+        results.append((f"{bname}.gcode", op_desc, stats["contours"], stats["cut_dist_mm"], stats["est_time_min"]))
+
+    # 3. Process Top Copper (Isolation Routing + Edge Engrave, Unmirrored)
+    for tf in categorized["top_copper"]:
+        bname = os.path.splitext(os.path.basename(tf))[0]
+        out_gcode = os.path.join(output_folder, f"{bname}.gcode")
+        out_svg = os.path.join(output_folder, f"{bname}.svg")
+        print(f"\n[Layer] Top Copper: {os.path.basename(tf)} (Isolation + Edge Engrave)")
+
+        gp = GerberParser(tf)
+        copper = gp.parse()
+        engrave_loops = top_edge_loops if not args.no_engrave_edge else []
+
+        tg = ToolpathGenerator(
+            copper_geom=copper,
+            master_bounds=master_bounds,
+            tool_dia=args.tool_dia,
+            passes=args.passes,
+            stepover=args.stepover,
+            mirror_x=False,
+            zero_origin=True,
+            margin=args.margin,
+            edge_engrave_paths=[]
+        )
+        loops, _, rapid = tg.generate()
+
+        gw = GcodeWriter(
+            output_path=out_gcode,
+            loops=loops,
+            total_rapid_dist=rapid,
+            bounds=tg.bounds,
+            tool_dia=args.tool_dia,
+            cut_depth=args.cut_depth,
+            safe_z=args.safe_z,
+            feed_rate=args.feed_rate,
+            plunge_rate=args.plunge_rate,
+            spindle_speed=args.spindle_speed,
+            source_filename=os.path.basename(tf),
+            mirrored=False,
+            zeroed=True,
+            edge_engrave_loops=engrave_loops
+        )
+        stats = gw.write()
+
+        export_svg_preview(
+            svg_path=out_svg,
+            master_bounds=master_bounds,
+            margin=args.margin,
+            title=f"{bname} (Top Copper)",
+            copper_geom=tg.transformed_copper,
+            milling_loops=loops,
+            edge_loops=top_edge_loops,
+            mirrored=False
+        )
+
+        op_desc = "Isolation + Edge Engrave (Top)" if engrave_loops else "Isolation (Top)"
+        results.append((f"{bname}.gcode", op_desc, stats["contours"], stats["cut_dist_mm"], stats["est_time_min"]))
+
+    # 4. Process Drill Files (Top & Bottom Mirrored) with Matching SVGs
+    for df in categorized["drill"]:
+        bname = os.path.splitext(os.path.basename(df))[0]
+        out_gcode_top = os.path.join(output_folder, f"{bname}.gcode")
+        out_svg_top = os.path.join(output_folder, f"{bname}.svg")
+        out_gcode_bot = os.path.join(output_folder, f"{bname}-mirrored.gcode")
+        out_svg_bot = os.path.join(output_folder, f"{bname}-mirrored.svg")
+
+        print(f"\n[Layer] Drill File: {os.path.basename(df)}")
+        dp = ExcellonParser(df)
+        ddata = dp.parse()
+
+        # Top view drilling G-code
+        dw_top = DrillGcodeWriter(
+            output_path=out_gcode_top,
+            drill_data=ddata,
+            master_bounds=master_bounds,
+            drill_depth=args.drill_depth,
+            drill_feed=args.drill_feed,
+            safe_z=args.safe_z,
+            tool_change_z=args.tool_change_z,
+            spindle_speed=args.spindle_speed,
+            mirror_x=False,
+            margin=args.margin,
+            source_filename=os.path.basename(df)
+        )
+        stats_top = dw_top.write()
+
+        # Top view drilling SVG
+        top_holes = []
+        for tid, h_list in dw_top.transformed_by_tool.items():
+            dia = ddata["tools"].get(tid, 0.8)
+            for hx, hy in h_list["holes"]:
+                top_holes.append((hx, hy, dia))
+        top_slots = []
+        for tid, s_list in dw_top.transformed_by_tool.items():
+            dia = ddata["tools"].get(tid, 0.8)
+            for sx1, sy1, sx2, sy2 in s_list["slots"]:
+                top_slots.append((sx1, sy1, sx2, sy2, dia))
+
+        export_svg_preview(
+            svg_path=out_svg_top,
+            master_bounds=master_bounds,
+            margin=args.margin,
+            title=f"{bname} (Drills - Top View)",
+            edge_loops=top_edge_loops,
+            holes=top_holes,
+            slots=top_slots,
+            mirrored=False
+        )
+
+        # Mirrored drilling G-code (for drilling while bottom copper is facing up)
+        dw_bot = DrillGcodeWriter(
+            output_path=out_gcode_bot,
+            drill_data=ddata,
+            master_bounds=master_bounds,
+            drill_depth=args.drill_depth,
+            drill_feed=args.drill_feed,
+            safe_z=args.safe_z,
+            tool_change_z=args.tool_change_z,
+            spindle_speed=args.spindle_speed,
+            mirror_x=True,
+            margin=args.margin,
+            source_filename=os.path.basename(df)
+        )
+        stats_bot = dw_bot.write()
+
+        # Mirrored drilling SVG
+        bot_holes = []
+        for tid, h_list in dw_bot.transformed_by_tool.items():
+            dia = ddata["tools"].get(tid, 0.8)
+            for hx, hy in h_list["holes"]:
+                bot_holes.append((hx, hy, dia))
+        bot_slots = []
+        for tid, s_list in dw_bot.transformed_by_tool.items():
+            dia = ddata["tools"].get(tid, 0.8)
+            for sx1, sy1, sx2, sy2 in s_list["slots"]:
+                bot_slots.append((sx1, sy1, sx2, sy2, dia))
+
+        export_svg_preview(
+            svg_path=out_svg_bot,
+            master_bounds=master_bounds,
+            margin=args.margin,
+            title=f"{bname} (Drills - Bottom Mirrored)",
+            edge_loops=bot_edge_loops,
+            holes=bot_holes,
+            slots=bot_slots,
+            mirrored=True
+        )
+
+        results.append((f"{bname}.gcode", f"Drilling ({stats_top['total_holes']} holes)", stats_top["total_holes"], 0.0, stats_top["est_time_min"]))
+        results.append((f"{bname}-mirrored.gcode", f"Drilling Mirrored", stats_bot["total_holes"], 0.0, stats_bot["est_time_min"]))
+
+    # 5. Process Edge Cuts (Board Cutout Routing) with Matching SVGs
+    if edge_cuts_file:
+        bname = os.path.splitext(os.path.basename(edge_cuts_file))[0]
+        out_gcode_top = os.path.join(output_folder, f"{bname}.gcode")
+        out_svg_top = os.path.join(output_folder, f"{bname}.svg")
+        out_gcode_bot = os.path.join(output_folder, f"{bname}-mirrored.gcode")
+        out_svg_bot = os.path.join(output_folder, f"{bname}-mirrored.svg")
+
+        print(f"\n[Layer] Board Cutout: {os.path.basename(edge_cuts_file)}")
+
+        # Top-side cutout
+        cw_top = CutoutGcodeWriter(
+            output_path=out_gcode_top,
+            edge_paths=edge_cut_raw_paths,
+            master_bounds=master_bounds,
+            cutout_depth=args.cutout_depth,
+            passes=args.cutout_passes,
+            feed_rate=args.cutout_feed,
+            plunge_rate=args.plunge_rate,
+            safe_z=args.safe_z,
+            spindle_speed=args.spindle_speed,
+            tool_dia=args.cutout_tool_dia,
+            mirror_x=False,
+            margin=args.margin,
+            source_filename=os.path.basename(edge_cuts_file)
+        )
+        stats_cut_top = cw_top.write()
+
+        export_svg_preview(
+            svg_path=out_svg_top,
+            master_bounds=master_bounds,
+            margin=args.margin,
+            title=f"{bname} (Board Cutout - Top View)",
+            edge_loops=top_edge_loops,
+            mirrored=False
+        )
+
+        # Mirrored cutout (for cutting out from the bottom side)
+        cw_bot = CutoutGcodeWriter(
+            output_path=out_gcode_bot,
+            edge_paths=edge_cut_raw_paths,
+            master_bounds=master_bounds,
+            cutout_depth=args.cutout_depth,
+            passes=args.cutout_passes,
+            feed_rate=args.cutout_feed,
+            plunge_rate=args.plunge_rate,
+            safe_z=args.safe_z,
+            spindle_speed=args.spindle_speed,
+            tool_dia=args.cutout_tool_dia,
+            mirror_x=True,
+            margin=args.margin,
+            source_filename=os.path.basename(edge_cuts_file)
+        )
+        stats_cut_bot = cw_bot.write()
+
+        export_svg_preview(
+            svg_path=out_svg_bot,
+            master_bounds=master_bounds,
+            margin=args.margin,
+            title=f"{bname} (Board Cutout - Mirrored)",
+            edge_loops=bot_edge_loops,
+            mirrored=True
+        )
+
+        results.append((f"{bname}.gcode", f"Board Cutout ({args.cutout_passes} passes)", args.cutout_passes, stats_cut_top["cut_dist_mm"], stats_cut_top["est_time_min"]))
+        results.append((f"{bname}-mirrored.gcode", f"Board Cutout Mirrored", args.cutout_passes, stats_cut_bot["cut_dist_mm"], stats_cut_bot["est_time_min"]))
+
+    # Summary Table
+    print("\n==========================================================================================")
+    print(f" BATCH PROCESSING COMPLETED -> Output: {output_folder}")
+    print("==========================================================================================")
+    print(f" {'G-Code File':<30} | {'SVG Preview':<30} | {'Length':<10} | {'Est. Time'}")
+    print("------------------------------------------------------------------------------------------")
+    total_time = 0.0
+    for fname, op, feat, length, t_est in results:
+        svg_name = fname.replace(".gcode", ".svg")
+        len_str = f"{length:.1f} mm" if length > 0 else "-"
+        print(f" {fname:<30} | {svg_name:<30} | {len_str:<10} | {t_est:4.1f} min")
+        total_time += t_est
+    print("------------------------------------------------------------------------------------------")
+    print(f" Total Estimated Machining Time: {total_time:.1f} minutes")
+    print(" Every G-code file has an accompanying visual SVG preview.")
+    print(" Board edge cut outline is engraved onto both Front & Back copper G-code and SVGs.")
+    print("==========================================================================================\n")
+
+
+# -----------------------------------------------------------------------------
+# Single File Processor
+# -----------------------------------------------------------------------------
+
+def process_single_file(input_file, output_file, args):
+    """Process a single Gerber or Drill file."""
+    ltype = detect_layer_type(input_file)
+    print("==========================================================")
+    print(" Gerber / Drill to G-Code Converter")
+    print("==========================================================")
+    print(f" Input File : {input_file} (Detected type: {ltype})")
+    print(f" Output File: {output_file}")
+    print("==========================================================")
+
+    out_svg = args.preview or (os.path.splitext(output_file)[0] + ".svg")
+
+    if ltype == "drill":
+        dp = ExcellonParser(input_file)
+        ddata = dp.parse()
+        dw = DrillGcodeWriter(
+            output_path=output_file,
+            drill_data=ddata,
+            master_bounds=ddata["bounds"],
+            drill_depth=args.drill_depth,
+            drill_feed=args.drill_feed,
+            safe_z=args.safe_z,
+            tool_change_z=args.tool_change_z,
+            spindle_speed=args.spindle_speed,
+            mirror_x=bool(args.mirror),
+            margin=args.margin,
+            source_filename=os.path.basename(input_file)
+        )
+        stats = dw.write()
+
+        holes = []
+        for tid, h_list in dw.transformed_by_tool.items():
+            dia = ddata["tools"].get(tid, 0.8)
+            for hx, hy in h_list["holes"]:
+                holes.append((hx, hy, dia))
+
+        export_svg_preview(
+            svg_path=out_svg,
+            master_bounds=ddata["bounds"],
+            margin=args.margin,
+            title=os.path.basename(input_file),
+            holes=holes,
+            mirrored=bool(args.mirror)
+        )
+        print(f"Drill G-code written: {stats['total_holes']} holes, est. time {stats['est_time_min']:.1f} min.")
+        print(f"SVG preview written : {out_svg}")
+
+    else:
+        is_bottom = (ltype == "bottom_copper")
+        mirror = is_bottom if args.mirror is None else args.mirror
+
+        gp = GerberParser(input_file)
+        copper = gp.parse()
+        if copper is None or copper.is_empty:
+            print("Error: No copper geometry found.", file=sys.stderr)
+            sys.exit(1)
+
+        tg = ToolpathGenerator(
+            copper_geom=copper,
+            tool_dia=args.tool_dia,
+            passes=args.passes,
+            stepover=args.stepover,
+            mirror_x=mirror,
+            zero_origin=(not args.preserve_origin),
+            margin=args.margin
+        )
+        loops, _, rapid = tg.generate()
+
+        gw = GcodeWriter(
+            output_path=output_file,
+            loops=loops,
+            total_rapid_dist=rapid,
+            bounds=tg.bounds,
+            tool_dia=args.tool_dia,
+            cut_depth=args.cut_depth,
+            safe_z=args.safe_z,
+            feed_rate=args.feed_rate,
+            plunge_rate=args.plunge_rate,
+            spindle_speed=args.spindle_speed,
+            source_filename=os.path.basename(input_file),
+            mirrored=mirror,
+            zeroed=(not args.preserve_origin)
+        )
+        stats = gw.write()
+
+        export_svg_preview(
+            svg_path=out_svg,
+            master_bounds=tg.master_bounds,
+            margin=args.margin,
+            title=os.path.basename(input_file),
+            copper_geom=tg.transformed_copper,
+            milling_loops=loops,
+            mirrored=mirror
+        )
+        print(f"G-code written : {stats['contours']} contours, {stats['cut_dist_mm']:.1f} mm cut length, est. time {stats['est_time_min']:.1f} min.")
+        print(f"SVG preview written : {out_svg}")
+
+
+# -----------------------------------------------------------------------------
+# Main CLI Entry Point
 # -----------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Ground-up Gerber RS-274X to CNC Isolation G-Code Converter"
+        description="Ground-up Gerber RS-274X and Excellon Drill to CNC Isolation G-Code Converter"
     )
-    parser.add_argument("input", help="Input Gerber file path (e.g., ./AirCooler-B_Cu.gbr)")
-    parser.add_argument("output", help="Output G-code file path (e.g., output-B_Cu.gcode)")
+    parser.add_argument("input", help="Input Gerber/Drill file OR project folder (e.g., ./project01)")
+    parser.add_argument("output", nargs="?", default=None,
+                        help="Output G-code file or folder (defaults to <FolderName>_gcode for folders)")
+
+    # Milling / Isolation Parameters
     parser.add_argument("-t", "--tool-dia", type=float, default=0.2,
                         help="Milling bit tip diameter in mm (default: 0.2)")
     parser.add_argument("-z", "--cut-depth", type=float, default=-0.04,
-                        help="Cut depth Z in mm (default: -0.04)")
+                        help="Copper isolation cut depth Z in mm (default: -0.04)")
     parser.add_argument("--safe-z", type=float, default=2.0,
                         help="Safe travel height Z in mm (default: 2.0)")
     parser.add_argument("-f", "--feed-rate", type=float, default=120.0,
@@ -675,6 +1686,30 @@ def main():
                         help="Number of isolation passes (default: 1)")
     parser.add_argument("--stepover", type=float, default=0.7,
                         help="Stepover ratio for multi-pass isolation (default: 0.7)")
+
+    # Board Edge Engraving
+    parser.add_argument("--no-engrave-edge", action="store_true",
+                        help="Do not engrave board edge outline onto Front and Back copper")
+
+    # Drilling Parameters
+    parser.add_argument("--drill-depth", type=float, default=-1.8,
+                        help="Through-hole drill depth Z in mm (default: -1.8)")
+    parser.add_argument("--drill-feed", type=float, default=200.0,
+                        help="Z plunge feed rate for drilling in mm/min (default: 200.0)")
+    parser.add_argument("--tool-change-z", type=float, default=15.0,
+                        help="Z height for manual bit swap pauses (default: 15.0)")
+
+    # Board Cutout Parameters
+    parser.add_argument("--cutout-depth", type=float, default=-1.8,
+                        help="Total board cutout depth Z in mm (default: -1.8)")
+    parser.add_argument("--cutout-passes", type=int, default=3,
+                        help="Number of Z depth passes for board cutout (default: 3)")
+    parser.add_argument("--cutout-feed", type=float, default=150.0,
+                        help="XY feed rate for board cutout in mm/min (default: 150.0)")
+    parser.add_argument("--cutout-tool-dia", type=float, default=1.0,
+                        help="End mill diameter for board cutout in mm (default: 1.0)")
+
+    # Coordinate / Alignment Parameters
     parser.add_argument("--mirror", dest="mirror", action="store_true",
                         help="Mirror X coordinates (essential for bottom copper when milled copper-side up)")
     parser.add_argument("--no-mirror", dest="mirror", action="store_false",
@@ -682,98 +1717,28 @@ def main():
     parser.set_defaults(mirror=None)
     parser.add_argument("--preserve-origin", action="store_true",
                         help="Preserve raw Gerber coordinates instead of shifting bottom-left to (0,0)")
-    parser.add_argument("--margin", type=float, default=2.0,
-                        help="Margin in mm from (0,0) when zeroing origin (default: 2.0)")
+    parser.add_argument("--margin", type=float, default=0.0,
+                        help="Margin in mm from (0,0) when zeroing origin (default: 0.0)")
     parser.add_argument("--preview", type=str, default=None,
-                        help="Optional SVG preview output path (e.g. preview.svg)")
+                        help="Optional SVG preview output path (single-file mode)")
 
     args = parser.parse_args()
 
-    if not os.path.isfile(args.input):
-        print(f"Error: Input file '{args.input}' not found.", file=sys.stderr)
+    input_path = os.path.normpath(args.input)
+    if not os.path.exists(input_path):
+        print(f"Error: Path '{input_path}' not found.", file=sys.stderr)
         sys.exit(1)
 
-    # Auto-detect mirroring for bottom layers if not explicitly specified
-    filename = os.path.basename(args.input).lower()
-    is_bottom = any(kw in filename for kw in ("b_cu", "bottom", "bot", "b.cu", "b_mask"))
-    if args.mirror is None:
-        args.mirror = is_bottom
-
-    print("==========================================================")
-    print(" Gerber to G-Code CNC Isolation Router")
-    print("==========================================================")
-    print(f" Input File      : {args.input}")
-    print(f" Output G-Code   : {args.output}")
-    print(f" Tool Diameter   : {args.tool_dia:.3f} mm (Radius: {args.tool_dia/2.0:.3f} mm)")
-    print(f" Cut Depth (Z)   : {args.cut_depth:.4f} mm")
-    print(f" Safe Z Height   : {args.safe_z:.2f} mm")
-    print(f" Feed Rate (XY)  : {args.feed_rate:.1f} mm/min")
-    print(f" Plunge Rate (Z) : {args.plunge_rate:.1f} mm/min")
-    print(f" Spindle Speed   : {args.spindle_speed} RPM")
-    print(f" Isolation Passes: {args.passes}")
-    print(f" Mirror X Axis   : {args.mirror} {'(Auto-detected Bottom Layer)' if is_bottom else ''}")
-    print(f" Zero Origin     : {not args.preserve_origin} (Margin: {args.margin} mm)")
-    print("==========================================================")
-
-    # 1. Parse Gerber
-    t0 = time.time()
-    print("[1/3] Parsing Gerber file and apertures...")
-    parser = GerberParser(args.input)
-    copper = parser.parse()
-    if copper is None or copper.is_empty:
-        print("Error: No copper geometry found in Gerber file.", file=sys.stderr)
-        sys.exit(1)
-    print(f"      Parsed in {time.time() - t0:.3f}s. Copper area: {copper.area:.2f} mm^2")
-
-    # 2. Generate Toolpaths
-    t1 = time.time()
-    print("[2/3] Generating isolation toolpaths & optimizing travel...")
-    generator = ToolpathGenerator(
-        copper_geom=copper,
-        tool_dia=args.tool_dia,
-        passes=args.passes,
-        stepover=args.stepover,
-        mirror_x=args.mirror,
-        zero_origin=(not args.preserve_origin),
-        margin=args.margin
-    )
-    loops, rapid_dist = generator.generate()
-    print(f"      Generated {len(loops)} closed milling loops in {time.time() - t1:.3f}s.")
-
-    # 3. Write G-Code
-    t2 = time.time()
-    print("[3/3] Writing G-code file...")
-    writer = GcodeWriter(
-        output_path=args.output,
-        loops=loops,
-        total_rapid_dist=rapid_dist,
-        bounds=generator.bounds,
-        tool_dia=args.tool_dia,
-        cut_depth=args.cut_depth,
-        safe_z=args.safe_z,
-        feed_rate=args.feed_rate,
-        plunge_rate=args.plunge_rate,
-        spindle_speed=args.spindle_speed,
-        source_filename=os.path.basename(args.input),
-        mirrored=args.mirror,
-        zeroed=(not args.preserve_origin)
-    )
-    stats = writer.write()
-    print(f"      G-code successfully written to '{args.output}'.")
-
-    # Optional Preview
-    if args.preview:
-        print(f"      Exporting SVG preview to '{args.preview}'...")
-        export_svg_preview(args.preview, generator.transformed_copper, loops, generator.bounds)
-
-    print("\n------------------ Summary ------------------")
-    print(f" Board Dimensions: {stats['width_mm']:.2f} mm x {stats['height_mm']:.2f} mm")
-    print(f" Total Contours  : {stats['contours']}")
-    print(f" Cut Distance    : {stats['cut_dist_mm']:.2f} mm ({stats['cut_dist_mm']/1000.0:.3f} m)")
-    print(f" Rapid Distance  : {stats['rapid_dist_mm']:.2f} mm ({stats['rapid_dist_mm']/1000.0:.3f} m)")
-    print(f" Estimated Time  : {stats['est_time_min']:.1f} minutes")
-    print("---------------------------------------------")
-    print("Conversion complete!\n")
+    if os.path.isdir(input_path):
+        folder_basename = os.path.basename(input_path.rstrip(os.sep))
+        output_folder = args.output if args.output else f"{folder_basename}_gcode"
+        process_folder(input_path, output_folder, args)
+    else:
+        output_file = args.output
+        if not output_file:
+            base, _ = os.path.splitext(input_path)
+            output_file = f"{base}.gcode"
+        process_single_file(input_path, output_file, args)
 
 
 if __name__ == "__main__":
