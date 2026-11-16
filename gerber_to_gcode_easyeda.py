@@ -1,21 +1,33 @@
 #!/usr/bin/env python3
 """
 Gerber and Excellon to G-Code Converter for CNC PCB Isolation Routing and Drilling
-Supports both KiCad and EasyEDA naming conventions and multi-drill file merging.
+Specialized for EasyEDA (and KiCad) PCB Project Exports.
 
 Features:
-- RS-274X, Gerber X2/X3, Aperture Macros, G36/G37 polygon regions
-- Automatic detection and merging of multiple EasyEDA/KiCad drill files (.drl)
-- Board outline cutout milling (Edge_Cuts / GKO) with multi-pass depth levels
-- Board edge engraving on both front and back copper layers
-- SVG previews generated for EVERY single G-code file produced
-- Sub-micron coordinate alignment across all layers
-- Automatic X-mirroring for bottom-side milling and drilling
-- Standard G-code compatible with GRBL, Candle, UGS, LinuxCNC, and Mach3
+- RS-274X Gerber parser supporting 4:5 format (%FSLAX45Y45*%), millimeter units (%MOMM*%),
+  standard apertures (C, R, O/Obround), and aperture macros with arithmetic expression evaluation.
+- Robust Excellon drill parser with automatic implicit decimal detection (e.g. METRIC,LZ,000.000 / 3:3)
+  and explicit decimal handling.
+- G85 canned cycle slot routing and M15/M16 slot parsing.
+- Precise alignment: lower-left corner of the board outline (Gerber_BoardOutlineLayer.GKO) is mapped
+  exactly to (0.0000, 0.0000) with configurable margin.
+- Automatic X-axis mirroring for bottom copper, bottom drilling, and mirrored cutout.
+- Board edge outline is engraved onto BOTH Front and Back copper passes at isolation depth (-0.04 mm).
+- Individual G-code and visual SVG previews generated for every single layer and drill file.
+- Unified deduplicated multi-tool drill file (Drill_Combined) with intelligent duplicate-hole removal
+  (e.g. deduplicating via holes shared between Drill_PTH_Through and Drill_PTH_Through_Via).
+- Multi-pass board cutout milling with step-down depth passes.
+- Standard G-code compatible with GRBL, Candle, UGS, FluidNC (MKS-DLC32), LinuxCNC, and Mach3.
 
 Usage:
-    # Process an entire EasyEDA project folder into an output gcode folder:
-    python gerber_to_gcode.py ./easyeda_project_folder
+    # Process an entire EasyEDA project folder:
+    python gerber_to_gcode_easyeda.py ./project02
+
+    # Process into a custom output folder:
+    python gerber_to_gcode_easyeda.py ./project02 ./my_output_gcode
+
+    # Convert a single Gerber or Drill file:
+    python gerber_to_gcode_easyeda.py ./project02/Gerber_TopLayer.GTL output.gcode
 """
 
 import sys
@@ -36,7 +48,7 @@ import shapely.affinity
 # -----------------------------------------------------------------------------
 
 def clean_geometry(geom):
-    """Ensure geometry is valid and non-empty."""
+    """Ensure geometry is topologically valid and non-empty."""
     if geom is None or geom.is_empty:
         return None
     if not geom.is_valid:
@@ -51,7 +63,7 @@ def clean_geometry(geom):
 
 
 def eval_macro_expr(expr, params):
-    """Safely evaluate arithmetic expressions inside aperture macros."""
+    """Safely evaluate arithmetic expressions inside aperture macros ($1, $2, etc.)."""
     def repl(match):
         idx = int(match.group(1)) - 1
         return str(params[idx]) if 0 <= idx < len(params) else "0.0"
@@ -60,13 +72,13 @@ def eval_macro_expr(expr, params):
     if not re.match(r"^[\d\.\+\-\*\/\(\)\s]+$", expr_str):
         return 0.0
     try:
-        return float(eval(expr_str, {"__builtins__" : None}, {}))
+        return float(eval(expr_str, {"__builtins__": None}, {}))
     except Exception:
         return 0.0
 
 
 def arc_interpolate(xs, ys, xe, ye, i, j, is_cw, max_step=0.08):
-    """Interpolate an arc from (xs, ys) to (xe, ye) with center offset (i, j)."""
+    """Interpolate a circular arc from (xs, ys) to (xe, ye) with center offset (i, j)."""
     xc = xs + i
     yc = ys + j
     r = math.hypot(i, j)
@@ -102,8 +114,8 @@ def arc_interpolate(xs, ys, xe, ye, i, j, is_cw, max_step=0.08):
 class GerberParser:
     def __init__(self, filepath):
         self.filepath = filepath
-        self.scale_x = 1e6
-        self.scale_y = 1e6
+        self.scale_x = 1e5  # EasyEDA default is 4:5 -> 10^5
+        self.scale_y = 1e5
         self.unit_scale = 1.0  # mm default
         self.macros = {}
         self.apertures = {}
@@ -125,45 +137,49 @@ class GerberParser:
 
             p_code = int(eval_macro_expr(parts[0], params))
             if p_code == 1:
-                exposure = int(eval_macro_expr(parts[1], params)) if len(parts) > 1 else 1
-                dia = eval_macro_expr(parts[2], params)
-                cx = eval_macro_expr(parts[3], params)
-                cy = eval_macro_expr(parts[4], params)
-                c_geom = Point(cx, cy).buffer(dia / 2.0)
-                if exposure == 1:
-                    shapes.append(c_geom)
+                # Circle: 1, exposure, dia, cx, cy
+                dia = eval_macro_expr(parts[2], params) * self.unit_scale
+                cx = eval_macro_expr(parts[3], params) * self.unit_scale
+                cy = eval_macro_expr(parts[4], params) * self.unit_scale
+                shapes.append(Point(cx, cy).buffer(dia / 2.0))
             elif p_code in (2, 20):
-                exposure = int(eval_macro_expr(parts[1], params)) if len(parts) > 1 else 1
-                w = eval_macro_expr(parts[2], params)
-                xs = eval_macro_expr(parts[3], params)
-                ys = eval_macro_expr(parts[4], params)
-                xe = eval_macro_expr(parts[5], params)
-                ye = eval_macro_expr(parts[6], params)
-                vl_geom = LineString([(xs, ys), (xe, ye)]).buffer(w / 2.0, cap_style=2)
-                if exposure == 1:
-                    shapes.append(vl_geom)
-            elif p_code == 4:
-                exposure = int(eval_macro_expr(parts[1], params)) if len(parts) > 1 else 1
-                n = int(eval_macro_expr(parts[2], params))
-                pts = []
-                for i in range(n):
-                    if 3 + 2 * i + 1 < len(parts):
-                        px = eval_macro_expr(parts[3 + 2 * i], params)
-                        py = eval_macro_expr(parts[4 + 2 * i], params)
-                        pts.append((px, py))
-                if len(pts) >= 3:
-                    poly = Polygon(pts)
-                    if exposure == 1:
-                        shapes.append(poly)
+                # Vector line: 2/20, exposure, width, sx, sy, ex, ey, rot
+                w = eval_macro_expr(parts[2], params) * self.unit_scale
+                sx = eval_macro_expr(parts[3], params) * self.unit_scale
+                sy = eval_macro_expr(parts[4], params) * self.unit_scale
+                ex = eval_macro_expr(parts[5], params) * self.unit_scale
+                ey = eval_macro_expr(parts[6], params) * self.unit_scale
+                shapes.append(LineString([(sx, sy), (ex, ey)]).buffer(w / 2.0, cap_style=2))
             elif p_code == 21:
-                exposure = int(eval_macro_expr(parts[1], params)) if len(parts) > 1 else 1
-                w = eval_macro_expr(parts[2], params)
-                h = eval_macro_expr(parts[3], params)
-                cx = eval_macro_expr(parts[4], params)
-                cy = eval_macro_expr(parts[5], params)
-                rect_geom = box(cx - w / 2.0, cy - h / 2.0, cx + w / 2.0, cy + h / 2.0)
-                if exposure == 1:
-                    shapes.append(rect_geom)
+                # Center rectangle: 21, exposure, w, h, cx, cy, rot
+                w = eval_macro_expr(parts[2], params) * self.unit_scale
+                h = eval_macro_expr(parts[3], params) * self.unit_scale
+                cx = eval_macro_expr(parts[4], params) * self.unit_scale
+                cy = eval_macro_expr(parts[5], params) * self.unit_scale
+                rect = box(cx - w / 2.0, cy - h / 2.0, cx + w / 2.0, cy + h / 2.0)
+                if len(parts) > 6:
+                    rot = eval_macro_expr(parts[6], params)
+                    if abs(rot) > 1e-3:
+                        rect = shapely.affinity.rotate(rect, rot, origin=(cx, cy))
+                shapes.append(rect)
+            elif p_code == 4:
+                # Outline polygon: 4, exposure, num_pts, x1, y1, x2, y2, ..., rot
+                n_pts = int(eval_macro_expr(parts[2], params))
+                poly_pts = []
+                idx = 3
+                for _ in range(n_pts + 1):
+                    if idx + 1 < len(parts):
+                        px = eval_macro_expr(parts[idx], params) * self.unit_scale
+                        py = eval_macro_expr(parts[idx + 1], params) * self.unit_scale
+                        poly_pts.append((px, py))
+                        idx += 2
+                if len(poly_pts) >= 3:
+                    poly = Polygon(poly_pts)
+                    if idx < len(parts):
+                        rot = eval_macro_expr(parts[idx], params)
+                        if abs(rot) > 1e-3:
+                            poly = shapely.affinity.rotate(poly, rot, origin=(0, 0))
+                    shapes.append(poly)
 
         return unary_union(shapes) if shapes else None
 
@@ -218,6 +234,7 @@ class GerberParser:
                             h = float(p_parts[1]) * self.unit_scale
                             self.apertures[d_code] = ("R", (w, h))
                         elif ap_type == "O":
+                            # Obround aperture: width X height
                             p_parts = ap_params.split("X")
                             w = float(p_parts[0]) * self.unit_scale
                             h = float(p_parts[1]) * self.unit_scale
@@ -235,8 +252,6 @@ class GerberParser:
                             self.apertures[d_code] = ("MACRO", macro_geom)
 
         layers = [{"polarity": "D", "shapes": []}]
-        current_polarity = "D"
-
         cur_x, cur_y = 0.0, 0.0
         cur_aper = None
         g_mode = 1
@@ -244,32 +259,33 @@ class GerberParser:
         cur_contour = []
         cur_stroke_path = []
 
-        all_coords_x = []
-        all_coords_y = []
+        all_raw_x = []
+        all_raw_y = []
 
         for ext, norm in tokens:
             if ext:
                 for sub in ext.split("*"):
                     sub = sub.strip()
-                    if sub == "LPD" and current_polarity != "D":
-                        current_polarity = "D"
-                        layers.append({"polarity": "D", "shapes": []})
-                    elif sub == "LPC" and current_polarity != "C":
-                        current_polarity = "C"
-                        layers.append({"polarity": "C", "shapes": []})
+                    if sub == "LPD":
+                        if layers[-1]["polarity"] != "D":
+                            layers.append({"polarity": "D", "shapes": []})
+                    elif sub == "LPC":
+                        if layers[-1]["polarity"] != "C":
+                            layers.append({"polarity": "C", "shapes": []})
                 continue
 
             cmd = norm.strip()
-            if not cmd or cmd.startswith("G04"):
+            if not cmd:
                 continue
 
-            for g_str in re_g.findall(cmd):
-                g_val = int(g_str)
+            g_matches = re_g.findall(cmd)
+            for gm in g_matches:
+                g_val = int(gm)
                 if g_val in (1, 2, 3):
                     g_mode = g_val
                 elif g_val == 36:
                     in_region = True
-                    cur_contour = []
+                    cur_contour = [(cur_x, cur_y)]
                 elif g_val == 37:
                     in_region = False
                     if len(cur_contour) >= 3:
@@ -277,40 +293,44 @@ class GerberParser:
                         poly = clean_geometry(poly)
                         if poly:
                             layers[-1]["shapes"].append(poly)
-                            self.raw_paths.append(list(cur_contour))
                     cur_contour = []
+
+            m_aper = re.search(r"D([1-9][0-9]+)\b", cmd)
+            if m_aper:
+                cur_aper = int(m_aper.group(1))
 
             mx = re_x.search(cmd)
             my = re_y.search(cmd)
             mi = re_i.search(cmd)
             mj = re_j.search(cmd)
-
-            new_x = int(mx.group(1)) / self.scale_x * self.unit_scale if mx else cur_x
-            new_y = int(my.group(1)) / self.scale_y * self.unit_scale if my else cur_y
-            i_val = int(mi.group(1)) / self.scale_x * self.unit_scale if mi else 0.0
-            j_val = int(mj.group(1)) / self.scale_y * self.unit_scale if mj else 0.0
-
-            if mx or my:
-                all_coords_x.append(new_x)
-                all_coords_y.append(new_y)
-
             md = re_d.search(cmd)
-            if md:
-                d_val = int(md.group(1))
-                if d_val >= 10:
-                    cur_aper = d_val
-                elif d_val == 2:
+
+            new_x = cur_x
+            new_y = cur_y
+            if mx:
+                new_x = (float(mx.group(1)) / self.scale_x) * self.unit_scale
+                all_raw_x.append(new_x)
+            if my:
+                new_y = (float(my.group(1)) / self.scale_y) * self.unit_scale
+                all_raw_y.append(new_y)
+
+            i_val = (float(mi.group(1)) / self.scale_x) * self.unit_scale if mi else 0.0
+            j_val = (float(mj.group(1)) / self.scale_y) * self.unit_scale if mj else 0.0
+
+            d_val = int(md.group(1)) if md else (1 if (mx or my) and not m_aper else None)
+
+            if d_val is not None:
+                if d_val == 2:
                     if cur_stroke_path and len(cur_stroke_path) >= 2:
                         self.raw_paths.append(cur_stroke_path)
                     cur_stroke_path = [(new_x, new_y)]
                     cur_x, cur_y = new_x, new_y
                     if in_region:
                         if len(cur_contour) >= 3:
-                            p = Polygon(cur_contour)
-                            p = clean_geometry(p)
-                            if p:
-                                layers[-1]["shapes"].append(p)
-                                self.raw_paths.append(list(cur_contour))
+                            poly = Polygon(cur_contour)
+                            poly = clean_geometry(poly)
+                            if poly:
+                                layers[-1]["shapes"].append(poly)
                         cur_contour = [(cur_x, cur_y)]
                 elif d_val == 1:
                     if not cur_stroke_path:
@@ -378,15 +398,17 @@ class GerberParser:
             copper_geom = clean_geometry(copper_geom)
 
         self.copper = copper_geom
-        if all_coords_x and all_coords_y:
-            self.raw_bounds = (min(all_coords_x), min(all_coords_y), max(all_coords_x), max(all_coords_y))
+
+        if all_raw_x and all_raw_y:
+            self.raw_bounds = (min(all_raw_x), min(all_raw_y), max(all_raw_x), max(all_raw_y))
         elif self.copper and not self.copper.is_empty:
             self.raw_bounds = self.copper.bounds
 
         return self.copper
 
+
 # -----------------------------------------------------------------------------
-# Excellon Drill Parser (Updated for EasyEDA Implicit Decimals)
+# Excellon Drill Parser (EasyEDA & KiCad Compatible)
 # -----------------------------------------------------------------------------
 
 class ExcellonParser:
@@ -396,11 +418,11 @@ class ExcellonParser:
         self.holes = []        # [(tool_id, x, y)]
         self.slots = []        # [(tool_id, x1, y1, x2, y2)]
         self.unit_scale = 1.0  # mm default
-        self.dec_places = 4    # default decimal places if implicit
+        self.dec_places = 3    # EasyEDA standard is 3:3 (divide integer coords by 1000)
         self.raw_bounds = None
 
     def parse(self):
-        """Parse Excellon drill file with robust coordinate scaling for EasyEDA."""
+        """Parse Excellon drill file with robust implicit decimal detection for EasyEDA."""
         with open(self.filepath, "r", encoding="utf-8", errors="ignore") as f:
             lines = f.readlines()
 
@@ -416,19 +438,27 @@ class ExcellonParser:
 
         for line in lines:
             line = line.strip()
-            if not line or line.startswith(";"):
+            if not line:
                 continue
             if line == "%":
                 in_header = False
                 continue
 
             if in_header:
+                if line.startswith(";"):
+                    # EasyEDA specifies: ;FILE_FORMAT=3:3
+                    m_ff = re.search(r"FILE_FORMAT=\d+:(\d+)", line)
+                    if m_ff:
+                        self.dec_places = int(m_ff.group(1))
+                    continue
+
                 if "INCH" in line:
                     self.unit_scale = 25.4
+                    self.dec_places = 4
                 elif "METRIC" in line:
                     self.unit_scale = 1.0
-                
-                # Detect decimal format from header (e.g., 000.00000 -> 5 decimal places)
+
+                # Detect decimal format from header (e.g. 000.000 -> 3 decimal places)
                 m_fmt = re.search(r"(\d+)\.(\d+)", line)
                 if m_fmt:
                     self.dec_places = len(m_fmt.group(2))
@@ -438,6 +468,9 @@ class ExcellonParser:
                     t_id = int(m_t.group(1))
                     self.tools[t_id] = float(m_t.group(2)) * self.unit_scale
             else:
+                if line.startswith(";"):
+                    continue
+
                 m_sel = re.match(r"^T(\d+)$", line)
                 if m_sel:
                     cur_tool = int(m_sel.group(1))
@@ -455,15 +488,27 @@ class ExcellonParser:
                 if line.startswith("M30"):
                     break
 
-                mx = re.search(r"X([\+\-]?[0-9\.]+)", line)
-                my = re.search(r"Y([\+\-]?[0-9\.]+)", line)
-
                 def parse_coord(val_str):
                     if "." in val_str:
                         return float(val_str)
                     else:
-                        # Convert implicit decimal integer using detected decimal places
                         return float(val_str) / (10.0 ** self.dec_places)
+
+                # Check for EasyEDA G85 canned cycle slot: X...Y...G85X...Y...
+                m_g85 = re.search(r"X([\+\-]?[0-9\.]+)Y([\+\-]?[0-9\.]+)G85X([\+\-]?[0-9\.]+)Y([\+\-]?[0-9\.]+)", line)
+                if m_g85:
+                    x1 = parse_coord(m_g85.group(1)) * self.unit_scale
+                    y1 = parse_coord(m_g85.group(2)) * self.unit_scale
+                    x2 = parse_coord(m_g85.group(3)) * self.unit_scale
+                    y2 = parse_coord(m_g85.group(4)) * self.unit_scale
+                    all_x.extend([x1, x2])
+                    all_y.extend([y1, y2])
+                    self.slots.append((cur_tool, x1, y1, x2, y2))
+                    cur_x, cur_y = x2, y2
+                    continue
+
+                mx = re.search(r"X([\+\-]?[0-9\.]+)", line)
+                my = re.search(r"Y([\+\-]?[0-9\.]+)", line)
 
                 if mx:
                     cur_x = parse_coord(mx.group(1)) * self.unit_scale
@@ -491,11 +536,18 @@ class ExcellonParser:
             "bounds": self.raw_bounds
         }
 
+
 # -----------------------------------------------------------------------------
 # Coordinate Transformer
 # -----------------------------------------------------------------------------
 
 def transform_coords(x, y, master_bounds, margin=0.0, mirror_x=False):
+    """
+    Transform raw Gerber coordinates into CNC workpiece space.
+    - If unmirrored (Top Copper, Cutout, Drills): X' = (X - minx) + margin, Y' = (Y - miny) + margin
+    - If mirrored (Bottom Copper, Mirrored Drills): X' = (maxx - X) + margin, Y' = (Y - miny) + margin
+    This ensures that in both top and bottom views, the PCB lower-left corner is at (0,0).
+    """
     minx, miny, maxx, maxy = master_bounds
     if mirror_x:
         tx = (maxx - x) + margin
@@ -579,6 +631,9 @@ class ToolpathGenerator:
                 )
             self.bounds = geom.bounds
 
+        # Persist transformed copper geometry for SVG preview
+        self.transformed_copper = geom
+
         raw_rings = []
         for pass_idx in range(self.passes):
             offset = self.tool_rad + pass_idx * (self.tool_dia * self.stepover)
@@ -630,8 +685,8 @@ class ToolpathGenerator:
 
 class GcodeWriter:
     def __init__(self, output_path, loops, total_rapid_dist, bounds,
-                 tool_dia=0.2, cut_depth=-0.04, safe_z=2.0, travel_z=1.0,
-                 feed_rate=120.0, plunge_rate=60.0, spindle_speed=10000,
+                 tool_dia=0.2, cut_depth=-0.04, safe_z=5.0, travel_z=1.0,
+                 feed_rate=300.0, plunge_rate=80.0, spindle_speed=10000,
                  source_filename="", mirrored=False, zeroed=True,
                  edge_engrave_loops=None):
         self.output_path = output_path
@@ -675,7 +730,7 @@ class GcodeWriter:
 
         lines = [
             "( ========================================================== )",
-            "(  Generated by Gerber2GCode - PCB Isolation Router         )",
+            "(  Generated by Gerber2GCode - EasyEDA Isolation Router      )",
             f"(  Source File      : {self.source_filename} )",
             f"(  Date             : {time.strftime('%Y-%m-%d %H:%M:%S')} )",
             f"(  Tool Tip Dia     : {self.tool_dia:.3f} mm )",
@@ -688,10 +743,6 @@ class GcodeWriter:
             f"(  Zeroed Origin    : {'YES (Workpiece 0,0)' if self.zeroed else 'NO'} )",
             f"(  Edge Engrave     : {'YES (' + str(len(self.edge_engrave_loops)) + ' loops)' if self.edge_engrave_loops else 'NO'} )",
             f"(  Board Dimensions : {width:.2f} mm x {height:.2f} mm )",
-            f"(  Bounding Box     : X [{minx:.2f}, {maxx:.2f}], Y [{miny:.2f}, {maxy:.2f}] )",
-            f"(  Isolation Loops  : {len(self.loops)} )",
-            f"(  Total Cut Dist   : {total_cut_dist:.2f} mm )",
-            f"(  Total Rapid Dist : {self.total_rapid_dist:.2f} mm )",
             f"(  Est. Machining   : {est_time_min:.1f} min )",
             "( ========================================================== )",
             "",
@@ -737,7 +788,7 @@ class GcodeWriter:
                 lines.append("")
 
         lines.extend([
-            "( --- Milling Completed --- )",
+            "( --- Program Finish --- )",
             f"G00 Z{self.safe_z:.4f}",
             "M05          (Spindle Stop)",
             "G00 X0.0000 Y0.0000 (Return to Workpiece Origin)",
@@ -758,15 +809,20 @@ class GcodeWriter:
 
 
 class DrillGcodeWriter:
-    def __init__(self, output_path, tools, holes, slots, master_bounds,
-                 drill_depth=-1.8, drill_feed=200.0, safe_z=2.0, tool_change_z=15.0,
+    def __init__(self, output_path, master_bounds, drill_data=None, tools=None, holes=None, slots=None,
+                 drill_depth=-1.8, drill_feed=150.0, safe_z=5.0, tool_change_z=20.0,
                  spindle_speed=10000, mirror_x=False, margin=0.0,
                  source_filename=""):
         self.output_path = output_path
-        self.tools = tools
-        self.holes = holes
-        self.slots = slots
         self.master_bounds = master_bounds
+        if drill_data is not None:
+            self.tools = dict(drill_data.get("tools", {}))
+            self.holes = list(drill_data.get("holes", []))
+            self.slots = list(drill_data.get("slots", []))
+        else:
+            self.tools = dict(tools or {})
+            self.holes = list(holes or [])
+            self.slots = list(slots or [])
         self.drill_depth = drill_depth
         self.drill_feed = drill_feed
         self.safe_z = safe_z
@@ -792,14 +848,13 @@ class DrillGcodeWriter:
                     best_dist_sq = d_sq
                     best_idx = i
             total_rapid += math.sqrt(best_dist_sq)
-            hx, hy = unvisited.pop(best_idx)
-            sorted_holes.append((hx, hy))
-            cur_x, cur_y = hx, hy
+            nxt = unvisited.pop(best_idx)
+            sorted_holes.append(nxt)
+            cur_x, cur_y = nxt
 
         return sorted_holes, total_rapid
 
     def write(self):
-        self.transformed_by_tool = {}
         for t_id in self.tools:
             self.transformed_by_tool[t_id] = {"holes": [], "slots": []}
 
@@ -826,7 +881,7 @@ class DrillGcodeWriter:
 
         lines = [
             "( ========================================================== )",
-            "(  Generated by Gerber2GCode - Unified PCB Drilling Router   )",
+            "(  Generated by Gerber2GCode - EasyEDA PCB Drilling Router  )",
             f"(  Source File      : {self.source_filename} )",
             f"(  Date             : {time.strftime('%Y-%m-%d %H:%M:%S')} )",
             f"(  Drill Depth      : {self.drill_depth:.4f} mm )",
@@ -869,7 +924,7 @@ class DrillGcodeWriter:
             dia = self.tools[t_id]
             lines.extend([
                 f"( ------------------------------------------------------------- )",
-                f"(  TOOL CHANGE: T{t_id} - Diameter: {dia:.3f} mm ({len(t_holes)} holes)  )",
+                f"(  TOOL CHANGE: T{t_id} - Diameter: {dia:.3f} mm ({len(t_holes)} holes, {len(t_slots)} slots)  )",
                 f"( ------------------------------------------------------------- )",
                 "M05          (Spindle Stop for Tool Change)",
                 f"G00 Z{self.tool_change_z:.4f} (Retract to Tool Change Height)",
@@ -892,7 +947,7 @@ class DrillGcodeWriter:
                 lines.append(f"( Slot {s_idx} )")
                 lines.append(f"G00 X{sx1:.4f} Y{sy1:.4f}")
                 lines.append(f"G01 Z{self.drill_depth:.4f} F{self.drill_feed:.1f}")
-                lines.append(f"G01 X{sx2:.4f} Y{sy2:.4f} F{self.drill_feed*0.8:.1f}")
+                lines.append(f"G01 X{sx2:.4f} Y{sy2:.4f} F{self.drill_feed * 0.8:.1f}")
                 lines.append(f"G00 Z{self.safe_z:.4f}")
                 cur_pos = (sx2, sy2)
 
@@ -925,8 +980,8 @@ class DrillGcodeWriter:
 
 class CutoutGcodeWriter:
     def __init__(self, output_path, edge_paths, master_bounds,
-                 cutout_depth=-1.8, passes=3, feed_rate=150.0, plunge_rate=60.0,
-                 safe_z=2.0, spindle_speed=10000, tool_dia=1.0,
+                 cutout_depth=-1.8, passes=3, feed_rate=200.0, plunge_rate=80.0,
+                 safe_z=5.0, spindle_speed=10000, tool_dia=1.0,
                  mirror_x=False, margin=0.0, source_filename=""):
         self.output_path = output_path
         self.edge_paths = edge_paths
@@ -1006,7 +1061,7 @@ class CutoutGcodeWriter:
         with open(self.output_path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
 
-        est_time_min = (total_cut_dist / self.feed_rate) + 0.2
+        est_time_min = (total_cut_dist / self.feed_rate) + (self.passes * 0.1)
         return {
             "cut_dist_mm": total_cut_dist,
             "est_time_min": est_time_min
@@ -1087,6 +1142,7 @@ def export_svg_preview(svg_path, master_bounds, margin=0.0, title="",
             svg.append(f'  <circle cx="{hx:.3f}" cy="{-hy:.3f}" r="{dia/2.0:.3f}" fill="#38bdf8" stroke="#ffffff" stroke-width="0.1" />')
             svg.append(f'  <circle cx="{hx:.3f}" cy="{-hy:.3f}" r="0.12" fill="#090d16" />')
 
+    # Origin (0,0) indicator
     svg.append('  <circle cx="0" cy="0" r="1.2" fill="none" stroke="#22c55e" stroke-width="0.35" />')
     svg.append('  <line x1="-4" y1="0" x2="4" y2="0" stroke="#22c55e" stroke-width="0.25" />')
     svg.append('  <line x1="0" y1="-4" x2="0" y2="4" stroke="#22c55e" stroke-width="0.25" />')
@@ -1100,30 +1156,58 @@ def export_svg_preview(svg_path, master_bounds, margin=0.0, title="",
 
 
 # -----------------------------------------------------------------------------
-# Batch Folder Processor (EasyEDA & KiCad Compatible)
+# Layer Classification
 # -----------------------------------------------------------------------------
 
 def detect_layer_type(filename):
-    """Categorize file by name and extension (supports EasyEDA & KiCad naming)."""
+    """
+    Categorize files specifically identifying EasyEDA and KiCad layers:
+    - Outline / Cutout: Gerber_BoardOutlineLayer.GKO, .gm1, Edge_Cuts
+    - Bottom Copper: Gerber_BottomLayer.GBL, .gbl, B_Cu
+    - Top Copper: Gerber_TopLayer.GTL, .gtl, F_Cu
+    - Drill: Drill_PTH_Through.DRL, Drill_NPTH_Through.DRL, .drl, .txt
+    - Solder Masks (excluded): .GTS, .GBS, soldermask
+    - Silkscreens (excluded): .GTO, .GBO, silkscreen
+    """
     fn = filename.lower()
     ext = os.path.splitext(fn)[1]
 
+    # Drill files
     if ext in (".drl", ".txt", ".xln", ".exc"):
         return "drill"
+
+    # Board outline / Cutout
     if "outline" in fn or "boardoutline" in fn or "edge_cuts" in fn or "edge.cuts" in fn or "profile" in fn or ext in (".gm1", ".gko"):
         return "edge_cuts"
-    if "bottomlayer" in fn or "b_cu" in fn or "bottom" in fn or "bot" in fn or "b.cu" in fn or ext == ".gbl":
-        return "bottom_copper"
-    if "toplayer" in fn or "f_cu" in fn or "top" in fn or "f.cu" in fn or ext == ".gtl":
-        return "top_copper"
+
+    # Solder masks (NOT copper - skip for isolation routing)
+    if "soldermask" in fn or "solder_mask" in fn or "mask" in fn or ext in (".gts", ".gbs"):
+        return "soldermask"
+
+    # Silkscreen (NOT copper - skip for isolation routing)
     if "silkscreen" in fn or "silk" in fn or ext in (".gto", ".gbo"):
         return "silkscreen"
+
+    # Bottom copper layer
+    if ext == ".gbl" or "bottomlayer" in fn or "b_cu" in fn or "b.cu" in fn or "bottom" in fn or "bot" in fn:
+        return "bottom_copper"
+
+    # Top copper layer
+    if ext == ".gtl" or "toplayer" in fn or "f_cu" in fn or "f.cu" in fn or "top" in fn:
+        return "top_copper"
+
     if ext == ".gbr":
         return "gerber_generic"
+
     return "other"
 
 
+# -----------------------------------------------------------------------------
+# Batch Folder Processor
+# -----------------------------------------------------------------------------
+
 def process_folder(input_folder, output_folder, args):
+    """Process an entire EasyEDA project folder and generate individual aligned G-code and SVG files."""
     os.makedirs(output_folder, exist_ok=True)
     files = sorted(glob.glob(os.path.join(input_folder, "*")))
 
@@ -1132,6 +1216,7 @@ def process_folder(input_folder, output_folder, args):
         "top_copper": [],
         "edge_cuts": [],
         "drill": [],
+        "soldermask": [],
         "silkscreen": [],
         "gerber_generic": []
     }
@@ -1144,7 +1229,7 @@ def process_folder(input_folder, output_folder, args):
             categorized[ltype].append(f)
 
     print("==========================================================")
-    print(" EasyEDA / KiCad Gerber & Drill to G-Code Batch Converter")
+    print(" EasyEDA Gerber & Drill to G-Code Project Converter")
     print("==========================================================")
     print(f" Source Project : {input_folder}")
     print(f" Target G-Code  : {output_folder}")
@@ -1152,8 +1237,11 @@ def process_folder(input_folder, output_folder, args):
     print(f" Cut Depth (Cu) : {args.cut_depth:.4f} mm")
     print(f" Drill Depth    : {args.drill_depth:.4f} mm")
     print(f" Cutout Depth   : {args.cutout_depth:.4f} mm")
+    print(f" Margin (0,0)   : {args.margin:.2f} mm")
+    print(f" Edge Engraving : {not args.no_engrave_edge} (Front & Back copper)")
     print("==========================================================")
 
+    # 1. Determine unified Master Bounding Box from Edge_Cuts / GKO outline
     master_bounds = None
     edge_cuts_file = categorized["edge_cuts"][0] if categorized["edge_cuts"] else None
     edge_cut_raw_paths = []
@@ -1165,7 +1253,7 @@ def process_folder(input_folder, output_folder, args):
         if p_edge.raw_bounds:
             master_bounds = p_edge.raw_bounds
             edge_cut_raw_paths = p_edge.raw_paths
-            print(f"    Master bounds set: X=[{master_bounds[0]:.2f}, {master_bounds[2]:.2f}], Y=[{master_bounds[1]:.2f}, {master_bounds[3]:.2f}]")
+            print(f"    Master bounds set from Board Outline: X=[{master_bounds[0]:.2f}, {master_bounds[2]:.2f}], Y=[{master_bounds[1]:.2f}, {master_bounds[3]:.2f}]")
 
     if master_bounds is None:
         print("--> Computing master bounds from all copper and drill layers...")
@@ -1206,7 +1294,7 @@ def process_folder(input_folder, output_folder, args):
 
     results = []
 
-    # 1. Process Bottom Copper
+    # 2. Process Bottom Copper (Back Copper - Mirrored)
     for bf in categorized["bottom_copper"]:
         bname = os.path.splitext(os.path.basename(bf))[0]
         out_gcode = os.path.join(output_folder, f"{bname}.gcode")
@@ -1248,13 +1336,20 @@ def process_folder(input_folder, output_folder, args):
         stats = gw.write()
 
         export_svg_preview(
-            svg_path=out_svg, master_bounds=master_bounds, margin=args.margin,
-            title=f"{bname} (Bottom Copper)", copper_geom=tg.transformed_copper,
-            milling_loops=loops, edge_loops=bot_edge_loops, mirrored=True
+            svg_path=out_svg,
+            master_bounds=master_bounds,
+            margin=args.margin,
+            title=f"{bname} (Bottom Copper - Mirrored)",
+            copper_geom=tg.transformed_copper,
+            milling_loops=loops,
+            edge_loops=bot_edge_loops,
+            mirrored=True
         )
-        results.append((f"{bname}.gcode", "Bottom Copper", stats["contours"], stats["cut_dist_mm"], stats["est_time_min"]))
 
-    # 2. Process Top Copper
+        op_desc = "Isolation + Edge Engrave (Bottom)" if engrave_loops else "Isolation (Bottom)"
+        results.append((f"{bname}.gcode", op_desc, stats["contours"], stats["cut_dist_mm"], stats["est_time_min"]))
+
+    # 3. Process Top Copper (Front Copper - Unmirrored)
     for tf in categorized["top_copper"]:
         bname = os.path.splitext(os.path.basename(tf))[0]
         out_gcode = os.path.join(output_folder, f"{bname}.gcode")
@@ -1296,15 +1391,112 @@ def process_folder(input_folder, output_folder, args):
         stats = gw.write()
 
         export_svg_preview(
-            svg_path=out_svg, master_bounds=master_bounds, margin=args.margin,
-            title=f"{bname} (Top Copper)", copper_geom=tg.transformed_copper,
-            milling_loops=loops, edge_loops=top_edge_loops, mirrored=False
+            svg_path=out_svg,
+            master_bounds=master_bounds,
+            margin=args.margin,
+            title=f"{bname} (Top Copper)",
+            copper_geom=tg.transformed_copper,
+            milling_loops=loops,
+            edge_loops=top_edge_loops,
+            mirrored=False
         )
-        results.append((f"{bname}.gcode", "Top Copper", stats["contours"], stats["cut_dist_mm"], stats["est_time_min"]))
 
-    # 3. Combine and Process All Drill Files (PTH, NPTH, Vias) into Unified Drills
-    if categorized["drill"]:
-        print(f"\n[Layer] Merging {len(categorized['drill'])} EasyEDA Drill files...")
+        op_desc = "Isolation + Edge Engrave (Top)" if engrave_loops else "Isolation (Top)"
+        results.append((f"{bname}.gcode", op_desc, stats["contours"], stats["cut_dist_mm"], stats["est_time_min"]))
+
+    # 4. Process Individual Drill Files (Top & Bottom Mirrored)
+    for df in categorized["drill"]:
+        bname = os.path.splitext(os.path.basename(df))[0]
+        print(f"\n[Layer] Drill File: {os.path.basename(df)}")
+        dp = ExcellonParser(df)
+        ddata = dp.parse()
+
+        # Top view drilling
+        out_gcode_top = os.path.join(output_folder, f"{bname}.gcode")
+        out_svg_top = os.path.join(output_folder, f"{bname}.svg")
+        dw_top = DrillGcodeWriter(
+            output_path=out_gcode_top,
+            master_bounds=master_bounds,
+            drill_data=ddata,
+            drill_depth=args.drill_depth,
+            drill_feed=args.drill_feed,
+            safe_z=args.safe_z,
+            tool_change_z=args.tool_change_z,
+            spindle_speed=args.spindle_speed,
+            mirror_x=False,
+            margin=args.margin,
+            source_filename=os.path.basename(df)
+        )
+        stats_top = dw_top.write()
+
+        top_holes = []
+        for tid, h_list in dw_top.transformed_by_tool.items():
+            dia = ddata["tools"].get(tid, 0.8)
+            for hx, hy in h_list["holes"]:
+                top_holes.append((hx, hy, dia))
+        top_slots = []
+        for tid, s_list in dw_top.transformed_by_tool.items():
+            dia = ddata["tools"].get(tid, 0.8)
+            for sx1, sy1, sx2, sy2 in s_list["slots"]:
+                top_slots.append((sx1, sy1, sx2, sy2, dia))
+
+        export_svg_preview(
+            svg_path=out_svg_top,
+            master_bounds=master_bounds,
+            margin=args.margin,
+            title=f"{bname} (Drills - Top View)",
+            edge_loops=top_edge_loops,
+            holes=top_holes,
+            slots=top_slots,
+            mirrored=False
+        )
+
+        # Mirrored drilling (for bottom-side drilling)
+        out_gcode_bot = os.path.join(output_folder, f"{bname}-mirrored.gcode")
+        out_svg_bot = os.path.join(output_folder, f"{bname}-mirrored.svg")
+        dw_bot = DrillGcodeWriter(
+            output_path=out_gcode_bot,
+            master_bounds=master_bounds,
+            drill_data=ddata,
+            drill_depth=args.drill_depth,
+            drill_feed=args.drill_feed,
+            safe_z=args.safe_z,
+            tool_change_z=args.tool_change_z,
+            spindle_speed=args.spindle_speed,
+            mirror_x=True,
+            margin=args.margin,
+            source_filename=os.path.basename(df)
+        )
+        stats_bot = dw_bot.write()
+
+        bot_holes = []
+        for tid, h_list in dw_bot.transformed_by_tool.items():
+            dia = ddata["tools"].get(tid, 0.8)
+            for hx, hy in h_list["holes"]:
+                bot_holes.append((hx, hy, dia))
+        bot_slots = []
+        for tid, s_list in dw_bot.transformed_by_tool.items():
+            dia = ddata["tools"].get(tid, 0.8)
+            for sx1, sy1, sx2, sy2 in s_list["slots"]:
+                bot_slots.append((sx1, sy1, sx2, sy2, dia))
+
+        export_svg_preview(
+            svg_path=out_svg_bot,
+            master_bounds=master_bounds,
+            margin=args.margin,
+            title=f"{bname} (Drills - Bottom Mirrored)",
+            edge_loops=bot_edge_loops,
+            holes=bot_holes,
+            slots=bot_slots,
+            mirrored=True
+        )
+
+        results.append((f"{bname}.gcode", f"Drilling ({stats_top['total_holes']} holes)", stats_top["total_holes"], 0.0, stats_top["est_time_min"]))
+        results.append((f"{bname}-mirrored.gcode", "Drilling Mirrored", stats_bot["total_holes"], 0.0, stats_bot["est_time_min"]))
+
+    # 5. If Multiple Drill Files exist, also produce Deduplicated Unified Drill Program
+    if len(categorized["drill"]) > 1:
+        print(f"\n[Layer] Generating Unified Deduplicated Drill Program from {len(categorized['drill'])} drill files...")
         merged_tools = {}
         merged_holes = []
         merged_slots = []
@@ -1314,7 +1506,6 @@ def process_folder(input_folder, output_folder, args):
             dp = ExcellonParser(df)
             ddata = dp.parse()
             for old_tid, dia in ddata["tools"].items():
-                # Find or assign unique tool id by diameter
                 found_tid = None
                 for tid, d in merged_tools.items():
                     if abs(d - dia) < 1e-4:
@@ -1328,22 +1519,45 @@ def process_folder(input_folder, output_folder, args):
 
             for old_tid, hx, hy in ddata["holes"]:
                 new_tid = tool_id_map[(df, old_tid)]
-                merged_holes.append((new_tid, hx, hy))
+                dia = merged_tools[new_tid]
+                # Deduplication check: check if hole at this location with same diameter already added
+                is_dup = False
+                for eh_tid, eh_x, eh_y in merged_holes:
+                    if abs(merged_tools[eh_tid] - dia) < 1e-4 and math.hypot(eh_x - hx, eh_y - hy) < 0.02:
+                        is_dup = True
+                        break
+                if not is_dup:
+                    merged_holes.append((new_tid, hx, hy))
 
             for old_tid, x1, y1, x2, y2 in ddata["slots"]:
                 new_tid = tool_id_map[(df, old_tid)]
-                merged_slots.append((new_tid, x1, y1, x2, y2))
+                dia = merged_tools[new_tid]
+                is_dup = False
+                for es_tid, es_x1, es_y1, es_x2, es_y2 in merged_slots:
+                    if abs(merged_tools[es_tid] - dia) < 1e-4 and math.hypot(es_x1 - x1, es_y1 - y1) < 0.02 and math.hypot(es_x2 - x2, es_y2 - y2) < 0.02:
+                        is_dup = True
+                        break
+                if not is_dup:
+                    merged_slots.append((new_tid, x1, y1, x2, y2))
 
-        # Output Top & Mirrored Drills
-        for is_mirrored, suffix in [(False, ""), (True, "-mirrored")]:
+        for is_mirrored, suffix, edge_l in [(False, "", top_edge_loops), (True, "-mirrored", bot_edge_loops)]:
             out_gcode = os.path.join(output_folder, f"Drill_Combined{suffix}.gcode")
             out_svg = os.path.join(output_folder, f"Drill_Combined{suffix}.svg")
 
             dw = DrillGcodeWriter(
-                output_path=out_gcode, tools=merged_tools, holes=merged_holes, slots=merged_slots,
-                master_bounds=master_bounds, drill_depth=args.drill_depth, drill_feed=args.drill_feed,
-                safe_z=args.safe_z, tool_change_z=args.tool_change_z, spindle_speed=args.spindle_speed,
-                mirror_x=is_mirrored, margin=args.margin, source_filename="Combined EasyEDA Drills"
+                output_path=out_gcode,
+                master_bounds=master_bounds,
+                tools=merged_tools,
+                holes=merged_holes,
+                slots=merged_slots,
+                drill_depth=args.drill_depth,
+                drill_feed=args.drill_feed,
+                safe_z=args.safe_z,
+                tool_change_z=args.tool_change_z,
+                spindle_speed=args.spindle_speed,
+                mirror_x=is_mirrored,
+                margin=args.margin,
+                source_filename="Combined EasyEDA Drills (Deduplicated)"
             )
             stats_drill = dw.write()
 
@@ -1356,50 +1570,209 @@ def process_folder(input_folder, output_folder, args):
                     d_slots.append((sx1, sy1, sx2, sy2, dia))
 
             export_svg_preview(
-                svg_path=out_svg, master_bounds=master_bounds, margin=args.margin,
-                title=f"Combined Drills {'(Mirrored)' if is_mirrored else '(Top View)'}",
-                edge_loops=bot_edge_loops if is_mirrored else top_edge_loops,
-                holes=d_holes, slots=d_slots, mirrored=is_mirrored
+                svg_path=out_svg,
+                master_bounds=master_bounds,
+                margin=args.margin,
+                title=f"Drill Combined {'(Mirrored)' if is_mirrored else '(Top View)'}",
+                edge_loops=edge_l,
+                holes=d_holes,
+                slots=d_slots,
+                mirrored=is_mirrored
             )
-            results.append((f"Drill_Combined{suffix}.gcode", f"Drilling ({stats_drill['total_holes']} holes)", stats_drill["total_holes"], 0.0, stats_drill["est_time_min"]))
+            results.append((f"Drill_Combined{suffix}.gcode", f"Combined Drills ({stats_drill['total_holes']} holes)", stats_drill["total_holes"], 0.0, stats_drill["est_time_min"]))
 
-    # 4. Process Board Cutout (Edge Cuts / GKO)
+    # 6. Process Board Cutout (Edge Cuts / Outline) with Matching SVGs
     if edge_cuts_file:
-        bname = "Board_Cutout"
-        for is_mirrored, suffix in [(False, ""), (True, "-mirrored")]:
-            out_gcode = os.path.join(output_folder, f"{bname}{suffix}.gcode")
-            out_svg = os.path.join(output_folder, f"{bname}{suffix}.svg")
+        bname = os.path.splitext(os.path.basename(edge_cuts_file))[0]
+        print(f"\n[Layer] Board Cutout: {os.path.basename(edge_cuts_file)}")
 
-            cw = CutoutGcodeWriter(
-                output_path=out_gcode, edge_paths=edge_cut_raw_paths, master_bounds=master_bounds,
-                cutout_depth=args.cutout_depth, passes=args.cutout_passes, feed_rate=args.cutout_feed,
-                plunge_rate=args.plunge_rate, safe_z=args.safe_z, spindle_speed=args.spindle_speed,
-                tool_dia=args.cutout_tool_dia, mirror_x=is_mirrored, margin=args.margin,
-                source_filename=os.path.basename(edge_cuts_file)
-            )
-            stats_cut = cw.write()
+        # Top-side cutout
+        out_gcode_top = os.path.join(output_folder, f"{bname}.gcode")
+        out_svg_top = os.path.join(output_folder, f"{bname}.svg")
+        cw_top = CutoutGcodeWriter(
+            output_path=out_gcode_top,
+            edge_paths=edge_cut_raw_paths,
+            master_bounds=master_bounds,
+            cutout_depth=args.cutout_depth,
+            passes=args.cutout_passes,
+            feed_rate=args.cutout_feed,
+            plunge_rate=args.plunge_rate,
+            safe_z=args.safe_z,
+            spindle_speed=args.spindle_speed,
+            tool_dia=args.cutout_tool_dia,
+            mirror_x=False,
+            margin=args.margin,
+            source_filename=os.path.basename(edge_cuts_file)
+        )
+        stats_cut_top = cw_top.write()
 
-            export_svg_preview(
-                svg_path=out_svg, master_bounds=master_bounds, margin=args.margin,
-                title=f"Board Cutout {'(Mirrored)' if is_mirrored else '(Top View)'}",
-                edge_loops=bot_edge_loops if is_mirrored else top_edge_loops, mirrored=is_mirrored
-            )
-            results.append((f"{bname}{suffix}.gcode", f"Board Cutout ({args.cutout_passes} passes)", args.cutout_passes, stats_cut["cut_dist_mm"], stats_cut["est_time_min"]))
+        export_svg_preview(
+            svg_path=out_svg_top,
+            master_bounds=master_bounds,
+            margin=args.margin,
+            title=f"{bname} (Board Cutout - Top View)",
+            edge_loops=top_edge_loops,
+            mirrored=False
+        )
 
+        # Mirrored cutout
+        out_gcode_bot = os.path.join(output_folder, f"{bname}-mirrored.gcode")
+        out_svg_bot = os.path.join(output_folder, f"{bname}-mirrored.svg")
+        cw_bot = CutoutGcodeWriter(
+            output_path=out_gcode_bot,
+            edge_paths=edge_cut_raw_paths,
+            master_bounds=master_bounds,
+            cutout_depth=args.cutout_depth,
+            passes=args.cutout_passes,
+            feed_rate=args.cutout_feed,
+            plunge_rate=args.plunge_rate,
+            safe_z=args.safe_z,
+            spindle_speed=args.spindle_speed,
+            tool_dia=args.cutout_tool_dia,
+            mirror_x=True,
+            margin=args.margin,
+            source_filename=os.path.basename(edge_cuts_file)
+        )
+        stats_cut_bot = cw_bot.write()
+
+        export_svg_preview(
+            svg_path=out_svg_bot,
+            master_bounds=master_bounds,
+            margin=args.margin,
+            title=f"{bname} (Board Cutout - Mirrored)",
+            edge_loops=bot_edge_loops,
+            mirrored=True
+        )
+
+        results.append((f"{bname}.gcode", f"Board Cutout ({args.cutout_passes} passes)", args.cutout_passes, stats_cut_top["cut_dist_mm"], stats_cut_top["est_time_min"]))
+        results.append((f"{bname}-mirrored.gcode", "Board Cutout Mirrored", args.cutout_passes, stats_cut_bot["cut_dist_mm"], stats_cut_bot["est_time_min"]))
+
+    # 7. Summary Report Table
     print("\n==========================================================================================")
     print(f" BATCH PROCESSING COMPLETED -> Output Folder: {output_folder}")
     print("==========================================================================================")
-    print(f" {'G-Code File':<30} | {'SVG Preview':<30} | {'Length':<10} | {'Est. Time'}")
+    print(f" {'G-Code File':<32} | {'SVG Preview':<32} | {'Length':<10} | {'Est. Time'}")
     print("------------------------------------------------------------------------------------------")
     total_time = 0.0
     for fname, op, feat, length, t_est in results:
         svg_name = fname.replace(".gcode", ".svg")
         len_str = f"{length:.1f} mm" if length > 0 else "-"
-        print(f" {fname:<30} | {svg_name:<30} | {len_str:<10} | {t_est:4.1f} min")
+        print(f" {fname:<32} | {svg_name:<32} | {len_str:<10} | {t_est:4.1f} min")
         total_time += t_est
     print("------------------------------------------------------------------------------------------")
     print(f" Total Estimated Machining Time: {total_time:.1f} minutes")
+    print(" Every G-code file has an accompanying visual SVG preview.")
+    print(" Board edge outline is engraved onto both Front & Back copper G-code and SVGs.")
+    print(" All files are zero-aligned to the lower-left board corner at (0.0000, 0.0000).")
     print("==========================================================================================\n")
+
+
+# -----------------------------------------------------------------------------
+# Single File Processor
+# -----------------------------------------------------------------------------
+
+def process_single_file(input_file, output_file, args):
+    """Process a single Gerber or Drill file."""
+    ltype = detect_layer_type(input_file)
+    print("==========================================================")
+    print(" EasyEDA Gerber / Drill to G-Code Converter")
+    print("==========================================================")
+    print(f" Input File : {input_file} (Detected type: {ltype})")
+    print(f" Output File: {output_file}")
+    print("==========================================================")
+
+    out_svg = args.preview or (os.path.splitext(output_file)[0] + ".svg")
+
+    if ltype == "drill":
+        dp = ExcellonParser(input_file)
+        ddata = dp.parse()
+        dw = DrillGcodeWriter(
+            output_path=output_file,
+            master_bounds=ddata["bounds"],
+            drill_data=ddata,
+            drill_depth=args.drill_depth,
+            drill_feed=args.drill_feed,
+            safe_z=args.safe_z,
+            tool_change_z=args.tool_change_z,
+            spindle_speed=args.spindle_speed,
+            mirror_x=bool(args.mirror),
+            margin=args.margin,
+            source_filename=os.path.basename(input_file)
+        )
+        stats = dw.write()
+
+        holes = []
+        for tid, h_list in dw.transformed_by_tool.items():
+            dia = ddata["tools"].get(tid, 0.8)
+            for hx, hy in h_list["holes"]:
+                holes.append((hx, hy, dia))
+        slots = []
+        for tid, s_list in dw.transformed_by_tool.items():
+            dia = ddata["tools"].get(tid, 0.8)
+            for sx1, sy1, sx2, sy2 in s_list["slots"]:
+                slots.append((sx1, sy1, sx2, sy2, dia))
+
+        export_svg_preview(
+            svg_path=out_svg,
+            master_bounds=ddata["bounds"],
+            margin=args.margin,
+            title=os.path.basename(input_file),
+            holes=holes,
+            slots=slots,
+            mirrored=bool(args.mirror)
+        )
+        print(f"Drill G-code written: {stats['total_holes']} holes, est. time {stats['est_time_min']:.1f} min.")
+        print(f"SVG preview written : {out_svg}")
+
+    else:
+        is_bottom = (ltype == "bottom_copper")
+        mirror = is_bottom if args.mirror is None else args.mirror
+
+        gp = GerberParser(input_file)
+        copper = gp.parse()
+        if copper is None or copper.is_empty:
+            print("Error: No copper geometry found.", file=sys.stderr)
+            sys.exit(1)
+
+        tg = ToolpathGenerator(
+            copper_geom=copper,
+            tool_dia=args.tool_dia,
+            passes=args.passes,
+            stepover=args.stepover,
+            mirror_x=mirror,
+            zero_origin=(not args.preserve_origin),
+            margin=args.margin
+        )
+        loops, _, rapid = tg.generate()
+
+        gw = GcodeWriter(
+            output_path=output_file,
+            loops=loops,
+            total_rapid_dist=rapid,
+            bounds=tg.bounds,
+            tool_dia=args.tool_dia,
+            cut_depth=args.cut_depth,
+            safe_z=args.safe_z,
+            feed_rate=args.feed_rate,
+            plunge_rate=args.plunge_rate,
+            spindle_speed=args.spindle_speed,
+            source_filename=os.path.basename(input_file),
+            mirrored=mirror,
+            zeroed=(not args.preserve_origin)
+        )
+        stats = gw.write()
+
+        export_svg_preview(
+            svg_path=out_svg,
+            master_bounds=tg.master_bounds,
+            margin=args.margin,
+            title=os.path.basename(input_file),
+            copper_geom=tg.transformed_copper,
+            milling_loops=loops,
+            mirrored=mirror
+        )
+        print(f"G-code written : {stats['contours']} contours, {stats['cut_dist_mm']:.1f} mm cut length, est. time {stats['est_time_min']:.1f} min.")
+        print(f"SVG preview written : {out_svg}")
 
 
 # -----------------------------------------------------------------------------
@@ -1407,42 +1780,83 @@ def process_folder(input_folder, output_folder, args):
 # -----------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="EasyEDA Gerber & Drill to CNC Isolation G-Code Converter")
-    parser.add_argument("input", help="Path to EasyEDA project export folder")
-    parser.add_argument("output", nargs="?", default=None, help="Output G-code folder")
+    parser = argparse.ArgumentParser(
+        description="EasyEDA Gerber RS-274X and Excellon Drill to CNC Isolation G-Code Converter"
+    )
+    parser.add_argument("input", help="Input EasyEDA Gerber/Drill file OR project folder (e.g., ./project02)")
+    parser.add_argument("output", nargs="?", default=None,
+                        help="Output G-code file or folder (defaults to <FolderName>_gcode for folders)")
 
-    parser.add_argument("-t", "--tool-dia", type=float, default=0.2, help="Isolation bit diameter in mm (default: 0.2)")
-    parser.add_argument("-z", "--cut-depth", type=float, default=-0.04, help="Copper isolation cut depth in mm (default: -0.04)")
-    parser.add_argument("--safe-z", type=float, default=2.0, help="Safe travel height Z in mm (default: 2.0)")
-    parser.add_argument("-f", "--feed-rate", type=float, default=120.0, help="XY milling feed rate in mm/min (default: 120.0)")
-    parser.add_argument("--plunge-rate", type=float, default=60.0, help="Z plunge feed rate in mm/min (default: 60.0)")
-    parser.add_argument("-s", "--spindle-speed", type=int, default=10000, help="Spindle speed in RPM (default: 10000)")
-    parser.add_argument("-p", "--passes", type=int, default=1, help="Number of isolation passes (default: 1)")
-    parser.add_argument("--stepover", type=float, default=0.7, help="Stepover ratio (default: 0.7)")
+    # Milling / Isolation Parameters
+    parser.add_argument("-t", "--tool-dia", type=float, default=0.2,
+                        help="Milling bit tip diameter in mm (default: 0.2)")
+    parser.add_argument("-z", "--cut-depth", type=float, default=-0.04,
+                        help="Copper isolation cut depth Z in mm (default: -0.04)")
+    parser.add_argument("--safe-z", type=float, default=5.0,
+                        help="Safe travel height Z in mm (default: 5.0)")
+    parser.add_argument("-f", "--feed-rate", type=float, default=300.0,
+                        help="XY milling feed rate in mm/min (default: 300.0)")
+    parser.add_argument("--plunge-rate", type=float, default=80.0,
+                        help="Z plunge feed rate in mm/min (default: 80.0)")
+    parser.add_argument("-s", "--spindle-speed", type=int, default=10000,
+                        help="Spindle speed in RPM (default: 10000)")
+    parser.add_argument("-p", "--passes", type=int, default=1,
+                        help="Number of isolation passes (default: 1)")
+    parser.add_argument("--stepover", type=float, default=0.7,
+                        help="Stepover ratio for multi-pass isolation (default: 0.7)")
 
-    parser.add_argument("--no-engrave-edge", action="store_true", help="Do not engrave board edge outline onto copper")
+    # Board Edge Engraving
+    parser.add_argument("--no-engrave-edge", action="store_true",
+                        help="Do not engrave board edge outline onto Front and Back copper")
 
-    parser.add_argument("--drill-depth", type=float, default=-1.8, help="Drill depth in mm (default: -1.8)")
-    parser.add_argument("--drill-feed", type=float, default=200.0, help="Drill plunge feed rate in mm/min (default: 200.0)")
-    parser.add_argument("--tool-change-z", type=float, default=15.0, help="Tool change Z height (default: 15.0)")
+    # Drilling Parameters
+    parser.add_argument("--drill-depth", type=float, default=-1.8,
+                        help="Through-hole drill depth Z in mm (default: -1.8)")
+    parser.add_argument("--drill-feed", type=float, default=150.0,
+                        help="Z plunge feed rate for drilling in mm/min (default: 150.0)")
+    parser.add_argument("--tool-change-z", type=float, default=20.0,
+                        help="Z height for manual bit swap pauses (default: 20.0)")
 
-    parser.add_argument("--cutout-depth", type=float, default=-1.8, help="Board cutout depth in mm (default: -1.8)")
-    parser.add_argument("--cutout-passes", type=int, default=3, help="Passes for board cutout (default: 3)")
-    parser.add_argument("--cutout-feed", type=float, default=150.0, help="Cutout XY feed rate (default: 150.0)")
-    parser.add_argument("--cutout-tool-dia", type=float, default=1.0, help="Cutout end mill diameter (default: 1.0)")
+    # Board Cutout Parameters
+    parser.add_argument("--cutout-depth", type=float, default=-1.8,
+                        help="Total board cutout depth Z in mm (default: -1.8)")
+    parser.add_argument("--cutout-passes", type=int, default=3,
+                        help="Number of Z depth passes for board cutout (default: 3)")
+    parser.add_argument("--cutout-feed", type=float, default=200.0,
+                        help="XY feed rate for board cutout in mm/min (default: 200.0)")
+    parser.add_argument("--cutout-tool-dia", type=float, default=1.0,
+                        help="End mill diameter for board cutout in mm (default: 1.0)")
 
-    parser.add_argument("--margin", type=float, default=0.0, help="Margin from (0,0) origin in mm")
+    # Coordinate / Alignment Parameters
+    parser.add_argument("--mirror", dest="mirror", action="store_true",
+                        help="Mirror X coordinates (essential for bottom copper when milled copper-side up)")
+    parser.add_argument("--no-mirror", dest="mirror", action="store_false",
+                        help="Do not mirror X coordinates")
+    parser.set_defaults(mirror=None)
+    parser.add_argument("--preserve-origin", action="store_true",
+                        help="Preserve raw Gerber coordinates instead of shifting bottom-left to (0,0)")
+    parser.add_argument("--margin", type=float, default=0.0,
+                        help="Margin in mm from (0,0) when zeroing origin (default: 0.0)")
+    parser.add_argument("--preview", type=str, default=None,
+                        help="Optional SVG preview output path (single-file mode)")
 
     args = parser.parse_args()
-    input_path = os.path.normpath(args.input)
 
+    input_path = os.path.normpath(args.input)
     if not os.path.exists(input_path):
         print(f"Error: Path '{input_path}' not found.", file=sys.stderr)
         sys.exit(1)
 
-    folder_basename = os.path.basename(input_path.rstrip(os.sep))
-    output_folder = args.output if args.output else f"{folder_basename}_gcode"
-    process_folder(input_path, output_folder, args)
+    if os.path.isdir(input_path):
+        folder_basename = os.path.basename(input_path.rstrip(os.sep))
+        output_folder = args.output if args.output else f"{folder_basename}_gcode"
+        process_folder(input_path, output_folder, args)
+    else:
+        output_file = args.output
+        if not output_file:
+            base, _ = os.path.splitext(input_path)
+            output_file = f"{base}.gcode"
+        process_single_file(input_path, output_file, args)
 
 
 if __name__ == "__main__":
