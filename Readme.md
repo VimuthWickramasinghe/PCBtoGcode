@@ -1,0 +1,2 @@
+python gerber_to_gcode.py project01
+python gerber_to_gcode_easyeda.py project02
