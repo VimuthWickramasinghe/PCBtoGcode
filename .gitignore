@@ -1,4 +1,10 @@
+__pycache__/*
+
 project01/*
 project01_gcode/*
-__pycache__/*
 project02/*
+project02_gcode/*
+
+manufacture_svg/*
+manufacture_guides/*
+manufacture_gcode/*

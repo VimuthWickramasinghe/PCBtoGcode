@@ -1,0 +1,346 @@
+{
+  "$schema_version": "1.0.0",
+  "production_summary": {
+    "batch_name": "A4_PCB_PANEL_BATCH",
+    "total_sheets": 3,
+    "total_units": 12,
+    "sheet_dimensions_mm": {
+      "width": 210.0,
+      "height": 297.0
+    },
+    "cnc_bed_travel_mm": {
+      "x": 275.0,
+      "y": 170.0
+    },
+    "y_split_threshold_mm": 145.0,
+    "zero_gap_tight_packing": true,
+    "single_pass_perimeter_cut": true
+  },
+  "sheets": [
+    {
+      "sheet_number": 1,
+      "sheet_tag": "SHEET 01/03 | UNITS: 4 | MASK: GREEN",
+      "solder_mask_color": "green",
+      "unit_count": 4,
+      "units": [
+        {
+          "unit_id": "PCB-AC-01-001",
+          "project_name": "AirCooler",
+          "pcb_id": "PCB-AC-01",
+          "orientation_deg": 90,
+          "bounding_box_on_sheet": {
+            "x_min": 18.0,
+            "y_min": 8.0,
+            "x_max": 101.2,
+            "y_max": 132.2
+          },
+          "pcb_dimensions_mm": {
+            "width": 124.2,
+            "height": 78.2
+          },
+          "tag_strip": {
+            "width_mm": 5.0,
+            "attached_edge": "width",
+            "has_directional_arrow": true,
+            "has_mouse_bites": true
+          },
+          "half": "front",
+          "solder_mask_color": "green",
+          "drill_holes_count": 78
+        },
+        {
+          "unit_id": "PCB-AC-01-002",
+          "project_name": "AirCooler",
+          "pcb_id": "PCB-AC-01",
+          "orientation_deg": 90,
+          "bounding_box_on_sheet": {
+            "x_min": 101.2,
+            "y_min": 8.0,
+            "x_max": 184.4,
+            "y_max": 132.2
+          },
+          "pcb_dimensions_mm": {
+            "width": 124.2,
+            "height": 78.2
+          },
+          "tag_strip": {
+            "width_mm": 5.0,
+            "attached_edge": "width",
+            "has_directional_arrow": true,
+            "has_mouse_bites": true
+          },
+          "half": "front",
+          "solder_mask_color": "green",
+          "drill_holes_count": 78
+        },
+        {
+          "unit_id": "PCB-AC-01-003",
+          "project_name": "AirCooler",
+          "pcb_id": "PCB-AC-01",
+          "orientation_deg": 90,
+          "bounding_box_on_sheet": {
+            "x_min": 18.0,
+            "y_min": 150.0,
+            "x_max": 101.2,
+            "y_max": 274.2
+          },
+          "pcb_dimensions_mm": {
+            "width": 124.2,
+            "height": 78.2
+          },
+          "tag_strip": {
+            "width_mm": 5.0,
+            "attached_edge": "width",
+            "has_directional_arrow": true,
+            "has_mouse_bites": true
+          },
+          "half": "back",
+          "solder_mask_color": "green",
+          "drill_holes_count": 78
+        },
+        {
+          "unit_id": "PCB-AC-01-004",
+          "project_name": "AirCooler",
+          "pcb_id": "PCB-AC-01",
+          "orientation_deg": 90,
+          "bounding_box_on_sheet": {
+            "x_min": 101.2,
+            "y_min": 150.0,
+            "x_max": 184.4,
+            "y_max": 274.2
+          },
+          "pcb_dimensions_mm": {
+            "width": 124.2,
+            "height": 78.2
+          },
+          "tag_strip": {
+            "width_mm": 5.0,
+            "attached_edge": "width",
+            "has_directional_arrow": true,
+            "has_mouse_bites": true
+          },
+          "half": "back",
+          "solder_mask_color": "green",
+          "drill_holes_count": 78
+        }
+      ]
+    },
+    {
+      "sheet_number": 2,
+      "sheet_tag": "SHEET 02/03 | UNITS: 4 | MASK: GREEN",
+      "solder_mask_color": "green",
+      "unit_count": 4,
+      "units": [
+        {
+          "unit_id": "PCB-AC-01-005",
+          "project_name": "AirCooler",
+          "pcb_id": "PCB-AC-01",
+          "orientation_deg": 90,
+          "bounding_box_on_sheet": {
+            "x_min": 18.0,
+            "y_min": 8.0,
+            "x_max": 101.2,
+            "y_max": 132.2
+          },
+          "pcb_dimensions_mm": {
+            "width": 124.2,
+            "height": 78.2
+          },
+          "tag_strip": {
+            "width_mm": 5.0,
+            "attached_edge": "width",
+            "has_directional_arrow": true,
+            "has_mouse_bites": true
+          },
+          "half": "front",
+          "solder_mask_color": "green",
+          "drill_holes_count": 78
+        },
+        {
+          "unit_id": "PCB-AC-01-006",
+          "project_name": "AirCooler",
+          "pcb_id": "PCB-AC-01",
+          "orientation_deg": 90,
+          "bounding_box_on_sheet": {
+            "x_min": 101.2,
+            "y_min": 8.0,
+            "x_max": 184.4,
+            "y_max": 132.2
+          },
+          "pcb_dimensions_mm": {
+            "width": 124.2,
+            "height": 78.2
+          },
+          "tag_strip": {
+            "width_mm": 5.0,
+            "attached_edge": "width",
+            "has_directional_arrow": true,
+            "has_mouse_bites": true
+          },
+          "half": "front",
+          "solder_mask_color": "green",
+          "drill_holes_count": 78
+        },
+        {
+          "unit_id": "PCB-AC-01-007",
+          "project_name": "AirCooler",
+          "pcb_id": "PCB-AC-01",
+          "orientation_deg": 90,
+          "bounding_box_on_sheet": {
+            "x_min": 18.0,
+            "y_min": 150.0,
+            "x_max": 101.2,
+            "y_max": 274.2
+          },
+          "pcb_dimensions_mm": {
+            "width": 124.2,
+            "height": 78.2
+          },
+          "tag_strip": {
+            "width_mm": 5.0,
+            "attached_edge": "width",
+            "has_directional_arrow": true,
+            "has_mouse_bites": true
+          },
+          "half": "back",
+          "solder_mask_color": "green",
+          "drill_holes_count": 78
+        },
+        {
+          "unit_id": "PCB-AC-01-008",
+          "project_name": "AirCooler",
+          "pcb_id": "PCB-AC-01",
+          "orientation_deg": 90,
+          "bounding_box_on_sheet": {
+            "x_min": 101.2,
+            "y_min": 150.0,
+            "x_max": 184.4,
+            "y_max": 274.2
+          },
+          "pcb_dimensions_mm": {
+            "width": 124.2,
+            "height": 78.2
+          },
+          "tag_strip": {
+            "width_mm": 5.0,
+            "attached_edge": "width",
+            "has_directional_arrow": true,
+            "has_mouse_bites": true
+          },
+          "half": "back",
+          "solder_mask_color": "green",
+          "drill_holes_count": 78
+        }
+      ]
+    },
+    {
+      "sheet_number": 3,
+      "sheet_tag": "SHEET 03/03 | UNITS: 4 | MASK: GREEN",
+      "solder_mask_color": "green",
+      "unit_count": 4,
+      "units": [
+        {
+          "unit_id": "PCB-AC-01-009",
+          "project_name": "AirCooler",
+          "pcb_id": "PCB-AC-01",
+          "orientation_deg": 90,
+          "bounding_box_on_sheet": {
+            "x_min": 18.0,
+            "y_min": 8.0,
+            "x_max": 101.2,
+            "y_max": 132.2
+          },
+          "pcb_dimensions_mm": {
+            "width": 124.2,
+            "height": 78.2
+          },
+          "tag_strip": {
+            "width_mm": 5.0,
+            "attached_edge": "width",
+            "has_directional_arrow": true,
+            "has_mouse_bites": true
+          },
+          "half": "front",
+          "solder_mask_color": "green",
+          "drill_holes_count": 78
+        },
+        {
+          "unit_id": "PCB-AC-01-010",
+          "project_name": "AirCooler",
+          "pcb_id": "PCB-AC-01",
+          "orientation_deg": 90,
+          "bounding_box_on_sheet": {
+            "x_min": 101.2,
+            "y_min": 8.0,
+            "x_max": 184.4,
+            "y_max": 132.2
+          },
+          "pcb_dimensions_mm": {
+            "width": 124.2,
+            "height": 78.2
+          },
+          "tag_strip": {
+            "width_mm": 5.0,
+            "attached_edge": "width",
+            "has_directional_arrow": true,
+            "has_mouse_bites": true
+          },
+          "half": "front",
+          "solder_mask_color": "green",
+          "drill_holes_count": 78
+        },
+        {
+          "unit_id": "PCB-AC-02-001",
+          "project_name": "Board-01",
+          "pcb_id": "PCB-AC-02",
+          "orientation_deg": 90,
+          "bounding_box_on_sheet": {
+            "x_min": 18.0,
+            "y_min": 150.0,
+            "x_max": 79.25,
+            "y_max": 277.25
+          },
+          "pcb_dimensions_mm": {
+            "width": 127.25,
+            "height": 56.25
+          },
+          "tag_strip": {
+            "width_mm": 5.0,
+            "attached_edge": "width",
+            "has_directional_arrow": true,
+            "has_mouse_bites": true
+          },
+          "half": "back",
+          "solder_mask_color": "green",
+          "drill_holes_count": 71
+        },
+        {
+          "unit_id": "PCB-AC-02-002",
+          "project_name": "Board-01",
+          "pcb_id": "PCB-AC-02",
+          "orientation_deg": 90,
+          "bounding_box_on_sheet": {
+            "x_min": 79.25,
+            "y_min": 150.0,
+            "x_max": 140.5,
+            "y_max": 277.25
+          },
+          "pcb_dimensions_mm": {
+            "width": 127.25,
+            "height": 56.25
+          },
+          "tag_strip": {
+            "width_mm": 5.0,
+            "attached_edge": "width",
+            "has_directional_arrow": true,
+            "has_mouse_bites": true
+          },
+          "half": "back",
+          "solder_mask_color": "green",
+          "drill_holes_count": 71
+        }
+      ]
+    }
+  ],
+  "generated_files_count": 97
+}

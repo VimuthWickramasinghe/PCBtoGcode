@@ -4,6 +4,9 @@ Gerber and Excellon to G-Code Converter for CNC PCB Isolation Routing and Drilli
 Specialized for EasyEDA (and KiCad) PCB Project Exports.
 
 Features:
+- Tool Configuration: Automatically loads settings from tool_config.json or config.json.
+- Separate G-Code per Drill Bit: For every distinct hole diameter, a dedicated G-code file
+  and SVG preview are generated with the diameter in the filename (e.g., _drill_0.800mm.gcode).
 - RS-274X Gerber parser supporting 4:5 format (%FSLAX45Y45*%), millimeter units (%MOMM*%),
   standard apertures (C, R, O/Obround), and aperture macros with arithmetic expression evaluation.
 - Robust Excellon drill parser with automatic implicit decimal detection (e.g. METRIC,LZ,000.000 / 3:3)
@@ -13,9 +16,8 @@ Features:
   exactly to (0.0000, 0.0000) with configurable margin.
 - Automatic X-axis mirroring for bottom copper, bottom drilling, and mirrored cutout.
 - Board edge outline is engraved onto BOTH Front and Back copper passes at isolation depth (-0.04 mm).
-- Individual G-code and visual SVG previews generated for every single layer and drill file.
-- Unified deduplicated multi-tool drill file (Drill_Combined) with intelligent duplicate-hole removal
-  (e.g. deduplicating via holes shared between Drill_PTH_Through and Drill_PTH_Through_Via).
+- 1:1 SVG visual previews generated for every single G-code file produced.
+- Unified deduplicated multi-tool drill file (Drill_Combined) with duplicate-hole removal.
 - Multi-pass board cutout milling with step-down depth passes.
 - Standard G-code compatible with GRBL, Candle, UGS, FluidNC (MKS-DLC32), LinuxCNC, and Mach3.
 
@@ -23,8 +25,8 @@ Usage:
     # Process an entire EasyEDA project folder:
     python gerber_to_gcode_easyeda.py ./project02
 
-    # Process into a custom output folder:
-    python gerber_to_gcode_easyeda.py ./project02 ./my_output_gcode
+    # Process with custom config file:
+    python gerber_to_gcode_easyeda.py ./project02 --config ./tool_config.json
 
     # Convert a single Gerber or Drill file:
     python gerber_to_gcode_easyeda.py ./project02/Gerber_TopLayer.GTL output.gcode
@@ -36,11 +38,117 @@ import re
 import math
 import time
 import glob
+import json
 import argparse
 import shapely
 from shapely.geometry import Point, LineString, Polygon, MultiPolygon, box
 from shapely.ops import unary_union
 import shapely.affinity
+
+
+# -----------------------------------------------------------------------------
+# Configuration Loader
+# -----------------------------------------------------------------------------
+
+def load_tool_config(config_path=None, input_path=None, default_name="tool_config.json"):
+    """
+    Search for and load tooling configuration (tool_config.json / config.json).
+    Supports nested sections (isolation, drilling, slot_milling, cutout, general)
+    and direct flat key-value pairs.
+    """
+    candidates = []
+    if config_path:
+        candidates.append(config_path)
+
+    if input_path and os.path.isdir(input_path):
+        candidates.extend([
+            os.path.join(input_path, default_name),
+            os.path.join(input_path, "tool_config.json"),
+            os.path.join(input_path, "config.json"),
+        ])
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates.extend([
+        os.path.join(os.getcwd(), default_name),
+        os.path.join(os.getcwd(), "tool_config.json"),
+        os.path.join(os.getcwd(), "config.json"),
+        os.path.join(script_dir, default_name),
+        os.path.join(script_dir, "tool_config.json"),
+        os.path.join(script_dir, "config.json"),
+    ])
+
+    config_file = None
+    for c in candidates:
+        if c and os.path.isfile(c) and os.path.getsize(c) > 0:
+            config_file = os.path.abspath(c)
+            break
+
+    if not config_file:
+        return {}, None
+
+    try:
+        with open(config_file, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except Exception as e:
+        print(f"Warning: Could not read config file '{config_file}': {e}", file=sys.stderr)
+        return {}, None
+
+    params = {}
+    # 1. Isolation section
+    iso = raw.get("isolation", {})
+    if isinstance(iso, dict):
+        if "tool_dia" in iso: params["tool_dia"] = float(iso["tool_dia"])
+        if "cut_depth" in iso: params["cut_depth"] = float(iso["cut_depth"])
+        if "feed_rate" in iso: params["feed_rate"] = float(iso["feed_rate"])
+        if "plunge_rate" in iso: params["plunge_rate"] = float(iso["plunge_rate"])
+        if "spindle_speed" in iso: params["spindle_speed"] = int(iso["spindle_speed"])
+        if "passes" in iso: params["passes"] = int(iso["passes"])
+        if "stepover" in iso: params["stepover"] = float(iso["stepover"])
+        if "safe_z" in iso: params["safe_z"] = float(iso["safe_z"])
+        if "engrave_edge" in iso: params["no_engrave_edge"] = not bool(iso["engrave_edge"])
+
+    # 2. Drilling section
+    drl = raw.get("drilling", {})
+    if isinstance(drl, dict):
+        if "drill_depth" in drl: params["drill_depth"] = float(drl["drill_depth"])
+        if "drill_feed" in drl: params["drill_feed"] = float(drl["drill_feed"])
+        if "tool_change_z" in drl: params["tool_change_z"] = float(drl["tool_change_z"])
+        if "spindle_speed" in drl: params["drill_spindle_speed"] = int(drl["spindle_speed"])
+        if "safe_z" in drl and "safe_z" not in params: params["safe_z"] = float(drl["safe_z"])
+
+    # 3. Slot milling section
+    sm = raw.get("slot_milling", {}) or raw.get("milling", {})
+    if isinstance(sm, dict):
+        if "tool_dia" in sm: params["slot_milling_tool_dia"] = float(sm["tool_dia"])
+        if "cut_depth" in sm: params["slot_milling_depth"] = float(sm["cut_depth"])
+        if "feed_rate" in sm: params["slot_milling_feed"] = float(sm["feed_rate"])
+        if "plunge_rate" in sm: params["slot_milling_plunge"] = float(sm["plunge_rate"])
+        if "safe_z" in sm: params["slot_milling_safe_z"] = float(sm["safe_z"])
+        if "spindle_speed" in sm: params["slot_milling_spindle_speed"] = int(sm["spindle_speed"])
+        if "passes" in sm: params["slot_milling_passes"] = int(sm["passes"])
+
+    # 4. Cutout section
+    cut = raw.get("cutout", {})
+    if isinstance(cut, dict):
+        if "tool_dia" in cut: params["cutout_tool_dia"] = float(cut["tool_dia"])
+        if "cutout_tool_dia" in cut: params["cutout_tool_dia"] = float(cut["cutout_tool_dia"])
+        if "cutout_depth" in cut: params["cutout_depth"] = float(cut["cutout_depth"])
+        if "cutout_passes" in cut: params["cutout_passes"] = int(cut["cutout_passes"])
+        if "cutout_feed" in cut: params["cutout_feed"] = float(cut["cutout_feed"])
+        if "plunge_rate" in cut: params["cutout_plunge_rate"] = float(cut["plunge_rate"])
+        if "spindle_speed" in cut: params["cutout_spindle_speed"] = int(cut["spindle_speed"])
+
+    # 5. General section
+    gen = raw.get("general", {})
+    if isinstance(gen, dict):
+        if "margin" in gen: params["margin"] = float(gen["margin"])
+
+    # 6. Flat overrides (if any top-level keys are provided)
+    for k, v in raw.items():
+        if k not in ("isolation", "drilling", "slot_milling", "milling", "cutout", "general") and not isinstance(v, dict):
+            params[k] = v
+
+    return params, config_file
 
 
 # -----------------------------------------------------------------------------
@@ -137,13 +245,11 @@ class GerberParser:
 
             p_code = int(eval_macro_expr(parts[0], params))
             if p_code == 1:
-                # Circle: 1, exposure, dia, cx, cy
                 dia = eval_macro_expr(parts[2], params) * self.unit_scale
                 cx = eval_macro_expr(parts[3], params) * self.unit_scale
                 cy = eval_macro_expr(parts[4], params) * self.unit_scale
                 shapes.append(Point(cx, cy).buffer(dia / 2.0))
             elif p_code in (2, 20):
-                # Vector line: 2/20, exposure, width, sx, sy, ex, ey, rot
                 w = eval_macro_expr(parts[2], params) * self.unit_scale
                 sx = eval_macro_expr(parts[3], params) * self.unit_scale
                 sy = eval_macro_expr(parts[4], params) * self.unit_scale
@@ -151,7 +257,6 @@ class GerberParser:
                 ey = eval_macro_expr(parts[6], params) * self.unit_scale
                 shapes.append(LineString([(sx, sy), (ex, ey)]).buffer(w / 2.0, cap_style=2))
             elif p_code == 21:
-                # Center rectangle: 21, exposure, w, h, cx, cy, rot
                 w = eval_macro_expr(parts[2], params) * self.unit_scale
                 h = eval_macro_expr(parts[3], params) * self.unit_scale
                 cx = eval_macro_expr(parts[4], params) * self.unit_scale
@@ -163,7 +268,6 @@ class GerberParser:
                         rect = shapely.affinity.rotate(rect, rot, origin=(cx, cy))
                 shapes.append(rect)
             elif p_code == 4:
-                # Outline polygon: 4, exposure, num_pts, x1, y1, x2, y2, ..., rot
                 n_pts = int(eval_macro_expr(parts[2], params))
                 poly_pts = []
                 idx = 3
@@ -234,7 +338,6 @@ class GerberParser:
                             h = float(p_parts[1]) * self.unit_scale
                             self.apertures[d_code] = ("R", (w, h))
                         elif ap_type == "O":
-                            # Obround aperture: width X height
                             p_parts = ap_params.split("X")
                             w = float(p_parts[0]) * self.unit_scale
                             h = float(p_parts[1]) * self.unit_scale
@@ -808,11 +911,34 @@ class GcodeWriter:
         }
 
 
+def generate_slot_drill_points(sx1, sy1, sx2, sy2, dia):
+    """
+    Computes pure vertical plunge drill coordinates along a slot centerline.
+    No lateral feed is performed with the drill bit, preventing bit breakage.
+    Peck/chain drilling with overlap (spacing ~ 0.5 * dia).
+    """
+    dx = sx2 - sx1
+    dy = sy2 - sy1
+    length = math.hypot(dx, dy)
+    if length < 1e-4:
+        return [(sx1, sy1)]
+    step = max(dia * 0.5, 0.2)
+    num_steps = max(1, int(math.ceil(length / step)))
+    points = []
+    for i in range(num_steps + 1):
+        t = i / float(num_steps)
+        px = sx1 + t * dx
+        py = sy1 + t * dy
+        points.append((px, py))
+    return points
+
+
 class DrillGcodeWriter:
+    """Writes standard CNC drilling G-code (both single drill bit and multi-tool programs)."""
     def __init__(self, output_path, master_bounds, drill_data=None, tools=None, holes=None, slots=None,
                  drill_depth=-1.8, drill_feed=150.0, safe_z=5.0, tool_change_z=20.0,
                  spindle_speed=10000, mirror_x=False, margin=0.0,
-                 source_filename=""):
+                 source_filename="", single_dia=None):
         self.output_path = output_path
         self.master_bounds = master_bounds
         if drill_data is not None:
@@ -831,7 +957,11 @@ class DrillGcodeWriter:
         self.mirror_x = mirror_x
         self.margin = margin
         self.source_filename = source_filename
+        self.single_dia = single_dia
         self.transformed_by_tool = {}
+        self.transformed_holes = []
+        self.transformed_slots = []
+        self.slot_drill_points = []
 
     def _sort_holes(self, holes, start_pos=(0.0, 0.0)):
         unvisited = list(holes)
@@ -848,61 +978,310 @@ class DrillGcodeWriter:
                     best_dist_sq = d_sq
                     best_idx = i
             total_rapid += math.sqrt(best_dist_sq)
-            nxt = unvisited.pop(best_idx)
-            sorted_holes.append(nxt)
-            cur_x, cur_y = nxt
+            hx, hy = unvisited.pop(best_idx)
+            sorted_holes.append((hx, hy))
+            cur_x, cur_y = hx, hy
 
         return sorted_holes, total_rapid
 
     def write(self):
-        for t_id in self.tools:
-            self.transformed_by_tool[t_id] = {"holes": [], "slots": []}
-
-        for t_id, raw_x, raw_y in self.holes:
-            tx, ty = transform_coords(raw_x, raw_y, self.master_bounds, self.margin, self.mirror_x)
-            if t_id not in self.transformed_by_tool:
-                self.transformed_by_tool[t_id] = {"holes": [], "slots": []}
-            self.transformed_by_tool[t_id]["holes"].append((tx, ty))
-
-        for t_id, x1, y1, x2, y2 in self.slots:
-            tx1, ty1 = transform_coords(x1, y1, self.master_bounds, self.margin, self.mirror_x)
-            tx2, ty2 = transform_coords(x2, y2, self.master_bounds, self.margin, self.mirror_x)
-            if t_id not in self.transformed_by_tool:
-                self.transformed_by_tool[t_id] = {"holes": [], "slots": []}
-            self.transformed_by_tool[t_id]["slots"].append((tx1, ty1, tx2, ty2))
-
-        total_holes = sum(len(d["holes"]) for d in self.transformed_by_tool.values())
-        total_slots = sum(len(d["slots"]) for d in self.transformed_by_tool.values())
-        total_rapid_dist = 0.0
-
         minx, miny, maxx, maxy = self.master_bounds
         width = maxx - minx
         height = maxy - miny
 
+        if self.single_dia is not None:
+            # Dedicated Single Drill Bit Mode (No in-job tool swaps)
+            raw_holes = []
+            for t_id, raw_x, raw_y in self.holes:
+                t_dia = self.tools.get(t_id, self.single_dia)
+                if abs(t_dia - self.single_dia) < 1e-4:
+                    tx, ty = transform_coords(raw_x, raw_y, self.master_bounds, self.margin, self.mirror_x)
+                    raw_holes.append((tx, ty))
+
+            raw_slots = []
+            for t_id, x1, y1, x2, y2 in self.slots:
+                t_dia = self.tools.get(t_id, self.single_dia)
+                if abs(t_dia - self.single_dia) < 1e-4:
+                    tx1, ty1 = transform_coords(x1, y1, self.master_bounds, self.margin, self.mirror_x)
+                    tx2, ty2 = transform_coords(x2, y2, self.master_bounds, self.margin, self.mirror_x)
+                    raw_slots.append((tx1, ty1, tx2, ty2))
+
+            sorted_holes, total_rapid = self._sort_holes(raw_holes, start_pos=(0.0, 0.0))
+            self.transformed_holes = sorted_holes
+            self.transformed_slots = raw_slots
+
+            total_holes = len(sorted_holes)
+            total_slots = len(raw_slots)
+
+            lines = [
+                "( ========================================================== )",
+                "(  Generated by Gerber2GCode - Single Drill Bit Program      )",
+                f"(  Source File      : {self.source_filename} )",
+                f"(  Drill Bit Dia    : {self.single_dia:.3f} mm )",
+                f"(  Date             : {time.strftime('%Y-%m-%d %H:%M:%S')} )",
+                f"(  Total Holes      : {total_holes} )",
+                f"(  Total Slots      : {total_slots} )",
+                f"(  Drill Depth      : {self.drill_depth:.4f} mm )",
+                f"(  Drill Plunge Feed: {self.drill_feed:.1f} mm/min )",
+                f"(  Safe Height (Z)  : {self.safe_z:.2f} mm )",
+                f"(  Spindle Speed    : {self.spindle_speed} RPM )",
+                f"(  Mirrored X       : {'YES (Bottom-Side Drilling)' if self.mirror_x else 'NO (Top-Side Drilling)'} )",
+                f"(  Board Dimensions : {width:.2f} mm x {height:.2f} mm )",
+                "( ========================================================== )",
+                "",
+                "G21          (Units in Millimeters)",
+                "G90          (Absolute Coordinates)",
+                "G94          (Feed Rate per Minute)",
+                "G17          (XY Work Plane Selection)",
+                f"G00 Z{self.safe_z:.4f} (Rapid to Safe Z)",
+                f"M03 S{self.spindle_speed} (Spindle Start CW)",
+                "G04 P2.0     (Dwell 2.0s for Spindle Ramp-Up)",
+                "",
+                f"( --- Drilling {total_holes} holes with Dia {self.single_dia:.3f} mm --- )"
+            ]
+
+            cur_pos = (0.0, 0.0)
+            for hx, hy in sorted_holes:
+                lines.append(f"G00 X{hx:.4f} Y{hy:.4f}")
+                lines.append(f"G01 Z{self.drill_depth:.4f} F{self.drill_feed:.1f}")
+                lines.append(f"G00 Z{self.safe_z:.4f}")
+                cur_pos = (hx, hy)
+
+            slot_pre_drill_pts = []
+            if raw_slots:
+                lines.append(f"( --- Pre-Drilling Relief Holes for {len(raw_slots)} Slots/Non-Circular Holes --- )")
+                lines.append("( NOTE: Pure vertical plunges. Clean slot finish routed with endmill in slot_milling program )")
+                for s_idx, (sx1, sy1, sx2, sy2) in enumerate(raw_slots, 1):
+                    lines.append(f"( Slot {s_idx} Pre-Drill Plunges )")
+                    pts = generate_slot_drill_points(sx1, sy1, sx2, sy2, self.single_dia or 0.8)
+                    for px, py in pts:
+                        lines.append(f"G00 X{px:.4f} Y{py:.4f}")
+                        lines.append(f"G01 Z{self.drill_depth:.4f} F{self.drill_feed:.1f}")
+                        lines.append(f"G00 Z{self.safe_z:.4f}")
+                        slot_pre_drill_pts.append((px, py))
+                        cur_pos = (px, py)
+            self.slot_drill_points = slot_pre_drill_pts
+
+            lines.extend([
+                "",
+                "( --- Drilling Completed --- )",
+                f"G00 Z{self.safe_z:.4f}",
+                "M05          (Spindle Stop)",
+                "G00 X0.0000 Y0.0000 (Return to Workpiece Origin)",
+                "M02          (End of Program)"
+            ])
+
+            with open(self.output_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+
+            est_time_min = (
+                (total_holes * 2.0 * (self.safe_z - self.drill_depth) / self.drill_feed) +
+                (total_rapid / 1000.0) +
+                0.2
+            )
+
+            return {
+                "total_holes": total_holes,
+                "total_slots": total_slots,
+                "rapid_dist_mm": total_rapid,
+                "est_time_min": est_time_min
+            }
+
+        else:
+            # Multi-Tool Program with M00 Pauses
+            self.transformed_by_tool = {}
+            for t_id in self.tools:
+                self.transformed_by_tool[t_id] = {"holes": [], "slots": []}
+
+            for t_id, raw_x, raw_y in self.holes:
+                tx, ty = transform_coords(raw_x, raw_y, self.master_bounds, self.margin, self.mirror_x)
+                if t_id not in self.transformed_by_tool:
+                    self.transformed_by_tool[t_id] = {"holes": [], "slots": []}
+                self.transformed_by_tool[t_id]["holes"].append((tx, ty))
+
+            for t_id, x1, y1, x2, y2 in self.slots:
+                tx1, ty1 = transform_coords(x1, y1, self.master_bounds, self.margin, self.mirror_x)
+                tx2, ty2 = transform_coords(x2, y2, self.master_bounds, self.margin, self.mirror_x)
+                if t_id not in self.transformed_by_tool:
+                    self.transformed_by_tool[t_id] = {"holes": [], "slots": []}
+                self.transformed_by_tool[t_id]["slots"].append((tx1, ty1, tx2, ty2))
+
+            total_holes = sum(len(d["holes"]) for d in self.transformed_by_tool.values())
+            total_slots = sum(len(d["slots"]) for d in self.transformed_by_tool.values())
+            total_rapid_dist = 0.0
+
+            lines = [
+                "( ========================================================== )",
+                "(  Generated by Gerber2GCode - Multi-Tool Drilling Program   )",
+                f"(  Source File      : {self.source_filename} )",
+                f"(  Date             : {time.strftime('%Y-%m-%d %H:%M:%S')} )",
+                f"(  Drill Depth      : {self.drill_depth:.4f} mm )",
+                f"(  Drill Plunge Feed: {self.drill_feed:.1f} mm/min )",
+                f"(  Safe Height (Z)  : {self.safe_z:.2f} mm )",
+                f"(  Tool Change Z    : {self.tool_change_z:.2f} mm )",
+                f"(  Spindle Speed    : {self.spindle_speed} RPM )",
+                f"(  Mirrored X       : {'YES (Bottom-Side Drilling)' if self.mirror_x else 'NO (Top-Side Drilling)'} )",
+                f"(  Board Dimensions : {width:.2f} mm x {height:.2f} mm )",
+                f"(  Total Holes      : {total_holes} )",
+                f"(  Total Slots      : {total_slots} )",
+                "(  Tool Table:                                               )"
+            ]
+
+            for t_id in sorted(self.tools.keys()):
+                dia = self.tools[t_id]
+                h_cnt = len(self.transformed_by_tool.get(t_id, {}).get("holes", []))
+                s_cnt = len(self.transformed_by_tool.get(t_id, {}).get("slots", []))
+                lines.append(f"(    T{t_id:02d}: Dia {dia:6.3f} mm -> {h_cnt} holes, {s_cnt} slots )")
+
+            lines.extend([
+                "( ========================================================== )",
+                "",
+                "G21          (Units in Millimeters)",
+                "G90          (Absolute Coordinates)",
+                "G94          (Feed Rate per Minute)",
+                "G17          (XY Work Plane Selection)",
+                f"G00 Z{self.safe_z:.4f} (Rapid to Safe Z)",
+                ""
+            ])
+
+            cur_pos = (0.0, 0.0)
+            for t_id in sorted(self.tools.keys()):
+                tool_data = self.transformed_by_tool.get(t_id, {})
+                t_holes = tool_data.get("holes", [])
+                t_slots = tool_data.get("slots", [])
+                if not t_holes and not t_slots:
+                    continue
+
+                dia = self.tools[t_id]
+                lines.extend([
+                    f"( ------------------------------------------------------------- )",
+                    f"(  TOOL CHANGE: T{t_id} - Diameter: {dia:.3f} mm ({len(t_holes)} holes, {len(t_slots)} slots)  )",
+                    f"( ------------------------------------------------------------- )",
+                    "M05          (Spindle Stop for Tool Change)",
+                    f"G00 Z{self.tool_change_z:.4f} (Retract to Tool Change Height)",
+                    f"M00 (MSG, Insert Drill Bit T{t_id} Dia {dia:.3f}mm, Zero Z, Resume)",
+                    f"M03 S{self.spindle_speed} (Spindle Start CW)",
+                    "G04 P2.0     (Dwell 2.0s for Spindle Ramp-Up)",
+                    ""
+                ])
+
+                sorted_holes, rapid = self._sort_holes(t_holes, start_pos=cur_pos)
+                total_rapid_dist += rapid
+
+                for hx, hy in sorted_holes:
+                    lines.append(f"G00 X{hx:.4f} Y{hy:.4f}")
+                    lines.append(f"G01 Z{self.drill_depth:.4f} F{self.drill_feed:.1f}")
+                    lines.append(f"G00 Z{self.safe_z:.4f}")
+                    cur_pos = (hx, hy)
+
+                if t_slots:
+                    lines.append(f"( --- Pre-Drilling Relief Holes for {len(t_slots)} Slots with Dia {dia:.3f} mm --- )")
+                    for s_idx, (sx1, sy1, sx2, sy2) in enumerate(t_slots, 1):
+                        lines.append(f"( Slot {s_idx} Pre-Drill Plunges )")
+                        pts = generate_slot_drill_points(sx1, sy1, sx2, sy2, dia)
+                        for px, py in pts:
+                            lines.append(f"G00 X{px:.4f} Y{py:.4f}")
+                            lines.append(f"G01 Z{self.drill_depth:.4f} F{self.drill_feed:.1f}")
+                            lines.append(f"G00 Z{self.safe_z:.4f}")
+                            cur_pos = (px, py)
+
+                lines.append("")
+
+            lines.extend([
+                "( --- Drilling Completed --- )",
+                f"G00 Z{self.tool_change_z:.4f}",
+                "M05          (Spindle Stop)",
+                "G00 X0.0000 Y0.0000 (Return to Workpiece Origin)",
+                "M02          (End of Program)"
+            ])
+
+            with open(self.output_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+
+            est_time_min = (
+                (total_holes * 2.0 * (self.safe_z - self.drill_depth) / self.drill_feed) +
+                (total_rapid_dist / 1000.0) +
+                (len([t for t in self.tools if self.transformed_by_tool.get(t, {}).get("holes")]) * 0.5)
+            )
+
+            return {
+                "total_holes": total_holes,
+                "total_slots": total_slots,
+                "rapid_dist_mm": total_rapid_dist,
+                "est_time_min": est_time_min
+            }
+
+
+class SlotMillingGcodeWriter:
+    """
+    Writes G-code for milling non-circular holes (slots) cleanly using an endmill/milling bit.
+    Drill bits must only plunge vertically; this writer provides the subsequent milling operation with an
+    endmill that can safely handle lateral cutting and multi-pass stepdown along the slot.
+    """
+    def __init__(self, output_path, master_bounds, slots, slot_dia=None,
+                 tool_dia=None, cut_depth=-1.8, feed_rate=200.0, plunge_rate=80.0,
+                 passes=2, safe_z=5.0, spindle_speed=10000, mirror_x=False, margin=0.0,
+                 source_filename=""):
+        self.output_path = output_path
+        self.master_bounds = master_bounds
+        self.slots = slots
+        self.slot_dia = slot_dia
+        self.tool_dia = tool_dia if tool_dia is not None else (slot_dia or 1.0)
+        self.cut_depth = cut_depth
+        self.feed_rate = feed_rate
+        self.plunge_rate = plunge_rate
+        self.passes = max(1, int(passes))
+        self.safe_z = safe_z
+        self.spindle_speed = spindle_speed
+        self.mirror_x = mirror_x
+        self.margin = margin
+        self.source_filename = source_filename
+        self.transformed_slots = []
+
+    def write(self):
+        minx, miny, maxx, maxy = self.master_bounds
+        width = maxx - minx
+        height = maxy - miny
+
+        raw_slots = []
+        for s in self.slots:
+            if len(s) == 5:
+                if isinstance(s[0], int) and isinstance(s[1], (float, int)):
+                    _, x1, y1, x2, y2 = s
+                    s_dia = self.slot_dia or 0.8
+                else:
+                    x1, y1, x2, y2, s_dia = s
+            elif len(s) == 4:
+                x1, y1, x2, y2 = s
+                s_dia = self.slot_dia or 0.8
+            else:
+                continue
+            tx1, ty1 = transform_coords(x1, y1, self.master_bounds, self.margin, self.mirror_x)
+            tx2, ty2 = transform_coords(x2, y2, self.master_bounds, self.margin, self.mirror_x)
+            raw_slots.append((tx1, ty1, tx2, ty2, s_dia))
+
+        self.transformed_slots = raw_slots
+        total_slots = len(raw_slots)
+
+        step_z = abs(self.cut_depth) / float(self.passes)
+        depths = [-step_z * p for p in range(1, self.passes + 1)]
+
         lines = [
             "( ========================================================== )",
-            "(  Generated by Gerber2GCode - EasyEDA PCB Drilling Router  )",
+            "(  Generated by Gerber2GCode - Clean Slot Milling Program    )",
             f"(  Source File      : {self.source_filename} )",
+            f"(  Target Slot Dia  : {self.slot_dia:.3f} mm )" if self.slot_dia else "(  Target Slots     : Multi-size )",
+            f"(  Milling Tool Dia : {self.tool_dia:.3f} mm (Endmill) )",
             f"(  Date             : {time.strftime('%Y-%m-%d %H:%M:%S')} )",
-            f"(  Drill Depth      : {self.drill_depth:.4f} mm )",
-            f"(  Drill Plunge Feed: {self.drill_feed:.1f} mm/min )",
-            f"(  Safe Height (Z)  : {self.safe_z:.2f} mm )",
-            f"(  Tool Change Z    : {self.tool_change_z:.2f} mm )",
-            f"(  Spindle Speed    : {self.spindle_speed} RPM )",
-            f"(  Mirrored X       : {'YES (Bottom-Side Drilling)' if self.mirror_x else 'NO (Top-Side Drilling)'} )",
-            f"(  Board Dimensions : {width:.2f} mm x {height:.2f} mm )",
-            f"(  Total Holes      : {total_holes} )",
             f"(  Total Slots      : {total_slots} )",
-            "(  Tool Table:                                               )"
-        ]
-
-        for t_id in sorted(self.tools.keys()):
-            dia = self.tools[t_id]
-            h_cnt = len(self.transformed_by_tool.get(t_id, {}).get("holes", []))
-            s_cnt = len(self.transformed_by_tool.get(t_id, {}).get("slots", []))
-            lines.append(f"(    T{t_id:02d}: Dia {dia:6.3f} mm -> {h_cnt} holes, {s_cnt} slots )")
-
-        lines.extend([
+            f"(  Milling Depth    : {self.cut_depth:.4f} mm )",
+            f"(  Passes (Stepdown): {self.passes} (Step: {step_z:.4f} mm) )",
+            f"(  Milling Feed Rate: {self.feed_rate:.1f} mm/min )",
+            f"(  Plunge Feed Rate : {self.plunge_rate:.1f} mm/min )",
+            f"(  Safe Height (Z)  : {self.safe_z:.2f} mm )",
+            f"(  Spindle Speed    : {self.spindle_speed} RPM )",
+            f"(  Mirrored X       : {'YES (Bottom-Side Milling)' if self.mirror_x else 'NO (Top-Side Milling)'} )",
+            f"(  Board Dimensions : {width:.2f} mm x {height:.2f} mm )",
             "( ========================================================== )",
             "",
             "G21          (Units in Millimeters)",
@@ -910,52 +1289,34 @@ class DrillGcodeWriter:
             "G94          (Feed Rate per Minute)",
             "G17          (XY Work Plane Selection)",
             f"G00 Z{self.safe_z:.4f} (Rapid to Safe Z)",
+            f"M03 S{self.spindle_speed} (Spindle Start CW)",
+            "G04 P2.0     (Dwell 2.0s for Spindle Ramp-Up)",
             ""
-        ])
+        ]
 
+        total_cut_dist = 0.0
+        total_rapid = 0.0
         cur_pos = (0.0, 0.0)
-        for t_id in sorted(self.tools.keys()):
-            tool_data = self.transformed_by_tool.get(t_id, {})
-            t_holes = tool_data.get("holes", [])
-            t_slots = tool_data.get("slots", [])
-            if not t_holes and not t_slots:
-                continue
 
-            dia = self.tools[t_id]
-            lines.extend([
-                f"( ------------------------------------------------------------- )",
-                f"(  TOOL CHANGE: T{t_id} - Diameter: {dia:.3f} mm ({len(t_holes)} holes, {len(t_slots)} slots)  )",
-                f"( ------------------------------------------------------------- )",
-                "M05          (Spindle Stop for Tool Change)",
-                f"G00 Z{self.tool_change_z:.4f} (Retract to Tool Change Height)",
-                f"M00 (MSG, Insert Drill Bit T{t_id} Dia {dia:.3f}mm, Zero Z, Resume)",
-                f"M03 S{self.spindle_speed} (Spindle Start CW)",
-                "G04 P2.0     (Dwell 2.0s for Spindle Ramp-Up)",
-                ""
-            ])
+        for s_idx, (sx1, sy1, sx2, sy2, s_dia) in enumerate(raw_slots, 1):
+            s_len = math.hypot(sx2 - sx1, sy2 - sy1)
+            lines.append(f"( --- Slot {s_idx}/{total_slots}: Length={s_len:.3f}mm, Width={s_dia:.3f}mm --- )")
+            total_rapid += math.hypot(sx1 - cur_pos[0], sy1 - cur_pos[1])
+            lines.append(f"G00 X{sx1:.4f} Y{sy1:.4f}")
 
-            sorted_holes, rapid = self._sort_holes(t_holes, start_pos=cur_pos)
-            total_rapid_dist += rapid
+            for p_idx, z in enumerate(depths, 1):
+                lines.append(f"G01 Z{z:.4f} F{self.plunge_rate:.1f}  (Pass {p_idx}/{self.passes})")
+                lines.append(f"G01 X{sx2:.4f} Y{sy2:.4f} F{self.feed_rate:.1f}")
+                lines.append(f"G01 X{sx1:.4f} Y{sy1:.4f} F{self.feed_rate:.1f}  (Clean return pass)")
+                total_cut_dist += 2.0 * s_len
 
-            for hx, hy in sorted_holes:
-                lines.append(f"G00 X{hx:.4f} Y{hy:.4f}")
-                lines.append(f"G01 Z{self.drill_depth:.4f} F{self.drill_feed:.1f}")
-                lines.append(f"G00 Z{self.safe_z:.4f}")
-                cur_pos = (hx, hy)
-
-            for s_idx, (sx1, sy1, sx2, sy2) in enumerate(t_slots, 1):
-                lines.append(f"( Slot {s_idx} )")
-                lines.append(f"G00 X{sx1:.4f} Y{sy1:.4f}")
-                lines.append(f"G01 Z{self.drill_depth:.4f} F{self.drill_feed:.1f}")
-                lines.append(f"G01 X{sx2:.4f} Y{sy2:.4f} F{self.drill_feed * 0.8:.1f}")
-                lines.append(f"G00 Z{self.safe_z:.4f}")
-                cur_pos = (sx2, sy2)
-
-            lines.append("")
+            lines.append(f"G00 Z{self.safe_z:.4f}")
+            cur_pos = (sx1, sy1)
 
         lines.extend([
-            "( --- Drilling Completed --- )",
-            f"G00 Z{self.tool_change_z:.4f}",
+            "",
+            "( --- Slot Milling Completed --- )",
+            f"G00 Z{self.safe_z:.4f}",
             "M05          (Spindle Stop)",
             "G00 X0.0000 Y0.0000 (Return to Workpiece Origin)",
             "M02          (End of Program)"
@@ -964,16 +1325,10 @@ class DrillGcodeWriter:
         with open(self.output_path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
 
-        est_time_min = (
-            (total_holes * 2.0 * (self.safe_z - self.drill_depth) / self.drill_feed) +
-            (total_rapid_dist / 1000.0) +
-            (len([t for t in self.tools if self.transformed_by_tool.get(t, {}).get("holes")]) * 0.5)
-        )
-
+        est_time_min = (total_cut_dist / self.feed_rate) + (total_slots * self.passes * 2.0 * (self.safe_z - self.cut_depth) / self.plunge_rate) + (total_rapid / 1000.0) + 0.2
         return {
-            "total_holes": total_holes,
             "total_slots": total_slots,
-            "rapid_dist_mm": total_rapid_dist,
+            "cut_dist_mm": total_cut_dist,
             "est_time_min": est_time_min
         }
 
@@ -1133,9 +1488,20 @@ def export_svg_preview(svg_path, master_bounds, margin=0.0, title="",
             svg.append(f'  <path d="{d}" fill="none" stroke="#facc15" stroke-width="0.4" stroke-dasharray="2,1" opacity="0.95" />')
             svg.append(f'  <circle cx="{el[0][0]:.3f}" cy="{-el[0][1]:.3f}" r="0.3" fill="#facc15" />')
 
+    # Non-Circular Holes / Slots
     if slots:
-        for sx1, sy1, sx2, sy2, dia in slots:
-            svg.append(f'  <line x1="{sx1:.3f}" y1="{-sy1:.3f}" x2="{sx2:.3f}" y2="{-sy2:.3f}" stroke="#38bdf8" stroke-width="{dia:.3f}" stroke-linecap="round" />')
+        for s in slots:
+            if len(s) == 5:
+                sx1, sy1, sx2, sy2, s_dia = s
+            else:
+                sx1, sy1, sx2, sy2 = s[:4]
+                s_dia = 0.8
+            # Outer slot capsule
+            svg.append(f'  <line x1="{sx1:.3f}" y1="{-sy1:.3f}" x2="{sx2:.3f}" y2="{-sy2:.3f}" stroke="#ec4899" stroke-width="{s_dia:.3f}" stroke-linecap="round" opacity="0.85" />')
+            # Centerline milling toolpath
+            svg.append(f'  <line x1="{sx1:.3f}" y1="{-sy1:.3f}" x2="{sx2:.3f}" y2="{-sy2:.3f}" stroke="#38bdf8" stroke-width="0.25" stroke-linecap="round" />')
+            svg.append(f'  <circle cx="{sx1:.3f}" cy="{-sy1:.3f}" r="0.15" fill="#ffffff" />')
+            svg.append(f'  <circle cx="{sx2:.3f}" cy="{-sy2:.3f}" r="0.15" fill="#ffffff" />')
 
     if holes:
         for hx, hy, dia in holes:
@@ -1209,6 +1575,13 @@ def detect_layer_type(filename):
 def process_folder(input_folder, output_folder, args):
     """Process an entire EasyEDA project folder and generate individual aligned G-code and SVG files."""
     os.makedirs(output_folder, exist_ok=True)
+    # Clean up any existing gcode and svg in the output folder to avoid stale/duplicate files
+    for old_f in glob.glob(os.path.join(output_folder, "*.gcode")) + glob.glob(os.path.join(output_folder, "*.svg")):
+        try:
+            os.remove(old_f)
+        except OSError:
+            pass
+
     files = sorted(glob.glob(os.path.join(input_folder, "*")))
 
     categorized = {
@@ -1233,6 +1606,8 @@ def process_folder(input_folder, output_folder, args):
     print("==========================================================")
     print(f" Source Project : {input_folder}")
     print(f" Target G-Code  : {output_folder}")
+    if getattr(args, "loaded_config_file", None):
+        print(f" Tool Config    : {args.loaded_config_file}")
     print(f" Tool Dia (Cut) : {args.tool_dia:.3f} mm")
     print(f" Cut Depth (Cu) : {args.cut_depth:.4f} mm")
     print(f" Drill Depth    : {args.drill_depth:.4f} mm")
@@ -1404,99 +1779,11 @@ def process_folder(input_folder, output_folder, args):
         op_desc = "Isolation + Edge Engrave (Top)" if engrave_loops else "Isolation (Top)"
         results.append((f"{bname}.gcode", op_desc, stats["contours"], stats["cut_dist_mm"], stats["est_time_min"]))
 
-    # 4. Process Individual Drill Files (Top & Bottom Mirrored)
-    for df in categorized["drill"]:
-        bname = os.path.splitext(os.path.basename(df))[0]
-        print(f"\n[Layer] Drill File: {os.path.basename(df)}")
-        dp = ExcellonParser(df)
-        ddata = dp.parse()
+    # 4. Process Drill Files (Unified Deduplicated Programs per Bit Diameter)
 
-        # Top view drilling
-        out_gcode_top = os.path.join(output_folder, f"{bname}.gcode")
-        out_svg_top = os.path.join(output_folder, f"{bname}.svg")
-        dw_top = DrillGcodeWriter(
-            output_path=out_gcode_top,
-            master_bounds=master_bounds,
-            drill_data=ddata,
-            drill_depth=args.drill_depth,
-            drill_feed=args.drill_feed,
-            safe_z=args.safe_z,
-            tool_change_z=args.tool_change_z,
-            spindle_speed=args.spindle_speed,
-            mirror_x=False,
-            margin=args.margin,
-            source_filename=os.path.basename(df)
-        )
-        stats_top = dw_top.write()
-
-        top_holes = []
-        for tid, h_list in dw_top.transformed_by_tool.items():
-            dia = ddata["tools"].get(tid, 0.8)
-            for hx, hy in h_list["holes"]:
-                top_holes.append((hx, hy, dia))
-        top_slots = []
-        for tid, s_list in dw_top.transformed_by_tool.items():
-            dia = ddata["tools"].get(tid, 0.8)
-            for sx1, sy1, sx2, sy2 in s_list["slots"]:
-                top_slots.append((sx1, sy1, sx2, sy2, dia))
-
-        export_svg_preview(
-            svg_path=out_svg_top,
-            master_bounds=master_bounds,
-            margin=args.margin,
-            title=f"{bname} (Drills - Top View)",
-            edge_loops=top_edge_loops,
-            holes=top_holes,
-            slots=top_slots,
-            mirrored=False
-        )
-
-        # Mirrored drilling (for bottom-side drilling)
-        out_gcode_bot = os.path.join(output_folder, f"{bname}-mirrored.gcode")
-        out_svg_bot = os.path.join(output_folder, f"{bname}-mirrored.svg")
-        dw_bot = DrillGcodeWriter(
-            output_path=out_gcode_bot,
-            master_bounds=master_bounds,
-            drill_data=ddata,
-            drill_depth=args.drill_depth,
-            drill_feed=args.drill_feed,
-            safe_z=args.safe_z,
-            tool_change_z=args.tool_change_z,
-            spindle_speed=args.spindle_speed,
-            mirror_x=True,
-            margin=args.margin,
-            source_filename=os.path.basename(df)
-        )
-        stats_bot = dw_bot.write()
-
-        bot_holes = []
-        for tid, h_list in dw_bot.transformed_by_tool.items():
-            dia = ddata["tools"].get(tid, 0.8)
-            for hx, hy in h_list["holes"]:
-                bot_holes.append((hx, hy, dia))
-        bot_slots = []
-        for tid, s_list in dw_bot.transformed_by_tool.items():
-            dia = ddata["tools"].get(tid, 0.8)
-            for sx1, sy1, sx2, sy2 in s_list["slots"]:
-                bot_slots.append((sx1, sy1, sx2, sy2, dia))
-
-        export_svg_preview(
-            svg_path=out_svg_bot,
-            master_bounds=master_bounds,
-            margin=args.margin,
-            title=f"{bname} (Drills - Bottom Mirrored)",
-            edge_loops=bot_edge_loops,
-            holes=bot_holes,
-            slots=bot_slots,
-            mirrored=True
-        )
-
-        results.append((f"{bname}.gcode", f"Drilling ({stats_top['total_holes']} holes)", stats_top["total_holes"], 0.0, stats_top["est_time_min"]))
-        results.append((f"{bname}-mirrored.gcode", "Drilling Mirrored", stats_bot["total_holes"], 0.0, stats_bot["est_time_min"]))
-
-    # 5. If Multiple Drill Files exist, also produce Deduplicated Unified Drill Program
-    if len(categorized["drill"]) > 1:
-        print(f"\n[Layer] Generating Unified Deduplicated Drill Program from {len(categorized['drill'])} drill files...")
+    # 4. Process Drill Files (Unified and Cleanly Separated per Bit Diameter)
+    if categorized["drill"]:
+        print(f"\n[Layer] Processing {len(categorized['drill'])} drill files...")
         merged_tools = {}
         merged_holes = []
         merged_slots = []
@@ -1540,46 +1827,135 @@ def process_folder(input_folder, output_folder, args):
                 if not is_dup:
                     merged_slots.append((new_tid, x1, y1, x2, y2))
 
-        for is_mirrored, suffix, edge_l in [(False, "", top_edge_loops), (True, "-mirrored", bot_edge_loops)]:
-            out_gcode = os.path.join(output_folder, f"Drill_Combined{suffix}.gcode")
-            out_svg = os.path.join(output_folder, f"Drill_Combined{suffix}.svg")
+        # Group merged drills by distinct diameter
+        dia_groups = {}
+        for tid, dia in merged_tools.items():
+            can_dia = round(dia, 4)
+            if can_dia not in dia_groups:
+                dia_groups[can_dia] = {"dia": dia, "tools": {tid: dia}, "holes": [], "slots": []}
+            else:
+                dia_groups[can_dia]["tools"][tid] = dia
 
-            dw = DrillGcodeWriter(
-                output_path=out_gcode,
-                master_bounds=master_bounds,
-                tools=merged_tools,
-                holes=merged_holes,
-                slots=merged_slots,
-                drill_depth=args.drill_depth,
-                drill_feed=args.drill_feed,
-                safe_z=args.safe_z,
-                tool_change_z=args.tool_change_z,
-                spindle_speed=args.spindle_speed,
-                mirror_x=is_mirrored,
-                margin=args.margin,
-                source_filename="Combined EasyEDA Drills (Deduplicated)"
-            )
-            stats_drill = dw.write()
+        for tid, hx, hy in merged_holes:
+            dia = merged_tools.get(tid)
+            if dia is not None:
+                can_dia = round(dia, 4)
+                if can_dia not in dia_groups:
+                    dia_groups[can_dia] = {"dia": dia, "tools": {tid: dia}, "holes": [], "slots": []}
+                dia_groups[can_dia]["holes"].append((tid, hx, hy))
 
-            d_holes, d_slots = [], []
-            for tid, h_list in dw.transformed_by_tool.items():
-                dia = merged_tools.get(tid, 0.8)
-                for hx, hy in h_list["holes"]:
-                    d_holes.append((hx, hy, dia))
-                for sx1, sy1, sx2, sy2 in h_list["slots"]:
-                    d_slots.append((sx1, sy1, sx2, sy2, dia))
+        for tid, x1, y1, x2, y2 in merged_slots:
+            dia = merged_tools.get(tid)
+            if dia is not None:
+                can_dia = round(dia, 4)
+                if can_dia not in dia_groups:
+                    dia_groups[can_dia] = {"dia": dia, "tools": {tid: dia}, "holes": [], "slots": []}
+                dia_groups[can_dia]["slots"].append((tid, x1, y1, x2, y2))
 
-            export_svg_preview(
-                svg_path=out_svg,
-                master_bounds=master_bounds,
-                margin=args.margin,
-                title=f"Drill Combined {'(Mirrored)' if is_mirrored else '(Top View)'}",
-                edge_loops=edge_l,
-                holes=d_holes,
-                slots=d_slots,
-                mirrored=is_mirrored
-            )
-            results.append((f"Drill_Combined{suffix}.gcode", f"Combined Drills ({stats_drill['total_holes']} holes)", stats_drill["total_holes"], 0.0, stats_drill["est_time_min"]))
+        # Derive project prefix
+        board_stem = os.path.splitext(os.path.basename(edge_cuts_file))[0] if edge_cuts_file else "Gerber"
+        prefix = re.sub(r"[-_](edge[-_]?cuts|boardoutlinelayer|outline|cuts)", "", board_stem, flags=re.IGNORECASE)
+        if not prefix:
+            prefix = "Gerber"
+
+        # Generate separate G-code and SVG ONLY if holes/slots of that diameter exist in the project!
+        for can_dia in sorted(dia_groups.keys()):
+            grp = dia_groups[can_dia]
+            dia = grp["dia"]
+            holes = grp["holes"]
+            slots = grp["slots"]
+            if not holes and not slots:
+                continue
+
+            for is_mirrored, suffix, edge_l in [(False, "", top_edge_loops), (True, "-mirrored", bot_edge_loops)]:
+                drill_name = f"{prefix}_drill_{dia:.3f}mm{suffix}"
+                out_drill_gcode = os.path.join(output_folder, f"{drill_name}.gcode")
+                out_drill_svg = os.path.join(output_folder, f"{drill_name}.svg")
+
+                dw = DrillGcodeWriter(
+                    output_path=out_drill_gcode, master_bounds=master_bounds,
+                    tools=grp["tools"], holes=holes, slots=slots,
+                    drill_depth=args.drill_depth, drill_feed=args.drill_feed, safe_z=args.safe_z,
+                    tool_change_z=args.tool_change_z, spindle_speed=args.spindle_speed,
+                    mirror_x=is_mirrored, margin=args.margin,
+                    source_filename=f"{prefix} Drill ({dia:.3f}mm)",
+                    single_dia=dia
+                )
+                stats = dw.write()
+
+                d_holes = [(hx, hy, dia) for hx, hy in dw.transformed_holes]
+                for px, py in dw.slot_drill_points:
+                    d_holes.append((px, py, dia * 0.8))
+                d_slots = [(sx1, sy1, sx2, sy2, dia) for sx1, sy1, sx2, sy2 in dw.transformed_slots]
+
+                export_svg_preview(
+                    svg_path=out_drill_svg, master_bounds=master_bounds, margin=args.margin,
+                    title=f"{prefix} - Drill {dia:.3f}mm {'(Mirrored)' if is_mirrored else '(Top View)'}",
+                    edge_loops=edge_l, holes=d_holes, slots=d_slots, mirrored=is_mirrored
+                )
+                desc = f"Drill Dia {dia:.3f}mm" + (" Mirrored" if is_mirrored else "")
+                results.append((f"{drill_name}.gcode", desc, stats["total_holes"], 0.0, stats["est_time_min"]))
+
+            # For holes that are not circles (slots): generate dedicated clean slot milling G-code!
+            if slots:
+                for is_mirrored, suffix, edge_l in [(False, "", top_edge_loops), (True, "-mirrored", bot_edge_loops)]:
+                    mill_name = f"{prefix}_slot_milling_{dia:.3f}mm{suffix}"
+                    out_mill_gcode = os.path.join(output_folder, f"{mill_name}.gcode")
+                    out_mill_svg = os.path.join(output_folder, f"{mill_name}.svg")
+
+                    smw = SlotMillingGcodeWriter(
+                        output_path=out_mill_gcode, master_bounds=master_bounds,
+                        slots=slots, slot_dia=dia,
+                        tool_dia=getattr(args, "slot_milling_dia", None) or dia,
+                        cut_depth=getattr(args, "slot_milling_depth", args.drill_depth),
+                        feed_rate=getattr(args, "slot_milling_feed", 200.0),
+                        plunge_rate=getattr(args, "slot_milling_plunge", 80.0),
+                        passes=getattr(args, "slot_milling_passes", 2),
+                        safe_z=args.safe_z,
+                        spindle_speed=getattr(args, "slot_milling_speed", args.spindle_speed),
+                        mirror_x=is_mirrored, margin=args.margin,
+                        source_filename=f"{prefix} Slot Milling ({dia:.3f}mm)"
+                    )
+                    mill_stats = smw.write()
+
+                    export_svg_preview(
+                        svg_path=out_mill_svg, master_bounds=master_bounds, margin=args.margin,
+                        title=f"{prefix} - Slot Milling {dia:.3f}mm {'(Mirrored)' if is_mirrored else '(Top View)'}",
+                        edge_loops=edge_l, slots=smw.transformed_slots, mirrored=is_mirrored
+                    )
+                    desc = f"Slot Milling Dia {dia:.3f}mm" + (" Mirrored" if is_mirrored else "")
+                    results.append((f"{mill_name}.gcode", desc, 0, mill_stats["cut_dist_mm"], mill_stats["est_time_min"]))
+
+        # Optional: Multi-tool program if explicitly requested via --all-tools
+        if getattr(args, "all_tools", False) and len(dia_groups) > 1:
+            for is_mirrored, suffix, edge_l in [(False, "", top_edge_loops), (True, "-mirrored", bot_edge_loops)]:
+                all_name = f"{prefix}_drill_all_tools{suffix}"
+                out_all_gcode = os.path.join(output_folder, f"{all_name}.gcode")
+                out_all_svg = os.path.join(output_folder, f"{all_name}.svg")
+
+                dw_all = DrillGcodeWriter(
+                    output_path=out_all_gcode, master_bounds=master_bounds,
+                    tools=merged_tools, holes=merged_holes, slots=merged_slots,
+                    drill_depth=args.drill_depth, drill_feed=args.drill_feed, safe_z=args.safe_z,
+                    tool_change_z=args.tool_change_z, spindle_speed=args.spindle_speed,
+                    mirror_x=is_mirrored, margin=args.margin, source_filename="Combined EasyEDA Drills"
+                )
+                stats_all = dw_all.write()
+
+                d_holes, d_slots = [], []
+                for tid, h_list in dw_all.transformed_by_tool.items():
+                    dia = merged_tools.get(tid, 0.8)
+                    for hx, hy in h_list["holes"]:
+                        d_holes.append((hx, hy, dia))
+                    for sx1, sy1, sx2, sy2 in h_list["slots"]:
+                        d_slots.append((sx1, sy1, sx2, sy2, dia))
+
+                export_svg_preview(
+                    svg_path=out_all_svg, master_bounds=master_bounds, margin=args.margin,
+                    title=f"{prefix} - All Tools {'(Mirrored)' if is_mirrored else '(Top View)'}",
+                    edge_loops=edge_l, holes=d_holes, slots=d_slots, mirrored=is_mirrored
+                )
+                results.append((f"{all_name}.gcode", f"All Tools ({stats_all['total_holes']} holes)", stats_all["total_holes"], 0.0, stats_all["est_time_min"]))
 
     # 6. Process Board Cutout (Edge Cuts / Outline) with Matching SVGs
     if edge_cuts_file:
@@ -1651,13 +2027,13 @@ def process_folder(input_folder, output_folder, args):
     print("\n==========================================================================================")
     print(f" BATCH PROCESSING COMPLETED -> Output Folder: {output_folder}")
     print("==========================================================================================")
-    print(f" {'G-Code File':<32} | {'SVG Preview':<32} | {'Length':<10} | {'Est. Time'}")
+    print(f" {'G-Code File':<38} | {'SVG Preview':<38} | {'Length':<10} | {'Est. Time'}")
     print("------------------------------------------------------------------------------------------")
     total_time = 0.0
     for fname, op, feat, length, t_est in results:
         svg_name = fname.replace(".gcode", ".svg")
         len_str = f"{length:.1f} mm" if length > 0 else "-"
-        print(f" {fname:<32} | {svg_name:<32} | {len_str:<10} | {t_est:4.1f} min")
+        print(f" {fname:<38} | {svg_name:<38} | {len_str:<10} | {t_est:4.1f} min")
         total_time += t_est
     print("------------------------------------------------------------------------------------------")
     print(f" Total Estimated Machining Time: {total_time:.1f} minutes")
@@ -1679,6 +2055,8 @@ def process_single_file(input_file, output_file, args):
     print("==========================================================")
     print(f" Input File : {input_file} (Detected type: {ltype})")
     print(f" Output File: {output_file}")
+    if getattr(args, "loaded_config_file", None):
+        print(f" Tool Config: {args.loaded_config_file}")
     print("==========================================================")
 
     out_svg = args.preview or (os.path.splitext(output_file)[0] + ".svg")
@@ -1686,43 +2064,83 @@ def process_single_file(input_file, output_file, args):
     if ltype == "drill":
         dp = ExcellonParser(input_file)
         ddata = dp.parse()
-        dw = DrillGcodeWriter(
-            output_path=output_file,
-            master_bounds=ddata["bounds"],
-            drill_data=ddata,
-            drill_depth=args.drill_depth,
-            drill_feed=args.drill_feed,
-            safe_z=args.safe_z,
-            tool_change_z=args.tool_change_z,
-            spindle_speed=args.spindle_speed,
-            mirror_x=bool(args.mirror),
-            margin=args.margin,
-            source_filename=os.path.basename(input_file)
-        )
-        stats = dw.write()
 
-        holes = []
-        for tid, h_list in dw.transformed_by_tool.items():
-            dia = ddata["tools"].get(tid, 0.8)
-            for hx, hy in h_list["holes"]:
-                holes.append((hx, hy, dia))
-        slots = []
-        for tid, s_list in dw.transformed_by_tool.items():
-            dia = ddata["tools"].get(tid, 0.8)
-            for sx1, sy1, sx2, sy2 in s_list["slots"]:
-                slots.append((sx1, sy1, sx2, sy2, dia))
+        # Group by diameter
+        dia_groups = {}
+        for tid, dia in ddata["tools"].items():
+            can_dia = round(dia, 4)
+            if can_dia not in dia_groups:
+                dia_groups[can_dia] = {"dia": dia, "tools": {tid: dia}, "holes": [], "slots": []}
+            else:
+                dia_groups[can_dia]["tools"][tid] = dia
 
-        export_svg_preview(
-            svg_path=out_svg,
-            master_bounds=ddata["bounds"],
-            margin=args.margin,
-            title=os.path.basename(input_file),
-            holes=holes,
-            slots=slots,
-            mirrored=bool(args.mirror)
-        )
-        print(f"Drill G-code written: {stats['total_holes']} holes, est. time {stats['est_time_min']:.1f} min.")
-        print(f"SVG preview written : {out_svg}")
+        for tid, hx, hy in ddata["holes"]:
+            dia = ddata["tools"].get(tid)
+            if dia is not None:
+                can_dia = round(dia, 4)
+                dia_groups[can_dia]["holes"].append((tid, hx, hy))
+
+        for tid, x1, y1, x2, y2 in ddata["slots"]:
+            dia = ddata["tools"].get(tid)
+            if dia is not None:
+                can_dia = round(dia, 4)
+                dia_groups[can_dia]["slots"].append((tid, x1, y1, x2, y2))
+
+        base_dir = os.path.dirname(output_file) or "."
+        base_name = os.path.splitext(os.path.basename(output_file))[0]
+
+        for can_dia in sorted(dia_groups.keys()):
+            grp = dia_groups[can_dia]
+            dia = grp["dia"]
+            if not grp["holes"] and not grp["slots"]:
+                continue
+            sub_gcode = os.path.join(base_dir, f"{base_name}_drill_{dia:.3f}mm.gcode") if len(dia_groups) > 1 else output_file
+            sub_svg = os.path.join(base_dir, f"{base_name}_drill_{dia:.3f}mm.svg") if len(dia_groups) > 1 else out_svg
+
+            dw = DrillGcodeWriter(
+                output_path=sub_gcode, master_bounds=ddata["bounds"],
+                tools=grp["tools"], holes=grp["holes"], slots=grp["slots"],
+                drill_depth=args.drill_depth, drill_feed=args.drill_feed, safe_z=args.safe_z,
+                tool_change_z=args.tool_change_z, spindle_speed=args.spindle_speed,
+                mirror_x=bool(args.mirror), margin=args.margin,
+                source_filename=os.path.basename(input_file), single_dia=dia
+            )
+            stats = dw.write()
+
+            export_svg_preview(
+                svg_path=sub_svg, master_bounds=ddata["bounds"], margin=args.margin,
+                title=f"{os.path.basename(input_file)} - Drill {dia:.3f}mm",
+                holes=[(hx, hy, dia) for hx, hy in dw.transformed_holes],
+                slots=[(sx1, sy1, sx2, sy2, dia) for sx1, sy1, sx2, sy2 in dw.transformed_slots],
+                mirrored=bool(args.mirror)
+            )
+            print(f"Drill G-code written ({dia:.3f}mm): {stats['total_holes']} holes -> {sub_gcode}")
+            print(f"SVG preview written : {sub_svg}")
+
+            if grp["slots"]:
+                sub_mill_gcode = os.path.join(base_dir, f"{base_name}_slot_milling_{dia:.3f}mm.gcode")
+                sub_mill_svg = os.path.join(base_dir, f"{base_name}_slot_milling_{dia:.3f}mm.svg")
+                smw = SlotMillingGcodeWriter(
+                    output_path=sub_mill_gcode, master_bounds=ddata["bounds"],
+                    slots=grp["slots"], slot_dia=dia,
+                    tool_dia=getattr(args, "slot_milling_dia", None) or dia,
+                    cut_depth=getattr(args, "slot_milling_depth", args.drill_depth),
+                    feed_rate=getattr(args, "slot_milling_feed", 200.0),
+                    plunge_rate=getattr(args, "slot_milling_plunge", 80.0),
+                    passes=getattr(args, "slot_milling_passes", 2),
+                    safe_z=args.safe_z,
+                    spindle_speed=getattr(args, "slot_milling_speed", args.spindle_speed),
+                    mirror_x=bool(args.mirror), margin=args.margin,
+                    source_filename=os.path.basename(input_file)
+                )
+                mill_stats = smw.write()
+                export_svg_preview(
+                    svg_path=sub_mill_svg, master_bounds=ddata["bounds"], margin=args.margin,
+                    title=f"{os.path.basename(input_file)} - Slot Milling {dia:.3f}mm",
+                    slots=smw.transformed_slots, mirrored=bool(args.mirror)
+                )
+                print(f"Slot Milling G-code written ({dia:.3f}mm): {mill_stats['total_slots']} slots -> {sub_mill_gcode}")
+                print(f"SVG preview written : {sub_mill_svg}")
 
     else:
         is_bottom = (ltype == "bottom_copper")
@@ -1780,52 +2198,82 @@ def process_single_file(input_file, output_file, args):
 # -----------------------------------------------------------------------------
 
 def main():
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--config", type=str, default=None)
+    pre_args, _ = pre_parser.parse_known_args()
+
+    input_candidate = None
+    for arg in sys.argv[1:]:
+        if not arg.startswith("-") and os.path.exists(arg):
+            input_candidate = arg
+            break
+
+    cfg_params, cfg_path = load_tool_config(pre_args.config, input_path=input_candidate, default_name="tool_config.json")
+
     parser = argparse.ArgumentParser(
         description="EasyEDA Gerber RS-274X and Excellon Drill to CNC Isolation G-Code Converter"
     )
     parser.add_argument("input", help="Input EasyEDA Gerber/Drill file OR project folder (e.g., ./project02)")
     parser.add_argument("output", nargs="?", default=None,
                         help="Output G-code file or folder (defaults to <FolderName>_gcode for folders)")
+    parser.add_argument("--config", type=str, default=cfg_path,
+                        help="Path to tool_config.json configuration file")
 
     # Milling / Isolation Parameters
-    parser.add_argument("-t", "--tool-dia", type=float, default=0.2,
-                        help="Milling bit tip diameter in mm (default: 0.2)")
-    parser.add_argument("-z", "--cut-depth", type=float, default=-0.04,
-                        help="Copper isolation cut depth Z in mm (default: -0.04)")
-    parser.add_argument("--safe-z", type=float, default=5.0,
-                        help="Safe travel height Z in mm (default: 5.0)")
-    parser.add_argument("-f", "--feed-rate", type=float, default=300.0,
-                        help="XY milling feed rate in mm/min (default: 300.0)")
-    parser.add_argument("--plunge-rate", type=float, default=80.0,
-                        help="Z plunge feed rate in mm/min (default: 80.0)")
-    parser.add_argument("-s", "--spindle-speed", type=int, default=10000,
-                        help="Spindle speed in RPM (default: 10000)")
-    parser.add_argument("-p", "--passes", type=int, default=1,
-                        help="Number of isolation passes (default: 1)")
-    parser.add_argument("--stepover", type=float, default=0.7,
-                        help="Stepover ratio for multi-pass isolation (default: 0.7)")
+    parser.add_argument("-t", "--tool-dia", type=float, default=cfg_params.get("tool_dia", 0.2),
+                        help="Milling bit tip diameter in mm")
+    parser.add_argument("-z", "--cut-depth", type=float, default=cfg_params.get("cut_depth", -0.04),
+                        help="Copper isolation cut depth Z in mm")
+    parser.add_argument("--safe-z", type=float, default=cfg_params.get("safe_z", 5.0),
+                        help="Safe travel height Z in mm")
+    parser.add_argument("-f", "--feed-rate", type=float, default=cfg_params.get("feed_rate", 300.0),
+                        help="XY milling feed rate in mm/min")
+    parser.add_argument("--plunge-rate", type=float, default=cfg_params.get("plunge_rate", 80.0),
+                        help="Z plunge feed rate in mm/min")
+    parser.add_argument("-s", "--spindle-speed", type=int, default=cfg_params.get("spindle_speed", 10000),
+                        help="Spindle speed in RPM")
+    parser.add_argument("-p", "--passes", type=int, default=cfg_params.get("passes", 1),
+                        help="Number of isolation passes")
+    parser.add_argument("--stepover", type=float, default=cfg_params.get("stepover", 0.7),
+                        help="Stepover ratio for multi-pass isolation")
 
     # Board Edge Engraving
-    parser.add_argument("--no-engrave-edge", action="store_true",
+    parser.add_argument("--no-engrave-edge", action="store_true", default=cfg_params.get("no_engrave_edge", False),
                         help="Do not engrave board edge outline onto Front and Back copper")
 
     # Drilling Parameters
-    parser.add_argument("--drill-depth", type=float, default=-1.8,
-                        help="Through-hole drill depth Z in mm (default: -1.8)")
-    parser.add_argument("--drill-feed", type=float, default=150.0,
-                        help="Z plunge feed rate for drilling in mm/min (default: 150.0)")
-    parser.add_argument("--tool-change-z", type=float, default=20.0,
-                        help="Z height for manual bit swap pauses (default: 20.0)")
+    parser.add_argument("--drill-depth", type=float, default=cfg_params.get("drill_depth", -1.8),
+                        help="Through-hole drill depth Z in mm")
+    parser.add_argument("--drill-feed", type=float, default=cfg_params.get("drill_feed", 150.0),
+                        help="Z plunge feed rate for drilling in mm/min")
+    parser.add_argument("--tool-change-z", type=float, default=cfg_params.get("tool_change_z", 20.0),
+                        help="Z height for manual bit swap pauses")
+    parser.add_argument("--all-tools", action="store_true", default=False,
+                        help="Also generate multi-tool all_tools G-code program with tool change pauses")
+
+    # Slot Milling Parameters (for non-circular holes / slots)
+    parser.add_argument("--slot-milling-dia", type=float, default=cfg_params.get("slot_milling_tool_dia", None),
+                        help="Endmill diameter for slot milling (defaults to slot width)")
+    parser.add_argument("--slot-milling-depth", type=float, default=cfg_params.get("slot_milling_depth", -1.8),
+                        help="Total depth Z for slot milling in mm")
+    parser.add_argument("--slot-milling-feed", type=float, default=cfg_params.get("slot_milling_feed", 200.0),
+                        help="XY feed rate for slot milling in mm/min")
+    parser.add_argument("--slot-milling-plunge", type=float, default=cfg_params.get("slot_milling_plunge", 80.0),
+                        help="Z plunge feed rate for slot milling in mm/min")
+    parser.add_argument("--slot-milling-passes", type=int, default=cfg_params.get("slot_milling_passes", 2),
+                        help="Number of Z depth passes for slot milling")
+    parser.add_argument("--slot-milling-speed", type=int, default=cfg_params.get("slot_milling_spindle_speed", 10000),
+                        help="Spindle speed for slot milling in RPM")
 
     # Board Cutout Parameters
-    parser.add_argument("--cutout-depth", type=float, default=-1.8,
-                        help="Total board cutout depth Z in mm (default: -1.8)")
-    parser.add_argument("--cutout-passes", type=int, default=3,
-                        help="Number of Z depth passes for board cutout (default: 3)")
-    parser.add_argument("--cutout-feed", type=float, default=200.0,
-                        help="XY feed rate for board cutout in mm/min (default: 200.0)")
-    parser.add_argument("--cutout-tool-dia", type=float, default=1.0,
-                        help="End mill diameter for board cutout in mm (default: 1.0)")
+    parser.add_argument("--cutout-depth", type=float, default=cfg_params.get("cutout_depth", -1.8),
+                        help="Total board cutout depth Z in mm")
+    parser.add_argument("--cutout-passes", type=int, default=cfg_params.get("cutout_passes", 3),
+                        help="Number of Z depth passes for board cutout")
+    parser.add_argument("--cutout-feed", type=float, default=cfg_params.get("cutout_feed", 200.0),
+                        help="XY feed rate for board cutout in mm/min")
+    parser.add_argument("--cutout-tool-dia", type=float, default=cfg_params.get("cutout_tool_dia", 1.0),
+                        help="End mill diameter for board cutout in mm")
 
     # Coordinate / Alignment Parameters
     parser.add_argument("--mirror", dest="mirror", action="store_true",
@@ -1835,12 +2283,13 @@ def main():
     parser.set_defaults(mirror=None)
     parser.add_argument("--preserve-origin", action="store_true",
                         help="Preserve raw Gerber coordinates instead of shifting bottom-left to (0,0)")
-    parser.add_argument("--margin", type=float, default=0.0,
-                        help="Margin in mm from (0,0) when zeroing origin (default: 0.0)")
+    parser.add_argument("--margin", type=float, default=cfg_params.get("margin", 0.0),
+                        help="Margin in mm from (0,0) when zeroing origin")
     parser.add_argument("--preview", type=str, default=None,
                         help="Optional SVG preview output path (single-file mode)")
 
     args = parser.parse_args()
+    args.loaded_config_file = cfg_path
 
     input_path = os.path.normpath(args.input)
     if not os.path.exists(input_path):

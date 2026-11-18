@@ -1,0 +1,128 @@
+{
+  "_description": "PCB Instant Quotation Pricing Configuration (in Sri Lankan Rupees - LKR). Derived from raw material costs (Tronic.lk, Daraz.lk, AliExpress) including raw A4 double-sided FR4 copper board (Rs. 1,500 raw cost), electroless and electro copper via plating chemicals, UV solder mask, CNC tooling, and safety PPE overhead.",
+  "currency": {
+    "code": "LKR",
+    "symbol": "Rs. ",
+    "format": "{symbol}{amount:,.2f}",
+    "conversion_rate_usd": 300.0
+  },
+  "general": {
+    "default_quantity": 5,
+    "default_lead_time_days": 3,
+    "show_cnc_comparison": true,
+    "tax_rate_percent": 0.0
+  },
+  "fabrication": {
+    "base_setup_fee": 1200.00,
+    "engineering_fee": 450.00,
+    "standard_promo": {
+      "enabled": true,
+      "max_width_mm": 100.0,
+      "max_height_mm": 100.0,
+      "max_quantity": 5,
+      "flat_price": 2800.00,
+      "description": "Standard 100x100mm (5 pcs) 2-Layer Prototype Promo (Rs. 2,800)"
+    },
+    "area_pricing": {
+      "raw_a4_board_cost_lkr": 1500.00,
+      "raw_cost_per_cm2": 2.405,
+      "profit_margin_percent": 60.0,
+      "price_per_cm2": 6.00,
+      "minimum_charge_area_cm2": 25.0
+    },
+    "layer_multipliers": {
+      "1": 0.70,
+      "2": 1.00,
+      "4": 2.80,
+      "6": 5.00
+    },
+    "quantity_discounts": {
+      "1": 1.00,
+      "5": 1.00,
+      "10": 0.88,
+      "20": 0.80,
+      "30": 0.74,
+      "50": 0.65,
+      "100": 0.52,
+      "200": 0.45,
+      "500": 0.38
+    },
+    "drilling": {
+      "via_plating_method": "Electroless Copper Seed Layer + Acid Copper Electroplating",
+      "free_holes": 500,
+      "fee_per_extra_100_holes": 180.00,
+      "min_diameter_limits": {
+        "standard_min_mm": 0.30,
+        "micro_drill_surcharge": 2500.00,
+        "high_density_min_mm": 0.20,
+        "high_density_surcharge": 6800.00
+      },
+      "tool_count_threshold": 10,
+      "extra_tool_fee": 150.00
+    },
+    "slots": {
+      "slot_base_fee": 600.00,
+      "fee_per_slot": 90.00
+    },
+    "board_shape": {
+      "complex_shape_surcharge": 900.00
+    },
+    "solder_mask": {
+      "colors": {
+        "green": 0.00,
+        "red": 650.00,
+        "yellow": 650.00,
+        "blue": 650.00,
+        "white": 900.00,
+        "black": 900.00,
+        "purple": 1200.00,
+        "matte_black": 1500.00,
+        "matte_green": 1500.00
+      },
+      "double_sided_included": true
+    },
+    "silkscreen": {
+      "colors": {
+        "white": 0.00,
+        "black": 450.00,
+        "none": 0.00
+      },
+      "double_sided_extra": 450.00
+    },
+    "surface_finish": {
+      "none": 0.00,
+      "HASL": 250.00,
+      "LeadFree_HASL": 850.00,
+      "Immersion_Tin": 1200.00,
+      "ENIG": 5400.00
+    },
+    "board_thickness_mm": {
+      "1.6": 0.00,
+      "0.8": 750.00,
+      "1.0": 450.00,
+      "1.2": 240.00,
+      "2.0": 1350.00
+    },
+    "copper_weight": {
+      "1oz": 0.00,
+      "2oz": 3600.00
+    },
+    "producer_mark": {
+      "remove_mark_fee": 600.00
+    }
+  },
+  "cnc_prototype": {
+    "enabled": true,
+    "setup_fee": 2400.00,
+    "material_fr1_per_cm2": 2.00,
+    "material_fr4_per_cm2": 4.00,
+    "machine_hourly_rate": 4500.00,
+    "isolation_milling_feed_mm_min": 300.0,
+    "estimated_copper_density": 0.35,
+    "drill_time_per_hole_sec": 3.5,
+    "tool_change_time_sec": 25.0,
+    "slot_milling_rate_per_mm": 15.00,
+    "cutout_time_per_board_min": 4.0,
+    "tool_wear_cost_per_board": 400.00
+  }
+}

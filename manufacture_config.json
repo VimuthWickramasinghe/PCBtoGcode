@@ -1,0 +1,56 @@
+{
+  "copper_sheet": {
+    "sheet_width_mm": 210.0,
+    "sheet_height_mm": 297.0,
+    "thickness_mm": 1.6,
+    "copper_weight_oz": 1.0
+  },
+  "cnc_limits": {
+    "bed_travel_x_mm": 275.0,
+    "bed_travel_y_mm": 170.0,
+    "y_split_threshold_mm": 145.0,
+    "front_half_max_y_mm": 141.0,
+    "back_half_min_y_mm": 150.0,
+    "back_half_max_y_mm": 292.0,
+    "left_margin_guide_width_mm": 18.0
+  },
+  "panelization": {
+    "zero_gap_tight_packing": true,
+    "board_gap_mm": 0.0,
+    "allow_rotation_to_maximize_space": true,
+    "allow_any_angle_rectangular": false,
+    "allow_any_angle_non_rectangular": true,
+    "rectangular_allowed_rotations_deg": [0, 90],
+    "group_by_solder_mask_color": true,
+    "strict_solder_mask_color": false
+  },
+  "pcb_tag_strip": {
+    "include_pcb_tag_strip": true,
+    "tag_width_mm": 5.0,
+    "attach_along_pcb_width": true,
+    "engrave_text_both_sides": false,
+    "engrave_arrow": true,
+    "mouse_bite_drill_dia_mm": 0.8,
+    "mouse_bite_pitch_mm": 1.5
+  },
+  "sheet_tag_strip": {
+    "enable_sheet_tag_strip": true,
+    "tag_position": "top_right",
+    "engrave_sheet_number": true,
+    "engrave_metadata_summary": true
+  },
+  "guides_and_fixturing": {
+    "add_guide_lines": true,
+    "enable_left_margin_guides": true,
+    "alignment_pin_hole_dia_mm": 3.0,
+    "holders_config_file": "pcb_holders.json"
+  },
+  "output_paths": {
+    "gcode_dir": "manufacture_gcode",
+    "svg_dir": "manufacture_svg",
+    "guides_dir": "manufacture_guides",
+    "metadata_json": "manufacture_metadata.json",
+    "checklist_json": "manufacture_guides/checklist_state.json",
+    "html_dashboard": "manufacture_guides/index.html"
+  }
+}

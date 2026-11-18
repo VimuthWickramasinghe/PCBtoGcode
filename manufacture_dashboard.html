@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CNC PCB Manufacturing & Panelization Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background-color: #0b0e14; color: #e6edf3; font-family: ui-sans-serif, system-ui, sans-serif; }
+    .svg-container svg, .svg-container img { width: 100%; height: auto; max-height: 700px; border-radius: 0.5rem; }
+    .step-btn.active { border-color: #3b82f6; background-color: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+  </style>
+  <script>
+    let imgPrefix = 'manufacture_svg/';
+    let currentProject = 'PCB-AC-01';
+    let currentStep = 'Composite_Stackup';
+
+    const stepInfo = {
+      'Composite_Stackup': {
+        title: 'Composite Circuit Stackup Overview',
+        tool: 'All layers combined',
+        depth: 'N/A', feed: 'N/A', rpm: 'N/A',
+        instructions: 'Visual inspection of FR4 substrate, copper traces, mask apertures, silkscreen legends, drills, and the 5mm breakaway tab attached along the PCB width side.'
+      },
+      'Step1_Drills': {
+        title: 'Step 1: Multi-Diameter CNC Drilling',
+        tool: 'Carbide Drills (0.3mm to 3.0mm)',
+        depth: '-1.80 mm', feed: '150 mm/min', rpm: '10,000 RPM',
+        instructions: 'Peck drilling (0.4mm depth increments) to prevent chip packing and bit breakage. Drills via holes, component pins, and 5mm tab mouse-bite perforations.'
+      },
+      'Step2_Vias': {
+        title: 'Step 2: Chemical Through-Hole Via Metallization',
+        tool: 'Chemical Electroless / Electroplating Bath',
+        depth: 'N/A', feed: 'N/A', rpm: 'N/A',
+        instructions: 'Desmear -> Carbon-black / Palladium seeding -> Microetch -> 45 min Copper Electroplating @ 1.5A/dm² = 25µm copper barrel deposition in all 0.3mm via holes.'
+      },
+      'Step3_Top_Copper': {
+        title: 'Step 3: Top Copper Isolation Engraving',
+        tool: '30° / 0.1mm V-Bit or 0.2mm Endmill',
+        depth: '-0.04 mm', feed: '300 mm/min', rpm: '10,000 RPM',
+        instructions: 'Isolation routing for signal traces and ground pours. Engraves Board ID and directional arrow pointing into PCB body in the 5mm breakaway tab.'
+      },
+      'Step4_Bottom_Copper': {
+        title: 'Step 4: Bottom Copper Isolation Engraving',
+        tool: '30° / 0.1mm V-Bit',
+        depth: '-0.04 mm', feed: '300 mm/min', rpm: '10,000 RPM',
+        instructions: 'Board flipped horizontally along Y-axis without Z-rotation. Milled using X-mirrored coordinates registered against dowel pins and left margin scale.'
+      },
+      'Step5_Solder_Mask': {
+        title: 'Step 5: Solder Mask Pad Clearing',
+        tool: '0.4mm Flat Endmill or V-Bit',
+        depth: '-0.06 mm', feed: '300 mm/min', rpm: '10,000 RPM',
+        instructions: 'CRITICAL Z-HEIGHT NOTICE: Solder mask adds ~35µm. Operator must re-touch Z0 on the cured mask surface when prompted by M0 pause before cycle start.'
+      },
+      'Step6_Silkscreen': {
+        title: 'Step 6: Silkscreen Component Legend Printing',
+        tool: '# TODO: Flatbed Inkjet DoD Printhead',
+        depth: 'N/A', feed: 'N/A', rpm: 'N/A',
+        instructions: 'Component designators (R1, C1, U1, pin 1 marks). Deposited using UV-curable white pigment ink with LED-395nm pinning. No CNC spindle engraving needed.'
+      },
+      'Step7_Cutout_SnapTab': {
+        title: 'Step 7: Dual-Sided Snapable Cutout & 5mm Tab',
+        tool: '1.0mm Corn Endmill or V-Bit',
+        depth: '-0.85 mm (Each Side)', feed: '200 mm/min', rpm: '10,000 RPM',
+        instructions: 'Dual-sided partial scoring (-0.85mm top + -0.85mm bottom = 1.70mm total cut through 1.6mm FR4). Single-pass cut along shared boundaries with 3mm retention bridge tabs.'
+      }
+    };
+
+    function selectCircuitProject(pcbId) {
+      currentProject = pcbId;
+      document.querySelectorAll('.proj-btn').forEach(btn => {
+        btn.classList.remove('bg-blue-600', 'text-white');
+        btn.classList.add('bg-gray-800', 'text-gray-300');
+      });
+      const activeBtn = document.getElementById('proj-btn-' + pcbId);
+      if (activeBtn) {
+        activeBtn.classList.remove('bg-gray-800', 'text-gray-300');
+        activeBtn.classList.add('bg-blue-600', 'text-white');
+      }
+      updateCircuitView();
+    }
+
+    function selectCircuitStep(stepName) {
+      currentStep = stepName;
+      document.querySelectorAll('.step-btn').forEach(btn => btn.classList.remove('active'));
+      const activeBtn = document.getElementById('step-btn-' + stepName);
+      if (activeBtn) activeBtn.classList.add('active');
+      updateCircuitView();
+    }
+
+    function updateCircuitView() {
+      const svgPath = `${imgPrefix}Circuit_${currentProject}_${currentStep}.svg`;
+      const img = document.getElementById('circuit-svg-img');
+      if (img) img.src = svgPath;
+
+      const info = stepInfo[currentStep] || {};
+      document.getElementById('card-step-title').innerText = info.title || currentStep;
+      document.getElementById('card-tool').innerText = info.tool || '-';
+      document.getElementById('card-depth').innerText = info.depth || '-';
+      document.getElementById('card-feed').innerText = info.feed || '-';
+      document.getElementById('card-rpm').innerText = info.rpm || '-';
+      document.getElementById('card-instructions').innerText = info.instructions || '-';
+    }
+
+    function selectSheet(num) {
+      document.querySelectorAll('.sheet-content').forEach(el => el.style.display = 'none');
+      document.querySelectorAll('[id^="tab-btn-"]').forEach(el => {
+        el.className = el.className.replace('border-blue-500 text-blue-400 bg-blue-500/10', 'border-transparent text-gray-400 hover:text-white');
+      });
+      const panel = document.getElementById('sheet-panel-' + num);
+      if (panel) panel.style.display = 'block';
+      const btn = document.getElementById('tab-btn-' + num);
+      if (btn) btn.className = 'px-4 py-2 text-sm font-semibold border-b-2 transition border-blue-500 text-blue-400 bg-blue-500/10';
+    }
+
+    // Checklist interactive state saving
+    let checklistState = {"check_bed_clean": {"label": "1. Plywood Bed & Sacrificial Spoilboard Cleanliness", "category": "Preparation", "checked": true, "description": "Ensure bed is completely free of chips, debris, and oil before placing A4 laminate."}, "check_stock_secure": {"label": "2. A4 Copper Clad Sheet Mounting (210 x 297 mm)", "category": "Preparation", "checked": true, "description": "Laminate clamped securely using low-profile clamps from pcb_holders.json."}, "check_clamp_clearance": {"label": "3. Fixture Clamp Collision Keep-Out Verification", "category": "Preparation", "checked": true, "description": "Verify toolpaths maintain minimum 3.0mm clearance around all 6 clamp fixtures."}, "check_machine_home": {"label": "4. Machine Homing & Work Coordinate System (WCS G54) Zeroing", "category": "Preparation", "checked": true, "description": "Home machine axes and set X0, Y0 at bottom-left corner of copper sheet."}, "check_probe_autolevel": {"label": "5. Surface Height Autoleveling Probe Grid (G38.2)", "category": "Preparation", "checked": false, "description": "Run height map probe across A4 board to compensate for board curvature (up to 0.3mm)."}, "check_bit_step0": {"label": "6. Step 0: V-Bit Tool Loaded (30\u00b0 / 0.1mm tip)", "category": "Step 0 - Guides", "checked": false, "description": "Mount V-bit for left margin millimeter scale, 145mm datum line, and pin holes."}, "check_pin_registration": {"label": "7. Step 0: Reference Dowel Pins Inserted", "category": "Step 0 - Guides", "checked": false, "description": "Insert 3.0mm dowel pins into milled left-edge reference registration holes."}, "check_step1_drills": {"label": "8. Step 1: Top Drilling (Front Half) Run to Completion", "category": "Step 1 - Drilling", "checked": false, "description": "Carbide bits cycled with peck drilling for vias, THT pins, and 5mm tab mouse bites."}, "check_y_shift_1": {"label": "9. Step 1: Slide Board Forward by 145.0 mm for Back Half Drilling", "category": "Step 1 - Drilling", "checked": false, "description": "Align left engraved 145mm datum mark with bed datum edge and secure clamps."}, "check_step1_drills_back": {"label": "10. Step 1: Top Drilling (Back Half) Run to Completion", "category": "Step 1 - Drilling", "checked": false, "description": "Complete back half drilling for remaining nested boards."}, "check_step2_vias": {"label": "11. Step 2: Chemical Through-Hole Via Metallization", "category": "Step 2 - Vias", "checked": false, "description": "Desmear -> Carbon/Palladium seed -> 45 min copper electroplating bath (25\u00b5m Cu barrel)."}, "check_step3_top_cu": {"label": "12. Step 3: Top Copper Isolation Routing (Front & Back Halves)", "category": "Step 3 - Top Cu", "checked": false, "description": "Engrave circuit traces, tightly connected shared edges, and 5mm snap ID tag + arrow."}, "check_step4_flip": {"label": "13. Step 4: Horizontal Board Flip Along Y-Axis (X' = W - X)", "category": "Step 4 - Bottom Cu", "checked": false, "description": "Flip board over without Z rotation; register using right-side flipped reference guides."}, "check_step4_bot_cu": {"label": "14. Step 4: Bottom Copper Isolation Routing (Front & Back Halves)", "category": "Step 4 - Bottom Cu", "checked": false, "description": "Milling bottom traces and THT pad surrounds with mirrored coordinates."}, "check_step5_mask_apply": {"label": "15. Step 5: Solder Mask Coating & UV Curing", "category": "Step 5 - Mask", "checked": false, "description": "Apply uniform liquid photoimageable mask or dry film; cure with 395nm UV lamp."}, "check_step5_z_reprobe": {"label": "16. Step 5: M0 Pause Acknowledged & Z Re-Zeroed on Mask (+35\u00b5m)", "category": "Step 5 - Mask", "checked": false, "description": "Re-touch Z0 onto cured mask surface before starting pad clearance routing (-0.06mm)."}, "check_step6_silk_todo": {"label": "17. Step 6: Silkscreen Component Legend Printing", "category": "Step 6 - Silkscreen", "checked": false, "description": "Apply component designators using UV stencil or log for future flatbed inkjet DoD printer."}, "check_step7_cutout_top": {"label": "18. Step 7: Dual-Sided Snapable Cutout (Top Side Partial Depth -0.85mm)", "category": "Step 7 - Cutout", "checked": false, "description": "Milling top perimeter score line with 3.0mm retention bridge tabs."}, "check_step7_cutout_bot": {"label": "19. Step 7: Dual-Sided Snapable Cutout (Bottom Side Partial Depth -0.85mm)", "category": "Step 7 - Cutout", "checked": false, "description": "Flip sheet and mill matching bottom perimeter score line (-0.85mm = 1.70mm total cut)."}, "check_board_snap": {"label": "20. Final: Hand Snap-Off of Boards & Breakaway 5mm ID Tags", "category": "Post-Processing", "checked": false, "description": "Snap boards from sheet and separate 5mm ID tags along perforated mouse bites by hand."}};
+
+    function toggleChecklistItem(itemId, isChecked) {
+      if (checklistState[itemId]) {
+        checklistState[itemId].checked = isChecked;
+      }
+      const lbl = document.getElementById('label-' + itemId);
+      if (lbl) {
+        if (isChecked) {
+          lbl.classList.add('line-through', 'text-gray-500');
+          lbl.classList.remove('text-white');
+        } else {
+          lbl.classList.remove('line-through', 'text-gray-500');
+          lbl.classList.add('text-white');
+        }
+      }
+      updateChecklistProgress();
+      saveChecklistToDisk();
+    }
+
+    function updateChecklistProgress() {
+      const total = Object.keys(checklistState).length;
+      const checkedCount = Object.values(checklistState).filter(item => item.checked).length;
+      const pct = Math.round((checkedCount / total) * 100);
+      document.getElementById('chk-progress-bar').style.width = pct + '%';
+      document.getElementById('chk-progress-text').innerText = `${checkedCount} / ${total} Completed (${pct}%)`;
+    }
+
+    async function saveChecklistToDisk() {
+      const payload = {
+        updated_at: new Date().toISOString(),
+        checklist_version: "1.0",
+        items: checklistState
+      };
+      try {
+        // Save to browser localStorage
+        localStorage.setItem('pcb_checklist_state', JSON.stringify(payload));
+        // Try posting to local server if running
+        fetch('/api/save_checklist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }).catch(() => {});
+      } catch (e) {}
+    }
+
+    function downloadChecklistJSON() {
+      const payload = {
+        updated_at: new Date().toISOString(),
+        checklist_version: "1.0",
+        items: checklistState
+      };
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(payload, null, 2));
+      const a = document.createElement('a');
+      a.setAttribute("href", dataStr);
+      a.setAttribute("download", "checklist_state.json");
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    window.onload = function() {
+      updateCircuitView();
+      updateChecklistProgress();
+    };
+  </script>
+</head>
+<body class="p-6 max-w-7xl mx-auto">
+  <!-- Header -->
+  <header class="flex flex-col md:flex-row items-start md:items-center justify-between pb-6 mb-8 border-b border-gray-800">
+    <div>
+      <div class="flex items-center space-x-3">
+        <span class="p-2 bg-blue-600 rounded-lg text-white font-bold text-xl">CNC</span>
+        <h1 class="text-2xl font-bold tracking-tight">A4 PCB Multi-Step Fabrication Dashboard</h1>
+      </div>
+      <p class="text-gray-400 text-sm mt-1">2-Step Y-Axis CNC Milling Pipeline | FluidNC Local Controller (192.168.8.109)</p>
+    </div>
+    <div class="mt-4 md:mt-0 flex items-center space-x-3">
+      <div class="px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm">
+        <span class="text-gray-400">Total Sheets:</span> <strong class="text-white">3</strong>
+      </div>
+      <div class="px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm">
+        <span class="text-gray-400">Total Units:</span> <strong class="text-green-400">12</strong>
+      </div>
+      <div class="px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm">
+        <span class="text-gray-400">Clamps Active:</span> <strong class="text-red-400">6</strong>
+      </div>
+    </div>
+  </header>
+
+  <!-- FluidNC Status Alert -->
+  <div class="mb-8 p-4 bg-gray-900 border border-blue-500/30 rounded-xl flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+      <div class="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
+      <div>
+        <h4 class="text-sm font-semibold text-white">FluidNC Machine Target: <code class="text-blue-400">192.168.8.109</code></h4>
+        <p class="text-xs text-gray-400">G-code ready for direct network upload & execution via Web/REST API.</p>
+      </div>
+    </div>
+    <a href="http://192.168.8.109" target="_blank" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg transition">
+      Open FluidNC WebUI &rarr;
+    </a>
+  </div>
+
+  <!-- SECTION 1: Interactive Step-by-Step Circuit Gerber Inspector -->
+  <section class="mb-12 bg-gray-900 border border-gray-800 p-6 rounded-2xl">
+    <div class="flex flex-col md:flex-row items-start md:items-center justify-between pb-4 mb-6 border-b border-gray-800">
+      <div>
+        <h2 class="text-xl font-bold text-white flex items-center space-x-2">
+          <span>Step-by-Step Circuit Gerber Inspector</span>
+          <span class="text-xs bg-blue-500/20 text-blue-300 border border-blue-500/40 px-2 py-0.5 rounded">Interactive Artwork Viewer</span>
+        </h2>
+        <p class="text-xs text-gray-400 mt-0.5">Inspect vector artwork, drill schedules, copper isolation, solder mask, and the 5mm breakaway tab for each circuit.</p>
+      </div>
+
+      <!-- Circuit Project Switcher -->
+      <div class="mt-4 md:mt-0 flex items-center space-x-2">
+        
+        <button onclick="selectCircuitProject('PCB-AC-01')" id="proj-btn-PCB-AC-01"
+                class="proj-btn px-3 py-1.5 text-xs font-semibold rounded-lg transition bg-blue-600 text-white">
+          AirCooler (PCB-AC-01)
+        </button>
+        
+        <button onclick="selectCircuitProject('PCB-AC-02')" id="proj-btn-PCB-AC-02"
+                class="proj-btn px-3 py-1.5 text-xs font-semibold rounded-lg transition bg-gray-800 text-gray-300 hover:text-white">
+          Board-01 (PCB-AC-02)
+        </button>
+        
+      </div>
+    </div>
+
+    <!-- Stepper Buttons -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 mb-6">
+      <button onclick="selectCircuitStep('Composite_Stackup')" id="step-btn-Composite_Stackup" class="step-btn active p-2.5 rounded-xl border border-gray-800 bg-gray-950 text-left text-xs transition">
+        <span class="block font-bold text-gray-300">★ Overview</span>
+        <span class="text-[10px] text-gray-400">Full Stackup</span>
+      </button>
+      <button onclick="selectCircuitStep('Step1_Drills')" id="step-btn-Step1_Drills" class="step-btn p-2.5 rounded-xl border border-gray-800 bg-gray-950 text-left text-xs transition">
+        <span class="block font-bold text-gray-300">Step 1</span>
+        <span class="text-[10px] text-gray-400">CNC Drills</span>
+      </button>
+      <button onclick="selectCircuitStep('Step2_Vias')" id="step-btn-Step2_Vias" class="step-btn p-2.5 rounded-xl border border-gray-800 bg-gray-950 text-left text-xs transition">
+        <span class="block font-bold text-gray-300">Step 2</span>
+        <span class="text-[10px] text-gray-400">Chemical Vias</span>
+      </button>
+      <button onclick="selectCircuitStep('Step3_Top_Copper')" id="step-btn-Step3_Top_Copper" class="step-btn p-2.5 rounded-xl border border-gray-800 bg-gray-950 text-left text-xs transition">
+        <span class="block font-bold text-gray-300">Step 3</span>
+        <span class="text-[10px] text-gray-400">Top Copper</span>
+      </button>
+      <button onclick="selectCircuitStep('Step4_Bottom_Copper')" id="step-btn-Step4_Bottom_Copper" class="step-btn p-2.5 rounded-xl border border-gray-800 bg-gray-950 text-left text-xs transition">
+        <span class="block font-bold text-gray-300">Step 4</span>
+        <span class="text-[10px] text-gray-400">Bottom Copper</span>
+      </button>
+      <button onclick="selectCircuitStep('Step5_Solder_Mask')" id="step-btn-Step5_Solder_Mask" class="step-btn p-2.5 rounded-xl border border-gray-800 bg-gray-950 text-left text-xs transition">
+        <span class="block font-bold text-gray-300">Step 5</span>
+        <span class="text-[10px] text-gray-400">Solder Mask</span>
+      </button>
+      <button onclick="selectCircuitStep('Step6_Silkscreen')" id="step-btn-Step6_Silkscreen" class="step-btn p-2.5 rounded-xl border border-gray-800 bg-gray-950 text-left text-xs transition">
+        <span class="block font-bold text-gray-300">Step 6</span>
+        <span class="text-[10px] text-gray-400">Silkscreen</span>
+      </button>
+      <button onclick="selectCircuitStep('Step7_Cutout_SnapTab')" id="step-btn-Step7_Cutout_SnapTab" class="step-btn p-2.5 rounded-xl border border-gray-800 bg-gray-950 text-left text-xs transition">
+        <span class="block font-bold text-gray-300">Step 7</span>
+        <span class="text-[10px] text-gray-400">Snap Cutout</span>
+      </button>
+    </div>
+
+    <!-- 2-Column Inspector Layout -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <!-- Left: SVG Artwork Viewport -->
+      <div class="lg:col-span-8 bg-black p-4 rounded-xl border border-gray-800 flex flex-col justify-center items-center svg-container">
+        <img id="circuit-svg-img" src="manufacture_svg/Circuit_PCB-AC-01_Composite_Stackup.svg" alt="Circuit Step View" class="max-h-[520px] object-contain">
+      </div>
+
+      <!-- Right: Technical Step Card -->
+      <div class="lg:col-span-4 bg-gray-950 p-5 rounded-xl border border-gray-800 flex flex-col justify-between">
+        <div>
+          <h3 id="card-step-title" class="font-bold text-base text-white mb-3">Composite Circuit Stackup Overview</h3>
+          
+          <div class="space-y-2 mb-4 text-xs font-mono">
+            <div class="flex justify-between py-1 border-b border-gray-800">
+              <span class="text-gray-400">Tool / Bit:</span>
+              <span id="card-tool" class="text-white font-bold">All layers</span>
+            </div>
+            <div class="flex justify-between py-1 border-b border-gray-800">
+              <span class="text-gray-400">Cut Depth:</span>
+              <span id="card-depth" class="text-yellow-400">N/A</span>
+            </div>
+            <div class="flex justify-between py-1 border-b border-gray-800">
+              <span class="text-gray-400">Feed Rate:</span>
+              <span id="card-feed" class="text-blue-400">N/A</span>
+            </div>
+            <div class="flex justify-between py-1 border-b border-gray-800">
+              <span class="text-gray-400">Spindle Speed:</span>
+              <span id="card-rpm" class="text-green-400">N/A</span>
+            </div>
+          </div>
+
+          <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Fabrication Advice & Instructions</h4>
+          <p id="card-instructions" class="text-xs text-gray-300 leading-relaxed bg-gray-900 p-3 rounded-lg border border-gray-800">
+            Visual inspection of FR4 substrate, copper traces, mask apertures, silkscreen legends, drills, and the 5mm breakaway tab attached along the PCB width side.
+          </p>
+        </div>
+
+        <div class="mt-4 pt-4 border-t border-gray-800 flex items-center justify-between text-xs">
+          <span class="text-gray-400">Attached Tag Bar:</span>
+          <span class="text-amber-400 font-mono font-bold">5mm along PCB Width</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 2: Sheet Selector Tabs & Blueprint Viewer -->
+  <div class="flex border-b border-gray-800 mb-6 space-x-2">
+    <button onclick="selectSheet(1)" id="tab-btn-1" class="px-4 py-2 text-sm font-semibold border-b-2 transition border-blue-500 text-blue-400 bg-blue-500/10">Sheet 01 (4 Units | GREEN)</button><button onclick="selectSheet(2)" id="tab-btn-2" class="px-4 py-2 text-sm font-semibold border-b-2 transition border-transparent text-gray-400 hover:text-white">Sheet 02 (4 Units | GREEN)</button><button onclick="selectSheet(3)" id="tab-btn-3" class="px-4 py-2 text-sm font-semibold border-b-2 transition border-transparent text-gray-400 hover:text-white">Sheet 03 (4 Units | GREEN)</button>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-12">
+    <!-- Left Column: Interactive Panel Preview -->
+    <div class="lg:col-span-7 bg-gray-900 border border-gray-800 p-5 rounded-2xl">
+      
+        <div id="sheet-panel-1" style="display: block;" class="sheet-content">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-lg text-white flex items-center space-x-2">
+              <span>Sheet 01 Panel Layout</span>
+              <span class="text-xs bg-gray-800 text-gray-300 px-2 py-0.5 rounded">210 x 297 mm</span>
+              <span class="text-xs bg-green-900/40 text-green-400 border border-green-700/40 px-2 py-0.5 rounded">GREEN SOLDERMASK</span>
+            </h3>
+            <span class="text-xs text-yellow-500 bg-yellow-500/10 px-2.5 py-1 rounded-full border border-yellow-500/20 font-mono">
+              Y-Split: 145.0 mm | 4 Units Nested (Zero Gap Single Cut)
+            </span>
+          </div>
+
+          <div class="svg-container bg-black p-3 rounded-xl border border-gray-800 flex justify-center items-center">
+            <img src="manufacture_svg/Sheet01_Overview_Panel_Blueprint.svg" alt="Sheet 1 Blueprint" class="max-h-[680px] object-contain rounded">
+          </div>
+
+          <div class="mt-4 overflow-x-auto">
+            <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Nested Boards on Sheet 01</h4>
+            <table class="w-full text-left">
+              <thead class="text-gray-400 border-b border-gray-800 bg-gray-950/40 text-xs">
+                <tr>
+                  <th class="py-2 px-3">Unit ID</th>
+                  <th class="py-2 px-3">Project</th>
+                  <th class="py-2 px-3">Dimensions</th>
+                  <th class="py-2 px-3">Rotation</th>
+                  <th class="py-2 px-3">Panel Origin</th>
+                  <th class="py-2 px-3">Snap-off Feature</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="border-b border-gray-800 hover:bg-gray-800/30 font-mono text-xs"><td class="py-2 px-3 text-yellow-400 font-bold">PCB-AC-01-001</td><td class="py-2 px-3 text-gray-300">AirCooler</td><td class="py-2 px-3 text-gray-400">124.2 x 78.2 mm</td><td class="py-2 px-3 text-blue-400">90° (Along Width)</td><td class="py-2 px-3 text-gray-400">X: 18.0, Y: 8.0</td><td class="py-2 px-3"><span class="px-2 py-0.5 rounded bg-green-500/20 text-green-300">5mm Tab + Arrow (0mm Gap)</span></td></tr><tr class="border-b border-gray-800 hover:bg-gray-800/30 font-mono text-xs"><td class="py-2 px-3 text-yellow-400 font-bold">PCB-AC-01-002</td><td class="py-2 px-3 text-gray-300">AirCooler</td><td class="py-2 px-3 text-gray-400">124.2 x 78.2 mm</td><td class="py-2 px-3 text-blue-400">90° (Along Width)</td><td class="py-2 px-3 text-gray-400">X: 101.2, Y: 8.0</td><td class="py-2 px-3"><span class="px-2 py-0.5 rounded bg-green-500/20 text-green-300">5mm Tab + Arrow (0mm Gap)</span></td></tr><tr class="border-b border-gray-800 hover:bg-gray-800/30 font-mono text-xs"><td class="py-2 px-3 text-yellow-400 font-bold">PCB-AC-01-003</td><td class="py-2 px-3 text-gray-300">AirCooler</td><td class="py-2 px-3 text-gray-400">124.2 x 78.2 mm</td><td class="py-2 px-3 text-blue-400">90° (Along Width)</td><td class="py-2 px-3 text-gray-400">X: 18.0, Y: 150.0</td><td class="py-2 px-3"><span class="px-2 py-0.5 rounded bg-green-500/20 text-green-300">5mm Tab + Arrow (0mm Gap)</span></td></tr><tr class="border-b border-gray-800 hover:bg-gray-800/30 font-mono text-xs"><td class="py-2 px-3 text-yellow-400 font-bold">PCB-AC-01-004</td><td class="py-2 px-3 text-gray-300">AirCooler</td><td class="py-2 px-3 text-gray-400">124.2 x 78.2 mm</td><td class="py-2 px-3 text-blue-400">90° (Along Width)</td><td class="py-2 px-3 text-gray-400">X: 101.2, Y: 150.0</td><td class="py-2 px-3"><span class="px-2 py-0.5 rounded bg-green-500/20 text-green-300">5mm Tab + Arrow (0mm Gap)</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        
+        <div id="sheet-panel-2" style="display: none;" class="sheet-content">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-lg text-white flex items-center space-x-2">
+              <span>Sheet 02 Panel Layout</span>
+              <span class="text-xs bg-gray-800 text-gray-300 px-2 py-0.5 rounded">210 x 297 mm</span>
+              <span class="text-xs bg-green-900/40 text-green-400 border border-green-700/40 px-2 py-0.5 rounded">GREEN SOLDERMASK</span>
+            </h3>
+            <span class="text-xs text-yellow-500 bg-yellow-500/10 px-2.5 py-1 rounded-full border border-yellow-500/20 font-mono">
+              Y-Split: 145.0 mm | 4 Units Nested (Zero Gap Single Cut)
+            </span>
+          </div>
+
+          <div class="svg-container bg-black p-3 rounded-xl border border-gray-800 flex justify-center items-center">
+            <img src="manufacture_svg/Sheet02_Overview_Panel_Blueprint.svg" alt="Sheet 2 Blueprint" class="max-h-[680px] object-contain rounded">
+          </div>
+
+          <div class="mt-4 overflow-x-auto">
+            <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Nested Boards on Sheet 02</h4>
+            <table class="w-full text-left">
+              <thead class="text-gray-400 border-b border-gray-800 bg-gray-950/40 text-xs">
+                <tr>
+                  <th class="py-2 px-3">Unit ID</th>
+                  <th class="py-2 px-3">Project</th>
+                  <th class="py-2 px-3">Dimensions</th>
+                  <th class="py-2 px-3">Rotation</th>
+                  <th class="py-2 px-3">Panel Origin</th>
+                  <th class="py-2 px-3">Snap-off Feature</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="border-b border-gray-800 hover:bg-gray-800/30 font-mono text-xs"><td class="py-2 px-3 text-yellow-400 font-bold">PCB-AC-01-005</td><td class="py-2 px-3 text-gray-300">AirCooler</td><td class="py-2 px-3 text-gray-400">124.2 x 78.2 mm</td><td class="py-2 px-3 text-blue-400">90° (Along Width)</td><td class="py-2 px-3 text-gray-400">X: 18.0, Y: 8.0</td><td class="py-2 px-3"><span class="px-2 py-0.5 rounded bg-green-500/20 text-green-300">5mm Tab + Arrow (0mm Gap)</span></td></tr><tr class="border-b border-gray-800 hover:bg-gray-800/30 font-mono text-xs"><td class="py-2 px-3 text-yellow-400 font-bold">PCB-AC-01-006</td><td class="py-2 px-3 text-gray-300">AirCooler</td><td class="py-2 px-3 text-gray-400">124.2 x 78.2 mm</td><td class="py-2 px-3 text-blue-400">90° (Along Width)</td><td class="py-2 px-3 text-gray-400">X: 101.2, Y: 8.0</td><td class="py-2 px-3"><span class="px-2 py-0.5 rounded bg-green-500/20 text-green-300">5mm Tab + Arrow (0mm Gap)</span></td></tr><tr class="border-b border-gray-800 hover:bg-gray-800/30 font-mono text-xs"><td class="py-2 px-3 text-yellow-400 font-bold">PCB-AC-01-007</td><td class="py-2 px-3 text-gray-300">AirCooler</td><td class="py-2 px-3 text-gray-400">124.2 x 78.2 mm</td><td class="py-2 px-3 text-blue-400">90° (Along Width)</td><td class="py-2 px-3 text-gray-400">X: 18.0, Y: 150.0</td><td class="py-2 px-3"><span class="px-2 py-0.5 rounded bg-green-500/20 text-green-300">5mm Tab + Arrow (0mm Gap)</span></td></tr><tr class="border-b border-gray-800 hover:bg-gray-800/30 font-mono text-xs"><td class="py-2 px-3 text-yellow-400 font-bold">PCB-AC-01-008</td><td class="py-2 px-3 text-gray-300">AirCooler</td><td class="py-2 px-3 text-gray-400">124.2 x 78.2 mm</td><td class="py-2 px-3 text-blue-400">90° (Along Width)</td><td class="py-2 px-3 text-gray-400">X: 101.2, Y: 150.0</td><td class="py-2 px-3"><span class="px-2 py-0.5 rounded bg-green-500/20 text-green-300">5mm Tab + Arrow (0mm Gap)</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        
+        <div id="sheet-panel-3" style="display: none;" class="sheet-content">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-lg text-white flex items-center space-x-2">
+              <span>Sheet 03 Panel Layout</span>
+              <span class="text-xs bg-gray-800 text-gray-300 px-2 py-0.5 rounded">210 x 297 mm</span>
+              <span class="text-xs bg-green-900/40 text-green-400 border border-green-700/40 px-2 py-0.5 rounded">GREEN SOLDERMASK</span>
+            </h3>
+            <span class="text-xs text-yellow-500 bg-yellow-500/10 px-2.5 py-1 rounded-full border border-yellow-500/20 font-mono">
+              Y-Split: 145.0 mm | 4 Units Nested (Zero Gap Single Cut)
+            </span>
+          </div>
+
+          <div class="svg-container bg-black p-3 rounded-xl border border-gray-800 flex justify-center items-center">
+            <img src="manufacture_svg/Sheet03_Overview_Panel_Blueprint.svg" alt="Sheet 3 Blueprint" class="max-h-[680px] object-contain rounded">
+          </div>
+
+          <div class="mt-4 overflow-x-auto">
+            <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Nested Boards on Sheet 03</h4>
+            <table class="w-full text-left">
+              <thead class="text-gray-400 border-b border-gray-800 bg-gray-950/40 text-xs">
+                <tr>
+                  <th class="py-2 px-3">Unit ID</th>
+                  <th class="py-2 px-3">Project</th>
+                  <th class="py-2 px-3">Dimensions</th>
+                  <th class="py-2 px-3">Rotation</th>
+                  <th class="py-2 px-3">Panel Origin</th>
+                  <th class="py-2 px-3">Snap-off Feature</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="border-b border-gray-800 hover:bg-gray-800/30 font-mono text-xs"><td class="py-2 px-3 text-yellow-400 font-bold">PCB-AC-01-009</td><td class="py-2 px-3 text-gray-300">AirCooler</td><td class="py-2 px-3 text-gray-400">124.2 x 78.2 mm</td><td class="py-2 px-3 text-blue-400">90° (Along Width)</td><td class="py-2 px-3 text-gray-400">X: 18.0, Y: 8.0</td><td class="py-2 px-3"><span class="px-2 py-0.5 rounded bg-green-500/20 text-green-300">5mm Tab + Arrow (0mm Gap)</span></td></tr><tr class="border-b border-gray-800 hover:bg-gray-800/30 font-mono text-xs"><td class="py-2 px-3 text-yellow-400 font-bold">PCB-AC-01-010</td><td class="py-2 px-3 text-gray-300">AirCooler</td><td class="py-2 px-3 text-gray-400">124.2 x 78.2 mm</td><td class="py-2 px-3 text-blue-400">90° (Along Width)</td><td class="py-2 px-3 text-gray-400">X: 101.2, Y: 8.0</td><td class="py-2 px-3"><span class="px-2 py-0.5 rounded bg-green-500/20 text-green-300">5mm Tab + Arrow (0mm Gap)</span></td></tr><tr class="border-b border-gray-800 hover:bg-gray-800/30 font-mono text-xs"><td class="py-2 px-3 text-yellow-400 font-bold">PCB-AC-02-001</td><td class="py-2 px-3 text-gray-300">Board-01</td><td class="py-2 px-3 text-gray-400">127.2 x 56.2 mm</td><td class="py-2 px-3 text-blue-400">90° (Along Width)</td><td class="py-2 px-3 text-gray-400">X: 18.0, Y: 150.0</td><td class="py-2 px-3"><span class="px-2 py-0.5 rounded bg-green-500/20 text-green-300">5mm Tab + Arrow (0mm Gap)</span></td></tr><tr class="border-b border-gray-800 hover:bg-gray-800/30 font-mono text-xs"><td class="py-2 px-3 text-yellow-400 font-bold">PCB-AC-02-002</td><td class="py-2 px-3 text-gray-300">Board-01</td><td class="py-2 px-3 text-gray-400">127.2 x 56.2 mm</td><td class="py-2 px-3 text-blue-400">90° (Along Width)</td><td class="py-2 px-3 text-gray-400">X: 79.2, Y: 150.0</td><td class="py-2 px-3"><span class="px-2 py-0.5 rounded bg-green-500/20 text-green-300">5mm Tab + Arrow (0mm Gap)</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        
+
+      <!-- Blueprint Legend -->
+      <div class="mt-6 pt-4 border-t border-gray-800 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+        <div class="flex items-center space-x-1.5">
+          <div class="w-3 h-3 rounded bg-green-500/30 border border-green-500"></div>
+          <span class="text-gray-300">PCB Body</span>
+        </div>
+        <div class="flex items-center space-x-1.5">
+          <div class="w-3 h-3 rounded bg-yellow-500/40 border border-yellow-500"></div>
+          <span class="text-gray-300">5mm Snap ID Tag</span>
+        </div>
+        <div class="flex items-center space-x-1.5">
+          <div class="w-3 h-3 rounded bg-red-500/30 border border-red-500"></div>
+          <span class="text-gray-300">Clamp Keepout</span>
+        </div>
+        <div class="flex items-center space-x-1.5">
+          <div class="w-3 h-3 rounded bg-blue-500/30 border border-blue-500"></div>
+          <span class="text-gray-300">Left Guide Margin</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Interactive Setup Checklist -->
+    <div class="lg:col-span-5 bg-gray-900 border border-gray-800 p-5 rounded-2xl flex flex-col justify-between">
+      <div>
+        <div class="flex items-center justify-between pb-3 mb-3 border-b border-gray-800">
+          <div>
+            <h3 class="font-bold text-base text-white">Fabrication Setup Checklist</h3>
+            <p class="text-xs text-gray-400">Tick items as you execute setup. State auto-saves to <code class="text-blue-400 font-mono">checklist_state.json</code>.</p>
+          </div>
+          <button onclick="downloadChecklistJSON()" class="px-2.5 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded border border-gray-700">
+            Export JSON
+          </button>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="mb-4">
+          <div class="flex justify-between text-xs text-gray-400 mb-1">
+            <span>Setup Progress</span>
+            <span id="chk-progress-text" class="text-blue-400 font-mono font-bold">0 / 20 Completed (0%)</span>
+          </div>
+          <div class="w-full bg-gray-800 h-2 rounded-full overflow-hidden">
+            <div id="chk-progress-bar" class="bg-blue-600 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <!-- Checklist Item Rows -->
+        <div class="space-y-2.5 max-h-[580px] overflow-y-auto pr-1">
+          
+        <div class="flex items-start space-x-3 p-3 bg-gray-950/60 rounded-xl border border-gray-800 hover:border-blue-500/40 transition">
+          <input type="checkbox" id="check_bed_clean" checked onchange="toggleChecklistItem('check_bed_clean', this.checked)"
+                 class="mt-1 w-4 h-4 rounded text-blue-600 bg-gray-900 border-gray-700 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <label for="check_bed_clean" id="label-check_bed_clean" class="text-sm font-semibold cursor-pointer line-through text-gray-500">
+                1. Plywood Bed & Sacrificial Spoilboard Cleanliness
+              </label>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Preparation
+              </span>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">Ensure bed is completely free of chips, debris, and oil before placing A4 laminate.</p>
+          </div>
+        </div>
+        
+        <div class="flex items-start space-x-3 p-3 bg-gray-950/60 rounded-xl border border-gray-800 hover:border-blue-500/40 transition">
+          <input type="checkbox" id="check_stock_secure" checked onchange="toggleChecklistItem('check_stock_secure', this.checked)"
+                 class="mt-1 w-4 h-4 rounded text-blue-600 bg-gray-900 border-gray-700 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <label for="check_stock_secure" id="label-check_stock_secure" class="text-sm font-semibold cursor-pointer line-through text-gray-500">
+                2. A4 Copper Clad Sheet Mounting (210 x 297 mm)
+              </label>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Preparation
+              </span>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">Laminate clamped securely using low-profile clamps from pcb_holders.json.</p>
+          </div>
+        </div>
+        
+        <div class="flex items-start space-x-3 p-3 bg-gray-950/60 rounded-xl border border-gray-800 hover:border-blue-500/40 transition">
+          <input type="checkbox" id="check_clamp_clearance" checked onchange="toggleChecklistItem('check_clamp_clearance', this.checked)"
+                 class="mt-1 w-4 h-4 rounded text-blue-600 bg-gray-900 border-gray-700 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <label for="check_clamp_clearance" id="label-check_clamp_clearance" class="text-sm font-semibold cursor-pointer line-through text-gray-500">
+                3. Fixture Clamp Collision Keep-Out Verification
+              </label>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Preparation
+              </span>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">Verify toolpaths maintain minimum 3.0mm clearance around all 6 clamp fixtures.</p>
+          </div>
+        </div>
+        
+        <div class="flex items-start space-x-3 p-3 bg-gray-950/60 rounded-xl border border-gray-800 hover:border-blue-500/40 transition">
+          <input type="checkbox" id="check_machine_home" checked onchange="toggleChecklistItem('check_machine_home', this.checked)"
+                 class="mt-1 w-4 h-4 rounded text-blue-600 bg-gray-900 border-gray-700 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <label for="check_machine_home" id="label-check_machine_home" class="text-sm font-semibold cursor-pointer line-through text-gray-500">
+                4. Machine Homing & Work Coordinate System (WCS G54) Zeroing
+              </label>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Preparation
+              </span>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">Home machine axes and set X0, Y0 at bottom-left corner of copper sheet.</p>
+          </div>
+        </div>
+        
+        <div class="flex items-start space-x-3 p-3 bg-gray-950/60 rounded-xl border border-gray-800 hover:border-blue-500/40 transition">
+          <input type="checkbox" id="check_probe_autolevel"  onchange="toggleChecklistItem('check_probe_autolevel', this.checked)"
+                 class="mt-1 w-4 h-4 rounded text-blue-600 bg-gray-900 border-gray-700 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <label for="check_probe_autolevel" id="label-check_probe_autolevel" class="text-sm font-semibold cursor-pointer text-white">
+                5. Surface Height Autoleveling Probe Grid (G38.2)
+              </label>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Preparation
+              </span>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">Run height map probe across A4 board to compensate for board curvature (up to 0.3mm).</p>
+          </div>
+        </div>
+        
+        <div class="flex items-start space-x-3 p-3 bg-gray-950/60 rounded-xl border border-gray-800 hover:border-blue-500/40 transition">
+          <input type="checkbox" id="check_bit_step0"  onchange="toggleChecklistItem('check_bit_step0', this.checked)"
+                 class="mt-1 w-4 h-4 rounded text-blue-600 bg-gray-900 border-gray-700 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <label for="check_bit_step0" id="label-check_bit_step0" class="text-sm font-semibold cursor-pointer text-white">
+                6. Step 0: V-Bit Tool Loaded (30° / 0.1mm tip)
+              </label>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Step 0 - Guides
+              </span>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">Mount V-bit for left margin millimeter scale, 145mm datum line, and pin holes.</p>
+          </div>
+        </div>
+        
+        <div class="flex items-start space-x-3 p-3 bg-gray-950/60 rounded-xl border border-gray-800 hover:border-blue-500/40 transition">
+          <input type="checkbox" id="check_pin_registration"  onchange="toggleChecklistItem('check_pin_registration', this.checked)"
+                 class="mt-1 w-4 h-4 rounded text-blue-600 bg-gray-900 border-gray-700 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <label for="check_pin_registration" id="label-check_pin_registration" class="text-sm font-semibold cursor-pointer text-white">
+                7. Step 0: Reference Dowel Pins Inserted
+              </label>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Step 0 - Guides
+              </span>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">Insert 3.0mm dowel pins into milled left-edge reference registration holes.</p>
+          </div>
+        </div>
+        
+        <div class="flex items-start space-x-3 p-3 bg-gray-950/60 rounded-xl border border-gray-800 hover:border-blue-500/40 transition">
+          <input type="checkbox" id="check_step1_drills"  onchange="toggleChecklistItem('check_step1_drills', this.checked)"
+                 class="mt-1 w-4 h-4 rounded text-blue-600 bg-gray-900 border-gray-700 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <label for="check_step1_drills" id="label-check_step1_drills" class="text-sm font-semibold cursor-pointer text-white">
+                8. Step 1: Top Drilling (Front Half) Run to Completion
+              </label>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Step 1 - Drilling
+              </span>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">Carbide bits cycled with peck drilling for vias, THT pins, and 5mm tab mouse bites.</p>
+          </div>
+        </div>
+        
+        <div class="flex items-start space-x-3 p-3 bg-gray-950/60 rounded-xl border border-gray-800 hover:border-blue-500/40 transition">
+          <input type="checkbox" id="check_y_shift_1"  onchange="toggleChecklistItem('check_y_shift_1', this.checked)"
+                 class="mt-1 w-4 h-4 rounded text-blue-600 bg-gray-900 border-gray-700 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <label for="check_y_shift_1" id="label-check_y_shift_1" class="text-sm font-semibold cursor-pointer text-white">
+                9. Step 1: Slide Board Forward by 145.0 mm for Back Half Drilling
+              </label>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Step 1 - Drilling
+              </span>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">Align left engraved 145mm datum mark with bed datum edge and secure clamps.</p>
+          </div>
+        </div>
+        
+        <div class="flex items-start space-x-3 p-3 bg-gray-950/60 rounded-xl border border-gray-800 hover:border-blue-500/40 transition">
+          <input type="checkbox" id="check_step1_drills_back"  onchange="toggleChecklistItem('check_step1_drills_back', this.checked)"
+                 class="mt-1 w-4 h-4 rounded text-blue-600 bg-gray-900 border-gray-700 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <label for="check_step1_drills_back" id="label-check_step1_drills_back" class="text-sm font-semibold cursor-pointer text-white">
+                10. Step 1: Top Drilling (Back Half) Run to Completion
+              </label>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Step 1 - Drilling
+              </span>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">Complete back half drilling for remaining nested boards.</p>
+          </div>
+        </div>
+        
+        <div class="flex items-start space-x-3 p-3 bg-gray-950/60 rounded-xl border border-gray-800 hover:border-blue-500/40 transition">
+          <input type="checkbox" id="check_step2_vias"  onchange="toggleChecklistItem('check_step2_vias', this.checked)"
+                 class="mt-1 w-4 h-4 rounded text-blue-600 bg-gray-900 border-gray-700 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <label for="check_step2_vias" id="label-check_step2_vias" class="text-sm font-semibold cursor-pointer text-white">
+                11. Step 2: Chemical Through-Hole Via Metallization
+              </label>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Step 2 - Vias
+              </span>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">Desmear -> Carbon/Palladium seed -> 45 min copper electroplating bath (25µm Cu barrel).</p>
+          </div>
+        </div>
+        
+        <div class="flex items-start space-x-3 p-3 bg-gray-950/60 rounded-xl border border-gray-800 hover:border-blue-500/40 transition">
+          <input type="checkbox" id="check_step3_top_cu"  onchange="toggleChecklistItem('check_step3_top_cu', this.checked)"
+                 class="mt-1 w-4 h-4 rounded text-blue-600 bg-gray-900 border-gray-700 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <label for="check_step3_top_cu" id="label-check_step3_top_cu" class="text-sm font-semibold cursor-pointer text-white">
+                12. Step 3: Top Copper Isolation Routing (Front & Back Halves)
+              </label>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Step 3 - Top Cu
+              </span>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">Engrave circuit traces, tightly connected shared edges, and 5mm snap ID tag + arrow.</p>
+          </div>
+        </div>
+        
+        <div class="flex items-start space-x-3 p-3 bg-gray-950/60 rounded-xl border border-gray-800 hover:border-blue-500/40 transition">
+          <input type="checkbox" id="check_step4_flip"  onchange="toggleChecklistItem('check_step4_flip', this.checked)"
+                 class="mt-1 w-4 h-4 rounded text-blue-600 bg-gray-900 border-gray-700 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <label for="check_step4_flip" id="label-check_step4_flip" class="text-sm font-semibold cursor-pointer text-white">
+                13. Step 4: Horizontal Board Flip Along Y-Axis (X' = W - X)
+              </label>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Step 4 - Bottom Cu
+              </span>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">Flip board over without Z rotation; register using right-side flipped reference guides.</p>
+          </div>
+        </div>
+        
+        <div class="flex items-start space-x-3 p-3 bg-gray-950/60 rounded-xl border border-gray-800 hover:border-blue-500/40 transition">
+          <input type="checkbox" id="check_step4_bot_cu"  onchange="toggleChecklistItem('check_step4_bot_cu', this.checked)"
+                 class="mt-1 w-4 h-4 rounded text-blue-600 bg-gray-900 border-gray-700 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <label for="check_step4_bot_cu" id="label-check_step4_bot_cu" class="text-sm font-semibold cursor-pointer text-white">
+                14. Step 4: Bottom Copper Isolation Routing (Front & Back Halves)
+              </label>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Step 4 - Bottom Cu
+              </span>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">Milling bottom traces and THT pad surrounds with mirrored coordinates.</p>
+          </div>
+        </div>
+        
+        <div class="flex items-start space-x-3 p-3 bg-gray-950/60 rounded-xl border border-gray-800 hover:border-blue-500/40 transition">
+          <input type="checkbox" id="check_step5_mask_apply"  onchange="toggleChecklistItem('check_step5_mask_apply', this.checked)"
+                 class="mt-1 w-4 h-4 rounded text-blue-600 bg-gray-900 border-gray-700 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <label for="check_step5_mask_apply" id="label-check_step5_mask_apply" class="text-sm font-semibold cursor-pointer text-white">
+                15. Step 5: Solder Mask Coating & UV Curing
+              </label>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Step 5 - Mask
+              </span>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">Apply uniform liquid photoimageable mask or dry film; cure with 395nm UV lamp.</p>
+          </div>
+        </div>
+        
+        <div class="flex items-start space-x-3 p-3 bg-gray-950/60 rounded-xl border border-gray-800 hover:border-blue-500/40 transition">
+          <input type="checkbox" id="check_step5_z_reprobe"  onchange="toggleChecklistItem('check_step5_z_reprobe', this.checked)"
+                 class="mt-1 w-4 h-4 rounded text-blue-600 bg-gray-900 border-gray-700 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <label for="check_step5_z_reprobe" id="label-check_step5_z_reprobe" class="text-sm font-semibold cursor-pointer text-white">
+                16. Step 5: M0 Pause Acknowledged & Z Re-Zeroed on Mask (+35µm)
+              </label>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Step 5 - Mask
+              </span>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">Re-touch Z0 onto cured mask surface before starting pad clearance routing (-0.06mm).</p>
+          </div>
+        </div>
+        
+        <div class="flex items-start space-x-3 p-3 bg-gray-950/60 rounded-xl border border-gray-800 hover:border-blue-500/40 transition">
+          <input type="checkbox" id="check_step6_silk_todo"  onchange="toggleChecklistItem('check_step6_silk_todo', this.checked)"
+                 class="mt-1 w-4 h-4 rounded text-blue-600 bg-gray-900 border-gray-700 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <label for="check_step6_silk_todo" id="label-check_step6_silk_todo" class="text-sm font-semibold cursor-pointer text-white">
+                17. Step 6: Silkscreen Component Legend Printing
+              </label>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Step 6 - Silkscreen
+              </span>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">Apply component designators using UV stencil or log for future flatbed inkjet DoD printer.</p>
+          </div>
+        </div>
+        
+        <div class="flex items-start space-x-3 p-3 bg-gray-950/60 rounded-xl border border-gray-800 hover:border-blue-500/40 transition">
+          <input type="checkbox" id="check_step7_cutout_top"  onchange="toggleChecklistItem('check_step7_cutout_top', this.checked)"
+                 class="mt-1 w-4 h-4 rounded text-blue-600 bg-gray-900 border-gray-700 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <label for="check_step7_cutout_top" id="label-check_step7_cutout_top" class="text-sm font-semibold cursor-pointer text-white">
+                18. Step 7: Dual-Sided Snapable Cutout (Top Side Partial Depth -0.85mm)
+              </label>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Step 7 - Cutout
+              </span>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">Milling top perimeter score line with 3.0mm retention bridge tabs.</p>
+          </div>
+        </div>
+        
+        <div class="flex items-start space-x-3 p-3 bg-gray-950/60 rounded-xl border border-gray-800 hover:border-blue-500/40 transition">
+          <input type="checkbox" id="check_step7_cutout_bot"  onchange="toggleChecklistItem('check_step7_cutout_bot', this.checked)"
+                 class="mt-1 w-4 h-4 rounded text-blue-600 bg-gray-900 border-gray-700 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <label for="check_step7_cutout_bot" id="label-check_step7_cutout_bot" class="text-sm font-semibold cursor-pointer text-white">
+                19. Step 7: Dual-Sided Snapable Cutout (Bottom Side Partial Depth -0.85mm)
+              </label>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Step 7 - Cutout
+              </span>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">Flip sheet and mill matching bottom perimeter score line (-0.85mm = 1.70mm total cut).</p>
+          </div>
+        </div>
+        
+        <div class="flex items-start space-x-3 p-3 bg-gray-950/60 rounded-xl border border-gray-800 hover:border-blue-500/40 transition">
+          <input type="checkbox" id="check_board_snap"  onchange="toggleChecklistItem('check_board_snap', this.checked)"
+                 class="mt-1 w-4 h-4 rounded text-blue-600 bg-gray-900 border-gray-700 focus:ring-blue-500 focus:ring-offset-gray-900 cursor-pointer">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <label for="check_board_snap" id="label-check_board_snap" class="text-sm font-semibold cursor-pointer text-white">
+                20. Final: Hand Snap-Off of Boards & Breakaway 5mm ID Tags
+              </label>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Post-Processing
+              </span>
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">Snap boards from sheet and separate 5mm ID tags along perforated mouse bites by hand.</p>
+          </div>
+        </div>
+        
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 3: Practical Issues & Built-in Solutions Matrix -->
+  <section class="mt-8 mb-12">
+    <h2 class="text-xl font-bold text-white mb-4">Practical CNC Machining Challenges & Automated Solutions</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+      
+    <div class="bg-gray-900 border border-gray-800 p-5 rounded-2xl flex flex-col justify-between">
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-semibold text-blue-400 bg-blue-900/40 px-2.5 py-0.5 rounded-full">Solved via Probing & Clamps</span>
+        </div>
+        <h3 class="font-bold text-white text-base mb-1">1. FR4 Board Bowing & Z-Height Variations</h3>
+        <p class="text-xs text-gray-400 mb-3">A4 copper laminate sheets (210x297mm) exhibit up to 0.3mm bowing across the bed, causing trace disconnects or snapped 0.1mm V-bits.</p>
+      </div>
+      <div class="p-3 bg-gray-950 rounded-xl border border-gray-800/80 text-xs text-gray-300">
+        <strong class="text-blue-400 font-semibold">Solution:</strong> Built-in conservative cut depth (-0.04mm), autoleveling height map integration (G38.2 probe grid), and high-rigidity low-profile corner clamps from pcb_holders.json.
+      </div>
+    </div>
+    
+    <div class="bg-gray-900 border border-gray-800 p-5 rounded-2xl flex flex-col justify-between">
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-semibold text-blue-400 bg-blue-900/40 px-2.5 py-0.5 rounded-full">Solved via Step 0 Guides</span>
+        </div>
+        <h3 class="font-bold text-white text-base mb-1">2. Y-Axis Shift Repeatability (2-Step 170mm Bed)</h3>
+        <p class="text-xs text-gray-400 mb-3">Manually shifting the A4 sheet 145mm forward can introduce skew / angular tilt, misaligning front and back half features.</p>
+      </div>
+      <div class="p-3 bg-gray-950 rounded-xl border border-gray-800/80 text-xs text-gray-300">
+        <strong class="text-blue-400 font-semibold">Solution:</strong> Dedicated Left-Edge Step 0 Alignment Guides: Engraved millimeter scale, shift datum line at Y=145.0mm, and dual 3.0mm reference dowel pin holes for rigid mechanical registration.
+      </div>
+    </div>
+    
+    <div class="bg-gray-900 border border-gray-800 p-5 rounded-2xl flex flex-col justify-between">
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-semibold text-blue-400 bg-blue-900/40 px-2.5 py-0.5 rounded-full">Solved via Dual-Side Scoring</span>
+        </div>
+        <h3 class="font-bold text-white text-base mb-1">3. Dangerous Flying Boards & Endmill Snapping</h3>
+        <p class="text-xs text-gray-400 mb-3">Full perimeter through-cutting in 1.6mm FR4 causes loose boards to vibrate into the 10,000 RPM endmill, breaking bits.</p>
+      </div>
+      <div class="p-3 bg-gray-950 rounded-xl border border-gray-800/80 text-xs text-gray-300">
+        <strong class="text-blue-400 font-semibold">Solution:</strong> Dual-Sided Snapable Cutout: Routing partial depth (-0.85mm) top AND bottom sides, maintaining retention bridge tabs and mouse-bite perforations. Zero flying boards; snap out by hand.
+      </div>
+    </div>
+    
+    <div class="bg-gray-900 border border-gray-800 p-5 rounded-2xl flex flex-col justify-between">
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-semibold text-blue-400 bg-blue-900/40 px-2.5 py-0.5 rounded-full">Solved via Mouse Bites</span>
+        </div>
+        <h3 class="font-bold text-white text-base mb-1">4. 5mm Board ID Tag Breakaway Cleanliness</h3>
+        <p class="text-xs text-gray-400 mb-3">Snapping off ID tags can tear copper traces or delaminate the FR4 board edge.</p>
+      </div>
+      <div class="p-3 bg-gray-950 rounded-xl border border-gray-800/80 text-xs text-gray-300">
+        <strong class="text-blue-400 font-semibold">Solution:</strong> Automated 0.8mm mouse-bite drill line with 1.5mm pitch along the PCB width seam + engraved directional arrows pointing directly into the PCB body.
+      </div>
+    </div>
+    
+    <div class="bg-gray-900 border border-gray-800 p-5 rounded-2xl flex flex-col justify-between">
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-semibold text-blue-400 bg-blue-900/40 px-2.5 py-0.5 rounded-full">Solved via Re-Zero Prompt</span>
+        </div>
+        <h3 class="font-bold text-white text-base mb-1">5. Solder Mask Surface Height Discrepancy</h3>
+        <p class="text-xs text-gray-400 mb-3">Cured UV solder mask adds 25-50µm of thickness, causing shallow pad openings if bare copper Z0 is reused.</p>
+      </div>
+      <div class="p-3 bg-gray-950 rounded-xl border border-gray-800/80 text-xs text-gray-300">
+        <strong class="text-blue-400 font-semibold">Solution:</strong> Step 5 G-code incorporates an explicit operator prompt (M0) and dedicated solder mask clearance depth (-0.06mm) to guarantee clean, exposed pads.
+      </div>
+    </div>
+    
+    <div class="bg-gray-900 border border-gray-800 p-5 rounded-2xl flex flex-col justify-between">
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-semibold text-blue-400 bg-blue-900/40 px-2.5 py-0.5 rounded-full">Solved via Keep-Out Checks</span>
+        </div>
+        <h3 class="font-bold text-white text-base mb-1">6. Fixture Clamp Collisions & Machine Alarms</h3>
+        <p class="text-xs text-gray-400 mb-3">Rapid machine moves hitting clamps or commanding Y > 170mm causing FluidNC soft-limit alarms.</p>
+      </div>
+      <div class="p-3 bg-gray-950 rounded-xl border border-gray-800/80 text-xs text-gray-300">
+        <strong class="text-blue-400 font-semibold">Solution:</strong> Full collision avoidance engine enforcing holder_gap from pcb_holders.json, and strict coordinate clamping (Y' = Y - 145mm <= 152mm).
+      </div>
+    </div>
+    
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="pt-6 border-t border-gray-800 text-center text-xs text-gray-400">
+    <p>A4 Copper Board CNC Panelization & Manufacturing Pipeline &bull; FluidNC CNC Direct Integration</p>
+  </footer>
+</body>
+</html>
