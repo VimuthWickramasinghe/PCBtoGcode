@@ -7,12 +7,15 @@
   },
   "cnc_limits": {
     "bed_travel_x_mm": 275.0,
+    "bed_milling_x_mm": 260.0,
     "bed_travel_y_mm": 170.0,
     "y_split_threshold_mm": 145.0,
-    "front_half_max_y_mm": 141.0,
+    "front_half_min_y_mm": 8.5,
+    "front_half_max_y_mm": 141.5,
     "back_half_min_y_mm": 150.0,
     "back_half_max_y_mm": 292.0,
-    "left_margin_guide_width_mm": 18.0
+    "left_margin_guide_width_mm": 18.0,
+    "right_margin_mm": 5.0
   },
   "panelization": {
     "zero_gap_tight_packing": true,
@@ -27,23 +30,49 @@
   "pcb_tag_strip": {
     "include_pcb_tag_strip": true,
     "tag_width_mm": 5.0,
-    "attach_along_pcb_width": true,
+    "attach_along_shortest_edge": true,
+    "breakaway_mode": "v_bit_and_milling",
+    "available_breakaway_modes": [
+      "drilling_only",
+      "milling_only",
+      "v_bit_only",
+      "drilling_and_milling",
+      "v_bit_and_milling"
+    ],
+    "retention_tab_count": 2,
+    "retention_tab_width_mm": 2.0,
+    "smooth_edge_finishing": true,
+    "smooth_edge_recess_mm": 0.15,
     "engrave_text_both_sides": false,
     "engrave_arrow": true,
     "mouse_bite_drill_dia_mm": 0.8,
-    "mouse_bite_pitch_mm": 1.5
+    "mouse_bite_pitch_mm": 1.5,
+    "milling_tool_dia_mm": 1.0,
+    "milling_cut_depth_per_side_mm": -0.85,
+    "v_bit_angle_deg": 30.0,
+    "v_bit_score_depth_per_side_mm": -0.65
   },
   "sheet_tag_strip": {
     "enable_sheet_tag_strip": true,
-    "tag_position": "top_right",
+    "tag_position": "front_right",
     "engrave_sheet_number": true,
     "engrave_metadata_summary": true
   },
   "guides_and_fixturing": {
     "add_guide_lines": true,
     "enable_left_margin_guides": true,
+    "enable_dowel_pin_lock": false,
     "alignment_pin_hole_dia_mm": 3.0,
-    "holders_config_file": "pcb_holders.json"
+    "holders_config_file": "pcb_holders.json",
+    "z_probe_limit_switch": {
+      "enabled": true,
+      "x_mm": 272.001,
+      "y_mm": 135.002,
+      "width_mm": 7.0,
+      "length_mm": 20.0,
+      "danger_margin_mm": 6.0,
+      "label": "Z-ZERO LIMIT SWITCH (DANGER ZONE)"
+    }
   },
   "output_paths": {
     "gcode_dir": "manufacture_gcode",

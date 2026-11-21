@@ -1,0 +1,49 @@
+{
+  "version": "1.0.0",
+  "description": "Universal CNC Pocket Milling Configuration - Any Shape, Any Location, Any Depth",
+  "shape": {
+    "type": "rectangle",
+    "width_mm": 5.9,
+    "length_mm": 19.5,
+    "corner_radius_mm": 0.0,
+    "rotation_deg": 90.0,
+    "clearance_mm": 0.0
+  },
+  "position": {
+    "reference": "middle_of_bed",
+    "custom_center_x_mm": 137.5,
+    "custom_center_y_mm": 85.0
+  },
+  "depth": {
+    "total_depth_mm": 10.0,
+    "stepdown_mm": 0.5
+  },
+  "tool": {
+    "type": "v_bit",
+    "v_bit": {
+      "angle_deg": 30.0,
+      "tip_dia_mm": 0.2,
+      "shank_dia_mm": 3.0
+    },
+    "endmill": {
+      "tool_dia_mm": 3.0
+    },
+    "stepover_ratio": 0.55
+  },
+  "feeds_and_speeds": {
+    "feed_xy_mm_min": 350.0,
+    "plunge_rate_mm_min": 80.0,
+    "spindle_speed_rpm": 10000,
+    "safe_z_mm": 5.0,
+    "clearance_z_mm": 20.0
+  },
+  "machine_limits": {
+    "bed_travel_x_mm": 275.0,
+    "bed_travel_y_mm": 170.0,
+    "edge_safety_margin_mm": 0.5
+  },
+  "output": {
+    "gcode_filename": "center_switch_pocket_rotated90.gcode",
+    "svg_filename": "center_switch_pocket_rotated90.svg"
+  }
+}

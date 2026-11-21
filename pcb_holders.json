@@ -1,81 +1,83 @@
 {
-  "version": "1.0.0",
-  "description": "CNC PCB Bed Clamping Holders and Fixture Keep-out Zones for A4 Copper Board Panelization",
+  "version": "1.1.0",
+  "description": "Common Single-Half CNC Bed Locking Points (Washer Clamping Only - No Through-PCB Drilling) + Fixed Bed Z-Zero Limit Switch Danger Zone",
   "units": "mm",
+  "coordinate_frame": "cnc_bed_common_one_half",
+  "washer_clamping_only": true,
+  "drill_through_pcb": false,
   "bed_limits": {
     "travel_x_mm": 275.0,
     "travel_y_mm": 170.0,
     "sheet_width_mm": 210.0,
     "sheet_height_mm": 297.0
   },
+  "z_probe_limit_switch": {
+    "enabled": true,
+    "x_mm": 272.001,
+    "y_mm": 135.002,
+    "width_mm": 7.0,
+    "length_mm": 20.0,
+    "danger_margin_mm": 6.0,
+    "description": "Fixed bed tool-length / Z-zero limit switch danger zone"
+  },
   "holders": [
     {
-      "id": "clamp_front_left",
-      "name": "Front-Left M4 Washer Clamp",
+      "id": "lock_bed_front_left",
+      "name": "Front-Left Common M4 Washer Clamp",
       "shape": "circle",
       "x": 8.0,
       "y": 8.0,
       "diameter": 12.0,
       "holder_gap": 3.0,
-      "step_zone": "front",
-      "description": "Front-left low-profile fixture screw clamp"
+      "step_zone": "bed_common",
+      "common_for_both_halves": true,
+      "drill_through_pcb": false,
+      "anchor_type": "washer_clamp",
+      "description": "Common bed locking screw with M4 washer clamping over PCB margin (no through-PCB anchor hole)"
     },
     {
-      "id": "clamp_front_right",
-      "name": "Front-Right M4 Washer Clamp",
+      "id": "lock_bed_front_right",
+      "name": "Front-Right Common M4 Washer Clamp",
       "shape": "circle",
       "x": 202.0,
       "y": 8.0,
       "diameter": 12.0,
       "holder_gap": 3.0,
-      "step_zone": "front",
-      "description": "Front-right low-profile fixture screw clamp"
+      "step_zone": "bed_common",
+      "common_for_both_halves": true,
+      "drill_through_pcb": false,
+      "anchor_type": "washer_clamp",
+      "description": "Common bed locking screw with M4 washer clamping over PCB margin (no through-PCB anchor hole)"
     },
     {
-      "id": "clamp_mid_left",
-      "name": "Mid-Left Edge Clamp",
+      "id": "lock_bed_rear_left",
+      "name": "Rear-Left Common Edge Washer Clamp",
       "shape": "rectangle",
       "x": 6.0,
       "y": 145.0,
       "width": 12.0,
       "length": 22.0,
       "holder_gap": 3.5,
-      "step_zone": "transition",
-      "description": "Side clamp at the Y-axis shift alignment transition line"
+      "step_zone": "bed_common",
+      "common_for_both_halves": true,
+      "drill_through_pcb": false,
+      "anchor_type": "washer_clamp",
+      "description": "Common bed side washer clamp near Y-shift transition (reused for both Front Half and Shifted Back Half)"
     },
     {
-      "id": "clamp_mid_right",
-      "name": "Mid-Right Edge Clamp",
+      "id": "lock_bed_rear_right",
+      "name": "Rear-Right Common Edge Washer Clamp",
       "shape": "rectangle",
       "x": 204.0,
       "y": 145.0,
       "width": 12.0,
       "length": 22.0,
       "holder_gap": 3.5,
-      "step_zone": "transition",
-      "description": "Side clamp at the Y-axis shift alignment transition line"
-    },
-    {
-      "id": "clamp_back_left",
-      "name": "Back-Left Corner Clamp",
-      "shape": "circle",
-      "x": 8.0,
-      "y": 289.0,
-      "diameter": 12.0,
-      "holder_gap": 3.0,
-      "step_zone": "back",
-      "description": "Back-left low-profile fixture screw clamp"
-    },
-    {
-      "id": "clamp_back_right",
-      "name": "Back-Right Corner Clamp",
-      "shape": "circle",
-      "x": 202.0,
-      "y": 289.0,
-      "diameter": 12.0,
-      "holder_gap": 3.0,
-      "step_zone": "back",
-      "description": "Back-right low-profile fixture screw clamp"
+      "step_zone": "bed_common",
+      "common_for_both_halves": true,
+      "drill_through_pcb": false,
+      "anchor_type": "washer_clamp",
+      "description": "Common bed side washer clamp near Y-shift transition (reused for both Front Half and Shifted Back Half)"
     }
   ]
 }

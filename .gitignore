@@ -1,10 +1,15 @@
 __pycache__/*
+.agents/*
 
 project01/*
 project01_gcode/*
 project02/*
 project02_gcode/*
+project03/*
+project03_gcode/*
 
-manufacture_svg/*
-manufacture_guides/*
+Bed_mods_gcode/*
+
 manufacture_gcode/*
+manufacture_guides/*
+manufacture_svg/*
