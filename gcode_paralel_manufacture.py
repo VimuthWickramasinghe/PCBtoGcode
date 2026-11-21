@@ -301,8 +301,12 @@ class ProjectInfo:
         return drls
 
 
-def scan_projects(root_dir="."):
-    """Discover all folders containing project_metadata.json."""
+def scan_projects(root_dir=".", selected_projects: Optional[List[str]] = None):
+    """Discover folders containing project_metadata.json.
+    
+    If selected_projects is provided, only matches whose folder name, folder path,
+    or pcb_id / project_name match one of the entries in selected_projects are included.
+    """
     projects = []
     search_dirs = [root_dir] + [
         os.path.join(root_dir, d) for d in os.listdir(root_dir)
@@ -314,7 +318,16 @@ def scan_projects(root_dir="."):
             try:
                 with open(meta_path, "r", encoding="utf-8") as f:
                     meta = json.load(f)
-                projects.append(ProjectInfo(d, meta))
+                p = ProjectInfo(d, meta)
+                if selected_projects:
+                    folder_base = os.path.basename(os.path.normpath(d))
+                    match = any(
+                        s.strip() in (d, folder_base, p.pcb_id, p.project_name)
+                        for s in selected_projects if s.strip()
+                    )
+                    if not match:
+                        continue
+                projects.append(p)
             except Exception as e:
                 print(f"[WARN] Error reading {meta_path}: {e}")
     return projects
@@ -334,6 +347,11 @@ class HolderManager:
                  config: Optional[Dict] = None):
         self.holders: List[Dict[str, Any]] = []
         self.exclusion_polygons = []
+        self.bed_exclusion_front = []
+        self.bed_exclusion_back = []
+        self._sheet_union = None
+        self._bed_union_front = None
+        self._bed_union_back = None
         self.y_split = float(y_split)
         self.bed_travel_y = float(bed_travel_y)
         self.config = config or {}
@@ -373,10 +391,19 @@ class HolderManager:
                 file_z_sw = data.get("z_probe_limit_switch", {}) or {}
                 for h in self.holders:
                     # Common bed locking point protects Front Half on bed AND Shifted Back Half (+y_split)
-                    self.exclusion_polygons.append(self._build_holder_poly(h, y_offset=0.0))
+                    sheet_poly_front = self._build_holder_poly(h, y_offset=0.0)
+                    self.exclusion_polygons.append(sheet_poly_front)
                     is_common = bool(h.get("common_for_both_halves", True)) or (float(h.get("y", 0.0)) <= self.bed_travel_y)
                     if is_common:
                         self.exclusion_polygons.append(self._build_holder_poly(h, y_offset=self.y_split))
+                        self.bed_exclusion_front.append(sheet_poly_front)
+                        self.bed_exclusion_back.append(sheet_poly_front)
+                    else:
+                        hy = float(h.get("y", 0.0))
+                        if hy <= self.y_split:
+                            self.bed_exclusion_front.append(sheet_poly_front)
+                        else:
+                            self.bed_exclusion_back.append(self._build_holder_poly(h, y_offset=-self.y_split))
                 print(f"[INFO] Loaded {len(self.holders)} common single-half bed washer clamps from {json_path}.")
             except Exception as e:
                 print(f"[ERROR] Failed parsing {json_path}: {e}")
@@ -391,15 +418,122 @@ class HolderManager:
             sy = float(self.z_probe_switch.get("y_mm", 135.002))
             sw = float(self.z_probe_switch.get("width_mm", 7.0)) / 2.0 + float(self.z_probe_switch.get("danger_margin_mm", 6.0))
             sl = float(self.z_probe_switch.get("length_mm", 20.0)) / 2.0 + float(self.z_probe_switch.get("danger_margin_mm", 6.0))
-            self.exclusion_polygons.append(box(sx - sw, sy - sl, sx + sw, sy + sl))
+            sw_front = box(sx - sw, sy - sl, sx + sw, sy + sl)
+            self.exclusion_polygons.append(sw_front)
             self.exclusion_polygons.append(box(sx - sw, sy + self.y_split - sl, sx + sw, sy + self.y_split + sl))
+            self.bed_exclusion_front.append(sw_front)
+            self.bed_exclusion_back.append(sw_front)
+
+        self._sheet_union = ops.unary_union(self.exclusion_polygons) if self.exclusion_polygons else None
+        self._bed_union_front = ops.unary_union(self.bed_exclusion_front) if self.bed_exclusion_front else None
+        self._bed_union_back = ops.unary_union(self.bed_exclusion_back) if self.bed_exclusion_back else None
 
     def collides_with(self, geom) -> bool:
         """Check if geometry intersects any physical bed washer clamp or Z-switch danger zone."""
+        if self._sheet_union is not None:
+            return geom.intersects(self._sheet_union)
         for ex in self.exclusion_polygons:
             if geom.intersects(ex):
                 return True
         return False
+
+    def get_bed_union(self, half: str = "front", tool_radius: float = 0.0):
+        u = self._bed_union_back if half == "back" else self._bed_union_front
+        if u is None:
+            return None
+        return u.buffer(tool_radius) if tool_radius > 1e-6 else u
+
+    def is_bed_point_blocked(self, x: float, y: float, half: str = "front", tool_radius: float = 0.0) -> bool:
+        ex = self.get_bed_union(half=half, tool_radius=tool_radius)
+        if ex is None:
+            return False
+        return Point(x, y).intersects(ex)
+
+    @staticmethod
+    def _extract_lines(geom) -> List[List[Tuple[float, float]]]:
+        out: List[List[Tuple[float, float]]] = []
+        if geom is None or geom.is_empty:
+            return out
+        gtype = geom.geom_type
+        if gtype == "LineString":
+            coords = [(float(c[0]), float(c[1])) for c in geom.coords]
+            if len(coords) >= 2:
+                out.append(coords)
+        elif gtype in ("MultiLineString", "GeometryCollection"):
+            for g in geom.geoms:
+                out.extend(HolderManager._extract_lines(g))
+        return out
+
+    def clip_polylines_to_bed(
+        self,
+        polylines: List[List[Tuple[float, float]]],
+        half: str = "front",
+        tool_radius: float = 0.0,
+    ) -> Tuple[List[List[Tuple[float, float]]], int]:
+        """Clip polylines so no cutting/engraving path enters any bed holder keep-out zone."""
+        ex = self.get_bed_union(half=half, tool_radius=tool_radius)
+        if ex is None:
+            return polylines, 0
+        clipped: List[List[Tuple[float, float]]] = []
+        trimmed_count = 0
+        for poly in polylines:
+            if not poly or len(poly) < 2:
+                continue
+            ls = LineString(poly)
+            if not ls.intersects(ex):
+                clipped.append(poly)
+            else:
+                trimmed_count += 1
+                diff = ls.difference(ex)
+                clipped.extend(self._extract_lines(diff))
+        return clipped, trimmed_count
+
+    def clip_ops_to_bed(
+        self,
+        ops_list: List[Tuple[List[Tuple[float, float]], float]],
+        half: str = "front",
+        tool_radius: float = 0.0,
+    ) -> Tuple[List[Tuple[List[Tuple[float, float]], float]], int]:
+        """Clip (polyline, z_depth) cutout operations against bed holder keep-out zones."""
+        ex = self.get_bed_union(half=half, tool_radius=tool_radius)
+        if ex is None:
+            return ops_list, 0
+        clipped: List[Tuple[List[Tuple[float, float]], float]] = []
+        trimmed_count = 0
+        for seg, z_d in ops_list:
+            if not seg or len(seg) < 2:
+                continue
+            ls = LineString(seg)
+            if not ls.intersects(ex):
+                clipped.append((seg, z_d))
+            else:
+                trimmed_count += 1
+                for c_seg in self._extract_lines(ls.difference(ex)):
+                    clipped.append((c_seg, z_d))
+        return clipped, trimmed_count
+
+    def find_safe_verification_point(
+        self,
+        target_x: float = 20.0,
+        target_y: float = 20.0,
+        half: str = "front",
+        max_x: float = 200.0,
+        max_y: float = 140.0,
+    ) -> Tuple[float, float]:
+        """Return (target_x, target_y) if clear of holders, otherwise nearest safe bed coordinate."""
+        if not self.is_bed_point_blocked(target_x, target_y, half=half, tool_radius=2.0):
+            return (target_x, target_y)
+        best_pt = (target_x, target_y)
+        best_d2 = float("inf")
+        y_hi = min(max_y, self.y_split - 5.0)
+        for y in range(10, max(15, int(y_hi)), 5):
+            for x in range(10, max(15, int(max_x)), 5):
+                if not self.is_bed_point_blocked(float(x), float(y), half=half, tool_radius=2.0):
+                    d2 = (x - target_x) ** 2 + (y - target_y) ** 2
+                    if d2 < best_d2:
+                        best_d2 = d2
+                        best_pt = (float(x), float(y))
+        return best_pt
 
 
 # ---------------------------------------------------------------------------
@@ -970,6 +1104,7 @@ class A4Panelizer:
 
         cnc = self.cfg.get("cnc_limits", {})
         self.bed_travel_x = float(cnc.get("bed_travel_x_mm", 275.0))
+        self.bed_milling_x = float(cnc.get("bed_milling_x_mm", 260.0))
         self.bed_travel_y = float(cnc.get("bed_travel_y_mm", 170.0))
         self.left_margin = float(cnc.get("left_margin_guide_width_mm", 18.0))
         self.right_margin = float(cnc.get("right_margin_mm", 5.0))
@@ -1019,15 +1154,21 @@ class A4Panelizer:
     def _fits_at(self, x: float, y: float, u_w: float, u_h: float, max_x: float, max_y: float) -> bool:
         if x + u_w > max_x + 1e-6 or y + u_h > max_y + 1e-6:
             return False
-        if self.holder_mgr and self.holder_mgr.collides_with(box(x, y, x + u_w, y + u_h)):
-            return False
+        if self.holder_mgr:
+            if self.holder_mgr.collides_with(box(x, y, x + u_w, y + u_h)):
+                return False
+            # Also verify horizontally mirrored X position (when sheet is flipped for Bottom Side milling)
+            mir_x0 = self.sheet_w - (x + u_w)
+            mir_x1 = self.sheet_w - x
+            if self.holder_mgr.collides_with(box(mir_x0, y, mir_x1, y + u_h)):
+                return False
         return True
 
     def _pack_half(self, units_to_pack: List[Dict], start_idx: int, active_color: str,
                    y_min: float, y_max: float, sheet_idx: int) -> Tuple[List[PlacedUnit], int]:
         placed: List[PlacedUnit] = []
         idx = start_idx
-        max_x = min(self.sheet_w - self.right_margin, self.bed_travel_x)
+        max_x = min(self.sheet_w - self.right_margin, self.bed_milling_x)
         curr_x = self.left_margin
         curr_y = y_min
         row_h = 0.0
@@ -1039,23 +1180,49 @@ class A4Panelizer:
                 break
 
             chosen = None
-            for rot in self._candidate_rotations(p):
-                u_w, u_h = self._get_dims_for_rot(p, rot)
-                if self._fits_at(curr_x, curr_y, u_w, u_h, max_x, y_max):
-                    chosen = (rot, u_w, u_h)
-                    break
+            cands = self._candidate_rotations(p)
 
-            if chosen is None and curr_x > self.left_margin + 0.1 and row_h > 0.0:
-                # Try wrapping to next shelf row inside the same half
-                next_y = curr_y + row_h + self.board_gap
-                for rot in self._candidate_rotations(p):
+            # 1. Try current cursor (curr_x, curr_y), and if blocked by a holder, step X past the holder
+            scan_x = curr_x
+            while scan_x <= max_x - 1.0:
+                for rot in cands:
                     u_w, u_h = self._get_dims_for_rot(p, rot)
-                    if self._fits_at(self.left_margin, next_y, u_w, u_h, max_x, y_max):
-                        curr_x = self.left_margin
-                        curr_y = next_y
-                        row_h = 0.0
+                    if self._fits_at(scan_x, curr_y, u_w, u_h, max_x, y_max):
+                        curr_x = scan_x
                         chosen = (rot, u_w, u_h)
                         break
+                if chosen is not None:
+                    break
+                # Only continue scanning X if there is a holder blocking near scan_x; otherwise row is full
+                if not (self.holder_mgr and self.holder_mgr.collides_with(box(scan_x, curr_y, min(max_x, scan_x + 5.0), min(y_max, curr_y + 5.0)))):
+                    break
+                scan_x += 2.0
+
+            # 2. Wrap to next shelf row(s) inside the same half, stepping Y past any holder if needed
+            if chosen is None:
+                next_y = curr_y + (row_h if row_h > 0.0 else 2.0) + self.board_gap
+                while next_y <= y_max - 1.0:
+                    scan_x = self.left_margin
+                    while scan_x <= max_x - 1.0:
+                        for rot in cands:
+                            u_w, u_h = self._get_dims_for_rot(p, rot)
+                            if self._fits_at(scan_x, next_y, u_w, u_h, max_x, y_max):
+                                curr_x = scan_x
+                                curr_y = next_y
+                                row_h = 0.0
+                                chosen = (rot, u_w, u_h)
+                                break
+                        if chosen is not None:
+                            break
+                        if not (self.holder_mgr and self.holder_mgr.collides_with(box(scan_x, next_y, min(max_x, scan_x + 5.0), min(y_max, next_y + 5.0)))):
+                            break
+                        scan_x += 2.0
+                    if chosen is not None:
+                        break
+                    # Only advance next_y if a holder blocked at left_margin; otherwise no vertical space remains
+                    if not (self.holder_mgr and self.holder_mgr.collides_with(box(self.left_margin, next_y, min(max_x, self.left_margin + 10.0), min(y_max, next_y + 5.0)))):
+                        break
+                    next_y += 2.0
 
             if chosen is None:
                 break
@@ -2359,6 +2526,22 @@ class GcodeBuilder:
         self.lines.append("G90 ; Absolute coordinates")
         self.lines.append(f"G0 Z{self.safe_z:.3f} ; Move to safe Z height")
 
+    def verify_origin_and_prompt(self, verify_x: float = 20.0, verify_y: float = 20.0,
+                                 verify_z: float = 2.0, enabled: bool = True):
+        """Move to a known verification coordinate and pause (M0) so the operator can Continue or Abort."""
+        if not enabled:
+            return
+        self.lines.append("; --- Startup Datum Verification & Continue/Abort Prompt ---")
+        self.lines.append(f"G0 Z{self.safe_z:.3f} ; Safe Z before verification move")
+        self.lines.append(f"G0 X{verify_x:.3f} Y{verify_y:.3f} ; Move to known verification point")
+        self.lines.append(f"G0 Z{verify_z:.3f} ; Lower to verification check height")
+        self.lines.append(
+            f"(MSG, VERIFY POINT X{verify_x:.3f} Y{verify_y:.3f} Z{verify_z:.3f}: "
+            "Check alignment & clamps. Resume (~) to CONTINUE or Reset/Stop to ABORT)"
+        )
+        self.lines.append("M0 ; Pause for operator verification (Continue or Abort)")
+        self.lines.append(f"G0 Z{self.safe_z:.3f} ; Retract to safe Z before spindle start")
+
     def spindle_start(self):
         self.lines.append(f"M3 S{self.spindle_rpm} ; Start spindle clockwise")
         self.lines.append("G4 P1.5 ; Dwell 1.5s for spindle to reach speed")
@@ -2561,7 +2744,13 @@ class ManufacturingPipeline:
             self.y_split = raw_split
 
         self.sheet_tag_pos = config.get("sheet_tag_strip", {}).get("tag_position", "front_right")
-        self.enable_dowel_pin_lock = bool(config.get("guides_and_fixturing", {}).get("enable_dowel_pin_lock", False))
+        fix_cfg = config.get("guides_and_fixturing", {})
+        self.enable_dowel_pin_lock = bool(fix_cfg.get("enable_dowel_pin_lock", False))
+        sv_cfg = fix_cfg.get("startup_verification", {}) or {}
+        self.verify_enabled = bool(sv_cfg.get("enabled", True))
+        self.verify_x = float(sv_cfg.get("verify_x_mm", 20.0))
+        self.verify_y = float(sv_cfg.get("verify_y_mm", 20.0))
+        self.verify_z = float(sv_cfg.get("verify_z_mm", 2.0))
         self.bed_svg_builder = BedSvgBuilder(
             bed_w=self.bed_travel_x, bed_h=self.bed_travel_y,
             sheet_w=self.sheet_w, sheet_h=self.sheet_h, y_split=self.y_split,
@@ -2573,6 +2762,15 @@ class ManufacturingPipeline:
 
         self.generated_files: List[str] = []
         self.bed_operations: Dict[int, List[Dict[str, Any]]] = {}
+
+    def _apply_startup_verify(self, gb: GcodeBuilder, half: str = "front"):
+        if not self.verify_enabled:
+            return
+        vx, vy = self.holders_mgr.find_safe_verification_point(
+            self.verify_x, self.verify_y, half=half,
+            max_x=self.sheet_w - 5.0, max_y=self.y_split - 5.0
+        )
+        gb.verify_origin_and_prompt(verify_x=vx, verify_y=vy, verify_z=self.verify_z, enabled=True)
 
     def _clean_old_files(self):
         """Clean old generated G-code and SVG files to prevent obsolete files from lingering."""
@@ -2869,18 +3067,23 @@ class ManufacturingPipeline:
         )
 
         if self.sheet_h > self.bed_travel_y:
-            front_strokes = guides["front_lines"] + guides["front_texts"] + s_tag["border"] + s_tag["text"] + s_tag["arrow"]
+            raw_front_strokes = guides["front_lines"] + guides["front_texts"] + s_tag["border"] + s_tag["text"] + s_tag["arrow"]
+            front_strokes, f_trimmed = self.holders_mgr.clip_polylines_to_bed(raw_front_strokes, half="front", tool_radius=0.1)
+            front_pins = [pt for pt in guides["front_pin_holes"] if not self.holders_mgr.is_bed_point_blocked(pt[0], pt[1], half="front", tool_radius=1.5)]
+            if f_trimmed:
+                print(f"  [HOLDER-SAFE] Step 0A: Clipped {f_trimmed} guide stroke(s) away from bed clamps.")
             b0a = GcodeBuilder(f"Sheet {sheet_num} - Step 0A Front Sheet Data, Reference Spots & Tag", feed=250.0, cut_z=-0.04)
             b0a.header([
                 "Step 0A: FRONT HALF Sheet Data, Margin Guides, Reference Spots & Front-Corner Sheet Tag",
                 f"Bed Travel Y: {self.bed_travel_y:.1f}mm (< Sheet {self.sheet_h:.1f}mm) -> All coordinates <= {self.y_split:.1f}mm",
                 pin_tool_note,
             ])
+            self._apply_startup_verify(b0a, half="front")
             b0a.spindle_start()
             for stroke in front_strokes:
                 b0a.engrave_polyline(stroke)
             if self.enable_dowel_pin_lock:
-                for (px, py) in guides["front_pin_holes"]:
+                for (px, py) in front_pins:
                     b0a.peck_drill(px, py, depth=-1.8, step=0.4)
             b0a.footer()
 
@@ -2895,16 +3098,20 @@ class ManufacturingPipeline:
                 "Alignment Guides", f"30° V-Bit{pin_tool_suffix}", 0.1,
                 "top", "front", fname_0a, -0.04, 250.0, 10000,
                 "Mount A4 sheet Top-Side Up at G54 (0,0) FRONT HALF",
-                f"{len(front_strokes)} strokes, {len(guides['front_pin_holes'])} pins",
+                f"{len(front_strokes)} strokes, {len(front_pins)} pins",
                 active_polylines_bed=front_strokes, polyline_color="#38bdf8", polyline_width=1.2,
-                pin_holes_bed=guides["front_pin_holes"] if self.enable_dowel_pin_lock else [],
+                pin_holes_bed=front_pins if self.enable_dowel_pin_lock else [],
             )
 
-            back_strokes = [
+            raw_back_strokes = [
                 [(p[0], p[1] - self.y_split) for p in stroke]
                 for stroke in (guides["back_lines"] + guides["back_texts"])
             ]
-            back_pins_bed = [(px, py - self.y_split) for (px, py) in guides["back_pin_holes"]] if self.enable_dowel_pin_lock else []
+            back_strokes, b_trimmed = self.holders_mgr.clip_polylines_to_bed(raw_back_strokes, half="back", tool_radius=0.1)
+            if b_trimmed:
+                print(f"  [HOLDER-SAFE] Step 0B: Clipped {b_trimmed} guide stroke(s) away from bed clamps.")
+            raw_back_pins = [(px, py - self.y_split) for (px, py) in guides["back_pin_holes"]] if self.enable_dowel_pin_lock else []
+            back_pins_bed = [pt for pt in raw_back_pins if not self.holders_mgr.is_bed_point_blocked(pt[0], pt[1], half="back", tool_radius=1.5)]
 
             b0b = GcodeBuilder(f"Sheet {sheet_num} - Step 0B Back Alignment Guides & Reference Marks", feed=250.0, cut_z=-0.04)
             b0b.header([
@@ -2912,6 +3119,7 @@ class ManufacturingPipeline:
                 f"*** ACTION: Slide sheet forward by {self.y_split:.1f} mm along Y-axis ONLY! ***",
                 pin_tool_note,
             ])
+            self._apply_startup_verify(b0b, half="back")
             b0b.spindle_start()
             for stroke in back_strokes:
                 b0b.engrave_polyline(stroke)
@@ -2936,14 +3144,17 @@ class ManufacturingPipeline:
             )
             print(f"  [+] Step 0A & 0B: {fname_0a}, {fname_0b} (Dowel Pin Lock: {'ENABLED' if self.enable_dowel_pin_lock else 'DISABLED'})")
         else:
-            all_strokes = guides["lines"] + guides["texts"] + s_tag["border"] + s_tag["text"] + s_tag["arrow"]
+            raw_strokes = guides["lines"] + guides["texts"] + s_tag["border"] + s_tag["text"] + s_tag["arrow"]
+            all_strokes, trimmed_c = self.holders_mgr.clip_polylines_to_bed(raw_strokes, half="front", tool_radius=0.1)
+            all_pins = [pt for pt in guides["pin_holes"] if not self.holders_mgr.is_bed_point_blocked(pt[0], pt[1], half="front", tool_radius=1.5)]
             builder = GcodeBuilder(f"Sheet {sheet_num} - Step 0 Sheet Data, Guides & Tag", feed=250.0, cut_z=-0.04)
             builder.header(["Step 0: Margin Guides, Reference Spots & Front-Corner Sheet Tag", pin_tool_note])
+            self._apply_startup_verify(builder, half="front")
             builder.spindle_start()
             for stroke in all_strokes:
                 builder.engrave_polyline(stroke)
             if self.enable_dowel_pin_lock:
-                for (px, py) in guides["pin_holes"]:
+                for (px, py) in all_pins:
                     builder.peck_drill(px, py, depth=-1.8, step=0.4)
             builder.footer()
             fname = f"Sheet{sheet_num:02d}_Step0_Left_Alignment_Guides.gcode"
@@ -3015,7 +3226,13 @@ class ManufacturingPipeline:
                 started_from_back_for_tool = False
 
             for h_pos_idx, half in enumerate(halves_order):
-                pts = f_pts if half == "front" else b_pts
+                raw_pts = f_pts if half == "front" else b_pts
+                pts = [
+                    pt for pt in raw_pts
+                    if not self.holders_mgr.is_bed_point_blocked(pt[0], pt[1], half=half, tool_radius=dia / 2.0)
+                ]
+                if len(pts) < len(raw_pts):
+                    print(f"  [HOLDER-SAFE] Step 1 ({dia:.2f}mm, {half}): Skipped {len(raw_pts) - len(pts)} drill(s) inside bed clamp keep-out.")
                 if not pts:
                     continue
 
@@ -3042,6 +3259,7 @@ class ManufacturingPipeline:
                     f"Y-Shift Action: {shift_action}",
                     f"Hole Count: {len(pts)} | Cycle: Peck drilling (0.4mm depth increments)"
                 ])
+                self._apply_startup_verify(b_drl, half=half)
                 b_drl.spindle_start()
                 for (x, y) in pts:
                     b_drl.peck_drill(x, y, depth=-1.8, step=0.4)
@@ -3128,12 +3346,20 @@ class ManufacturingPipeline:
         """Write one G-code polyline job and record its corresponding CNC Bed SVG preview."""
         if not polylines:
             return
+        safe_polylines, trimmed = self.holders_mgr.clip_polylines_to_bed(
+            polylines, half=bed_half, tool_radius=tool_dia_mm / 2.0
+        )
+        if trimmed:
+            print(f"  [HOLDER-SAFE] {step_code} ({bed_half}): Clipped {trimmed} toolpath(s) away from bed clamps.")
+        if not safe_polylines:
+            return
         gb = GcodeBuilder(gcode_title, feed=feed, cut_z=cut_z, spindle_rpm=spindle_rpm)
         gb.header(header_lines)
+        self._apply_startup_verify(gb, half=bed_half)
         if m0_pause:
             gb.lines.append("M0 ; Operator pause for Z-probe verification")
         gb.spindle_start()
-        for poly in polylines:
+        for poly in safe_polylines:
             gb.engrave_polyline(poly)
         gb.footer()
         fpath = os.path.join(self.out_gcode_dir, fname)
@@ -3144,8 +3370,8 @@ class ManufacturingPipeline:
         self._record_bed_op(
             sheet_num, units, step_code, step_title, work_type, tool_name, tool_dia_mm,
             board_side, bed_half, fname, cut_z, feed, spindle_rpm, shift_action,
-            f"{len(polylines)} toolpaths",
-            active_polylines_bed=polylines, polyline_color=polyline_color,
+            f"{len(safe_polylines)} toolpaths",
+            active_polylines_bed=safe_polylines, polyline_color=polyline_color,
             polyline_width=polyline_width, polyline_dash=polyline_dash,
         )
 
@@ -3335,10 +3561,18 @@ class ManufacturingPipeline:
                             fname, header_lines, shift_action, feed, pcol, pdash=""):
             if not ops_list:
                 return
+            safe_ops, trimmed = self.holders_mgr.clip_ops_to_bed(
+                ops_list, half=bhalf, tool_radius=tool_dia / 2.0
+            )
+            if trimmed:
+                print(f"  [HOLDER-SAFE] {scode} ({bhalf}): Clipped {trimmed} cutout segment(s) away from bed clamps.")
+            if not safe_ops:
+                return
             gb = GcodeBuilder(f"Sheet {sheet_num} - {stitle}", feed=feed, cut_z=depth_per_side)
             gb.header(header_lines)
+            self._apply_startup_verify(gb, half=bhalf)
             gb.spindle_start()
-            for seg, z_d in ops_list:
+            for seg, z_d in safe_ops:
                 gb.engrave_polyline(seg, z_depth=z_d)
             gb.footer()
             fpath = os.path.join(self.out_gcode_dir, fname)
@@ -3346,7 +3580,7 @@ class ManufacturingPipeline:
                 f.write(gb.get_text())
             self.generated_files.append(fpath)
 
-            segs_only = [seg for seg, _ in ops_list]
+            segs_only = [seg for seg, _ in safe_ops]
             self._record_bed_op(
                 sheet_num, units, scode, stitle, "Cutout & Breakaway",
                 tool_name, tool_dia, bside, bhalf, fname, depth_per_side, feed, 10000,
@@ -6983,6 +7217,7 @@ def main():
     parser = argparse.ArgumentParser(description="A4 Copper Board CNC PCB Panelizer & Multi-Step Manufacturing Pipeline")
     parser.add_argument("--config", default="manufacture_config.json", help="Path to manufacture_config.json.")
     parser.add_argument("--projects-dir", default=".", help="Root directory containing PCB project folders.")
+    parser.add_argument("--projects", nargs="*", default=None, help="Explicit project folder(s) or PCB ID(s) to manufacture (e.g. --projects project01 project03 or --projects PCB-AC-02).")
     parser.add_argument("--holders", default="pcb_holders.json", help="Path to pcb_holders.json config.")
     parser.add_argument("--tool-config", default="tool_config.json", help="Path to tool_config.json.")
     parser.add_argument("--out-gcode", default="manufacture_gcode", help="Output directory for G-codes.")
@@ -7021,8 +7256,14 @@ def main():
     print(f" Breakaway Mode: {b_cfg.label} | Shortest-Edge Stepping Tag")
     print("================================================================================\n")
 
-    # 1. Scan Projects
-    projects = scan_projects(args.projects_dir)
+    # 1. Scan Projects (Check CLI argument or manufacture_config.json 'selected_projects')
+    selected = args.projects
+    if selected is None and "selected_projects" in cfg:
+        cfg_selected = cfg.get("selected_projects")
+        if isinstance(cfg_selected, list) and cfg_selected:
+            selected = cfg_selected
+
+    projects = scan_projects(args.projects_dir, selected_projects=selected)
     if not projects:
         print("[ERROR] No PCB projects containing project_metadata.json were discovered.")
         sys.exit(1)

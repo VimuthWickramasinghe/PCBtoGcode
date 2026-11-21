@@ -1,4 +1,5 @@
 {
+  "selected_projects": ["project03"],
   "copper_sheet": {
     "sheet_width_mm": 210.0,
     "sheet_height_mm": 297.0,
@@ -72,6 +73,12 @@
       "length_mm": 20.0,
       "danger_margin_mm": 6.0,
       "label": "Z-ZERO LIMIT SWITCH (DANGER ZONE)"
+    },
+    "startup_verification": {
+      "enabled": true,
+      "verify_x_mm": 20.0,
+      "verify_y_mm": 20.0,
+      "verify_z_mm": 2.0
     }
   },
   "output_paths": {
