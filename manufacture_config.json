@@ -1,8 +1,12 @@
 {
-  "selected_projects": ["project03"],
+  "selected_projects": [
+    "project01",
+    "project02",
+    "project03"
+  ],
   "copper_sheet": {
-    "sheet_width_mm": 210.0,
-    "sheet_height_mm": 297.0,
+    "sheet_width_mm": 200.0,
+    "sheet_height_mm": 300.0,
     "thickness_mm": 1.6,
     "copper_weight_oz": 1.0
   },
@@ -24,7 +28,10 @@
     "allow_rotation_to_maximize_space": true,
     "allow_any_angle_rectangular": false,
     "allow_any_angle_non_rectangular": true,
-    "rectangular_allowed_rotations_deg": [0, 90],
+    "rectangular_allowed_rotations_deg": [
+      0,
+      90
+    ],
     "group_by_solder_mask_color": true,
     "strict_solder_mask_color": false
   },
@@ -80,6 +87,18 @@
       "verify_y_mm": 20.0,
       "verify_z_mm": 2.0
     }
+  },
+  "inkjet_printer": {
+    "enabled": true,
+    "connection_type": "stm32_usb_cdc",
+    "port": "auto",
+    "baudrate": 115200,
+    "dpi": 600,
+    "uv_cure_enabled": true,
+    "uv_led_power_pct": 85,
+    "pass_speed_mm_s": 40.0,
+    "x_offset_mm": 0.0,
+    "y_offset_mm": 0.0
   },
   "output_paths": {
     "gcode_dir": "manufacture_gcode",

@@ -1,0 +1,9 @@
+{
+  "touch_probe_enabled": false,
+  "show_macros_in_dispatch": true,
+  "enable_homing_btn": true,
+  "enable_unlock_btn": true,
+  "enable_zero_work_btn": true,
+  "enable_pcb_z_offset": true,
+  "pcb_thickness_mm": 1.6
+}

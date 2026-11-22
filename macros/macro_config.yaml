@@ -1,0 +1,40 @@
+# Custom CNC Macros & Bed Height Map Configuration
+macros:
+  - id: z_tool_zero
+    name: Z-Tool Zero (Limit Switch)
+    file: z_tool_zero.gcode
+    category: calibration
+    color: amber
+    description: Probe fixed bed Z-zero limit switch at X272.001 Y135.002 and set G54 Z0.
+
+  - id: bed_height_scan
+    name: Bed Height Scan (3x3 Quick)
+    file: bed_height_scan.gcode
+    category: probing
+    color: cyan
+    description: Quick 3x3 Z-probe macro across Front Half copper area.
+
+  - id: edge_4pt_align
+    name: 4-Point Edge Alignment
+    file: edge_4pt_align.gcode
+    category: calibration
+    color: emerald
+    description: Probe 2 left-edge and 2 front-edge points to compensate X/Y offset & rotation.
+
+  - id: pcb_z_zero_thickness
+    name: PCB Z-Zero (Thickness Offset)
+    file: pcb_z_zero_thickness.gcode
+    category: calibration
+    color: blue
+    description: Zero Z on top of copper board by offsetting from bed Z0 by board thickness.
+
+heightmap_defaults:
+  x_min_mm: 25.0
+  x_max_mm: 185.0
+  y_min_mm: 25.0
+  y_max_mm: 130.0
+  nx: 5
+  ny: 4
+  safe_z_mm: 5.0
+  probe_min_z_mm: -3.0
+  feed_mm_min: 60.0

@@ -894,11 +894,25 @@ def build_tag_artwork(tag_x: float, tag_y: float, tag_len: float, tag_w: float,
     char_h = 2.2
     char_w = 1.4
     spacing = 0.5
-    text_len = max(0.0, len(pcb_id) * (char_w + spacing) - spacing)
     tri_span = 3.4 if engrave_arrow else 0.0
     gap = 2.2 if engrave_arrow else 0.0
+    text_len = max(0.0, len(pcb_id) * (char_w + spacing) - spacing)
     group_len = tri_span + gap + text_len
-    start_offset = max(2.0, (tag_len - group_len) / 2.0)
+
+    # Auto-scale text and arrow spacing so they never overflow the tag strip box
+    pad = 1.2
+    avail_len = max(4.0, tag_len - 2.0 * pad)
+    if group_len > avail_len and group_len > 0:
+        s = avail_len / group_len
+        char_h *= s
+        char_w *= s
+        spacing *= s
+        tri_span *= s
+        gap *= s
+        text_len = max(0.0, len(pcb_id) * (char_w + spacing) - spacing)
+        group_len = tri_span + gap + text_len
+
+    start_offset = max(pad, (tag_len - group_len) / 2.0)
 
     triangle_poly: List[Tuple[float, float]] = []
     arrow_strokes: List[List[Tuple[float, float]]] = []
@@ -908,8 +922,8 @@ def build_tag_artwork(tag_x: float, tag_y: float, tag_len: float, tag_w: float,
         if engrave_arrow:
             cx = tag_x + start_offset + tri_span / 2.0
             tip = (cx, tag_y + tag_w - 0.8)
-            bl = (cx - 1.6, tag_y + 1.0)
-            br = (cx + 1.6, tag_y + 1.0)
+            bl = (cx - min(1.6, tri_span * 0.45), tag_y + 1.0)
+            br = (cx + min(1.6, tri_span * 0.45), tag_y + 1.0)
             triangle_poly = [tip, bl, br]
             arrow_strokes = [[tip, bl, br, tip]]
         tx = tag_x + start_offset + tri_span + gap
@@ -920,8 +934,8 @@ def build_tag_artwork(tag_x: float, tag_y: float, tag_len: float, tag_w: float,
         if engrave_arrow:
             cy = tag_y + start_offset + tri_span / 2.0
             tip = (tag_x + 0.8, cy)
-            bb = (tag_x + tag_w - 1.0, cy - 1.6)
-            bt = (tag_x + tag_w - 1.0, cy + 1.6)
+            bb = (tag_x + tag_w - 1.0, cy - min(1.6, tri_span * 0.45))
+            bt = (tag_x + tag_w - 1.0, cy + min(1.6, tri_span * 0.45))
             triangle_poly = [tip, bb, bt]
             arrow_strokes = [[tip, bb, bt, tip]]
         # Rotate upright text 90 deg CCW along +Y: (px, py) -> (x_base - py, ty + px)
@@ -935,8 +949,8 @@ def build_tag_artwork(tag_x: float, tag_y: float, tag_len: float, tag_w: float,
         if engrave_arrow:
             cy = tag_y + start_offset + tri_span / 2.0
             tip = (tag_x + tag_w - 0.8, cy)
-            bb = (tag_x + 1.0, cy - 1.6)
-            bt = (tag_x + 1.0, cy + 1.6)
+            bb = (tag_x + 1.0, cy - min(1.6, tri_span * 0.45))
+            bt = (tag_x + 1.0, cy + min(1.6, tri_span * 0.45))
             triangle_poly = [tip, bb, bt]
             arrow_strokes = [[tip, bb, bt, tip]]
         # Rotate upright text 90 deg CCW along +Y: (px, py) -> (x_base - py, ty + px)
@@ -1182,9 +1196,11 @@ class A4Panelizer:
             chosen = None
             cands = self._candidate_rotations(p)
 
-            # 1. Try current cursor (curr_x, curr_y), and if blocked by a holder, step X past the holder
+            # 1. Try current cursor (curr_x, curr_y), and if blocked, scan X on current row
+            min_cand_w = min(self._get_dims_for_rot(p, r)[0] for r in cands)
+            min_cand_h = min(self._get_dims_for_rot(p, r)[1] for r in cands)
             scan_x = curr_x
-            while scan_x <= max_x - 1.0:
+            while scan_x + min_cand_w <= max_x + 1e-6:
                 for rot in cands:
                     u_w, u_h = self._get_dims_for_rot(p, rot)
                     if self._fits_at(scan_x, curr_y, u_w, u_h, max_x, y_max):
@@ -1193,17 +1209,14 @@ class A4Panelizer:
                         break
                 if chosen is not None:
                     break
-                # Only continue scanning X if there is a holder blocking near scan_x; otherwise row is full
-                if not (self.holder_mgr and self.holder_mgr.collides_with(box(scan_x, curr_y, min(max_x, scan_x + 5.0), min(y_max, curr_y + 5.0)))):
-                    break
                 scan_x += 2.0
 
-            # 2. Wrap to next shelf row(s) inside the same half, stepping Y past any holder if needed
+            # 2. Wrap to next shelf row(s) inside the same half, scanning Y & X around any clamps
             if chosen is None:
                 next_y = curr_y + (row_h if row_h > 0.0 else 2.0) + self.board_gap
-                while next_y <= y_max - 1.0:
+                while next_y + min_cand_h <= y_max + 1e-6:
                     scan_x = self.left_margin
-                    while scan_x <= max_x - 1.0:
+                    while scan_x + min_cand_w <= max_x + 1e-6:
                         for rot in cands:
                             u_w, u_h = self._get_dims_for_rot(p, rot)
                             if self._fits_at(scan_x, next_y, u_w, u_h, max_x, y_max):
@@ -1214,13 +1227,8 @@ class A4Panelizer:
                                 break
                         if chosen is not None:
                             break
-                        if not (self.holder_mgr and self.holder_mgr.collides_with(box(scan_x, next_y, min(max_x, scan_x + 5.0), min(y_max, next_y + 5.0)))):
-                            break
                         scan_x += 2.0
                     if chosen is not None:
-                        break
-                    # Only advance next_y if a holder blocked at left_margin; otherwise no vertical space remains
-                    if not (self.holder_mgr and self.holder_mgr.collides_with(box(self.left_margin, next_y, min(max_x, self.left_margin + 10.0), min(y_max, next_y + 5.0)))):
                         break
                     next_y += 2.0
 
@@ -1381,7 +1389,15 @@ def generate_sheet_tag(sheet_num: int, total_sheets: int, units_count: int,
 
     border = [[(x, y), (x + w, y), (x + w, y + h), (x, y + h), (x, y)]]
     label = f"S{sheet_num:02d}/{total_sheets:02d} | U:{units_count} | {solder_mask_color.upper()} | {side_label}"
-    text_strokes = text_to_polylines(label, x + 2.5, y + 1.8, char_h=2.4, char_w=1.35, spacing=0.45)
+    st_ch, st_cw, st_sp = 2.4, 1.35, 0.45
+    st_len = max(0.0, len(label) * (st_cw + st_sp) - st_sp)
+    max_st_len = max(10.0, w - 18.0)
+    if st_len > max_st_len:
+        s = max_st_len / st_len
+        st_ch *= s
+        st_cw *= s
+        st_sp *= s
+    text_strokes = text_to_polylines(label, x + 2.5, y + (h - st_ch) / 2.0, char_h=st_ch, char_w=st_cw, spacing=st_sp)
 
     arrow_x = x + w - 12.0
     arrow_y_base = y + 1.2
@@ -2532,14 +2548,14 @@ class GcodeBuilder:
         if not enabled:
             return
         self.lines.append("; --- Startup Datum Verification & Continue/Abort Prompt ---")
+        self.lines.append("M5 ; Ensure spindle is off during verification")
         self.lines.append(f"G0 Z{self.safe_z:.3f} ; Safe Z before verification move")
         self.lines.append(f"G0 X{verify_x:.3f} Y{verify_y:.3f} ; Move to known verification point")
         self.lines.append(f"G0 Z{verify_z:.3f} ; Lower to verification check height")
         self.lines.append(
-            f"(MSG, VERIFY POINT X{verify_x:.3f} Y{verify_y:.3f} Z{verify_z:.3f}: "
-            "Check alignment & clamps. Resume (~) to CONTINUE or Reset/Stop to ABORT)"
+            f"(MSG, Confirm spindle is off and tool is at verify point X{verify_x:.3f} Y{verify_y:.3f} Z{verify_z:.3f} - Continue or Abort)"
         )
-        self.lines.append("M0 ; Pause for operator verification (Continue or Abort)")
+        self.lines.append(f"M0 (Confirm spindle is off and tool is at verify point X{verify_x:.3f} Y{verify_y:.3f} Z{verify_z:.3f})")
         self.lines.append(f"G0 Z{self.safe_z:.3f} ; Retract to safe Z before spindle start")
 
     def spindle_start(self):
@@ -2935,7 +2951,7 @@ class ManufacturingPipeline:
             self._generate_step3_top_isolation(sheet_num, units)
             self._generate_step4_bottom_isolation(sheet_num, units)
             self._generate_step5_solder_mask(sheet_num, units)
-            self._generate_step6_silkscreen(sheet_num)
+            self._generate_step6_silkscreen(sheet_num, units)
             self._generate_step7_snapable_cutout(sheet_num, units)
 
         # 4. Validate XML integrity of every generated SVG
@@ -3498,24 +3514,87 @@ class ManufacturingPipeline:
             )
         print("  [+] Step 5: Solder mask pad clearing generated (Top & Bottom, Front & Back).")
 
-    def _generate_step6_silkscreen(self, sheet_num):
+    def _generate_step6_silkscreen(self, sheet_num, units):
+        printer_cfg = self.cfg.get("inkjet_printer", {}) or {}
+        dpi = int(printer_cfg.get("dpi", 600))
+        uv_power = int(printer_cfg.get("uv_led_power_pct", 85))
+
+        def _extract_silk_polys(geom, unit, mirrored_x: bool = False):
+            if geom is None or geom.is_empty:
+                return []
+            polys = []
+            geoms = geom.geoms if hasattr(geom, "geoms") else [geom]
+            for g in geoms:
+                if g.geom_type == "Polygon":
+                    pts = [unit.to_sheet_coords(px, py) for (px, py) in g.exterior.coords]
+                    if mirrored_x:
+                        pts = [(self.sheet_w - p[0], p[1]) for p in pts]
+                    polys.append(pts)
+                elif g.geom_type == "LineString":
+                    pts = [unit.to_sheet_coords(px, py) for (px, py) in g.coords]
+                    if mirrored_x:
+                        pts = [(self.sheet_w - p[0], p[1]) for p in pts]
+                    polys.append(pts)
+            return polys
+
+        jobs = [
+            ("Step6A", "Step 6A: Top Silkscreen (Front)", "top", "front", "silkscreen_top", False),
+            ("Step6B", "Step 6B: Top Silkscreen (Back)", "top", "back", "silkscreen_top", False),
+            ("Step6C", "Step 6C: Bottom Silkscreen (Front)", "bottom", "front", "silkscreen_bottom", True),
+            ("Step6D", "Step 6D: Bottom Silkscreen (Back)", "bottom", "back", "silkscreen_bottom", True),
+        ]
+        job_count = 0
+        for scode, stitle, bside, bhalf, layer_key, mir_x in jobs:
+            half_polys = []
+            for u in units:
+                u_data = self.layer_cache.get_project_layers(u.project)
+                geom = u_data.get(layer_key)
+                for poly in _extract_silk_polys(geom, u, mirrored_x=mir_x):
+                    f_segs, b_segs = _split_polyline_by_y(poly, self.y_split)
+                    half_polys.extend(f_segs if bhalf == "front" else b_segs)
+            if not half_polys:
+                continue
+            job_count += 1
+            jname = f"Sheet{sheet_num:02d}_{scode}_{bhalf.capitalize()}_{bside.capitalize()}_Silkscreen_Inkjet.json"
+            jpath = os.path.join(self.out_gcode_dir, jname)
+            job_payload = {
+                "format": "stm32_inkjet_pcb_v1",
+                "sheet_num": sheet_num,
+                "step_code": scode,
+                "side": bside,
+                "half": bhalf,
+                "mirrored_x": mir_x,
+                "dpi": dpi,
+                "uv_led_power_pct": uv_power,
+                "sheet_width_mm": self.sheet_w,
+                "y_split_mm": self.y_split,
+                "polylines": [[[round(p[0], 3), round(p[1], 3)] for p in seg] for seg in half_polys],
+            }
+            with open(jpath, "w", encoding="utf-8") as jf:
+                json.dump(job_payload, jf)
+            self.generated_files.append(jpath)
+            self._record_bed_op(
+                sheet_num, units, scode, stitle, "Inkjet Silkscreen",
+                f"STM32 UV Inkjet ({dpi} DPI)", 0.05, bside, bhalf, jname,
+                0.0, float(printer_cfg.get("pass_speed_mm_s", 40.0)) * 60.0, uv_power,
+                f"Load sheet {bside.upper()} side up ({bhalf.upper()} half) on flatbed printer",
+                f"{len(half_polys)} silkscreen paths @ {dpi} DPI",
+                active_polylines_bed=half_polys, polyline_color="#e2e8f0", polyline_width=0.9,
+            )
+
         content = (
-            f"; === Sheet {sheet_num:02d} - Step 6: Silkscreen Printing Roadmap ===\n"
-            "; # TODO: Future flatbed drop-on-demand (DoD) inkjet printer integration.\n"
-            "; Silkscreen component legends (R1, C1, U1, pin-1 markers) do not require CNC engraving.\n"
-            "; Will be deposited directly using UV-curable white pigment ink with LED-395nm pinning.\n"
-            "G21 ; Metric units\n"
-            "G90 ; Absolute positioning\n"
-            "(MSG, Off-CNC Silkscreen process completed. Ready for Step 7 Perimeter Cutouts)\n"
-            "M0 (Pause: Silkscreen legend inspection)\n"
-            "M2 ; End of program\n"
+            f"; === Sheet {sheet_num:02d} - Step 6: Silkscreen Inkjet Printing ===\n"
+            "; Dispatched to custom STM32 USB CDC UV-Inkjet Printer via Dispatch tab.\n"
+            "G21\nG90\n"
+            "(MSG, Off-CNC Silkscreen Inkjet complete. Ready for Step 7 Cutouts)\n"
+            "M0\nM2\n"
         )
         fname = f"Sheet{sheet_num:02d}_Step6_Silkscreen_TODO.gcode"
         fpath = os.path.join(self.out_gcode_dir, fname)
         with open(fpath, "w", encoding="utf-8") as f:
             f.write(content)
         self.generated_files.append(fpath)
-        print("  [+] Step 6: Silkscreen TODO written as G-code.")
+        print(f"  [+] Step 6: Generated {job_count} STM32 Inkjet silkscreen job(s) + reference G-code.")
 
     def _generate_step7_snapable_cutout(self, sheet_num, units):
         """
@@ -4190,26 +4269,21 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       color: #93c5fd;
       border-color: rgba(59, 130, 246, 0.45);
     }}
-    [data-tip] {{
-      position: relative;
-    }}
-    [data-tip]:hover::after {{
-      content: attr(data-tip);
-      position: absolute;
-      bottom: calc(100% + 6px);
-      left: 50%;
-      transform: translateX(-50%);
-      padding: 4px 8px;
+    #ui-tooltip {{
+      position: fixed;
+      z-index: 99999;
+      pointer-events: none;
+      padding: 4px 9px;
       border-radius: 6px;
       background: #0f172a;
-      color: #e2e8f0;
-      border: 1px solid rgba(148, 163, 184, 0.25);
+      color: #f1f5f9;
+      border: 1px solid rgba(148, 163, 184, 0.35);
       font-size: 11px;
       font-weight: 500;
       white-space: nowrap;
-      z-index: 60;
-      pointer-events: none;
-      box-shadow: 0 6px 16px rgba(0,0,0,0.5);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+      opacity: 0;
+      transition: opacity 0.1s ease;
     }}
     ::-webkit-scrollbar {{ width: 8px; height: 8px; }}
     ::-webkit-scrollbar-track {{ background: #0a0e17; }}
@@ -4229,6 +4303,11 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
     const projectDrills = {project_drill_json};
     const allUnitRecords = {unit_records_json};
     const bedOperationsBySheet = {bed_ops_json};
+    const bedHoldersList = {json.dumps(holders_mgr.holders)};
+    const bedZSwitch = {json.dumps(holders_mgr.z_probe_switch)};
+    const cncBedTravelX = {bed_x:.1f};
+    const cncBedTravelY = {bed_y:.1f};
+    const cncBedMillingX = {float((config or {}).get("cnc_limits", {}).get("bed_milling_x_mm", 260.0)):.1f};
 
     const stepInfo = {{
       'Composite_Stackup': {{
@@ -4261,20 +4340,32 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         depth: '-0.04 mm', feed: '300 mm/min', rpm: '10,000 RPM',
         instructions: 'Toggle Mirror View Enable/Disable above. Machined FLIPPED horizontally along the Y-axis with upright readable stepping tags.'
       }},
-      'Step5_Solder_Mask': {{
-        title: 'Step 5: Solder Mask Pad Clearing (Front & Back Sides)',
+      'Step5_Solder_Mask_Front': {{
+        title: 'Step 5: Top Solder Mask Pad Clearing',
         tool: '0.4mm Endmill / V-Bit',
         depth: '-0.06 mm', feed: '300 mm/min', rpm: '10,000 RPM',
-        instructions: 'Switch between Front Side (mask_top) and Back Side (mask_bottom) and optional Mirror View. Re-touch Z0 at M0 pause (~35µm cured film).'
+        instructions: 'Top solder mask openings (mask_top). Re-touch Z0 at M0 pause (~35µm cured film).'
       }},
-      'Step6_Silkscreen': {{
-        title: 'Step 6: Silkscreen Component Legend Printing (Front & Back Sides)',
+      'Step5_Solder_Mask_Back': {{
+        title: 'Step 6: Bottom Solder Mask Pad Clearing',
+        tool: '0.4mm Endmill / V-Bit',
+        depth: '-0.06 mm', feed: '300 mm/min', rpm: '10,000 RPM',
+        instructions: 'Bottom solder mask openings (mask_bottom). Machined flipped along Y-axis; re-touch Z0 at M0 pause.'
+      }},
+      'Step6_Silkscreen_Front': {{
+        title: 'Step 7: Top Silkscreen Component Legend',
         tool: 'Flatbed Inkjet DoD Printhead (# TODO)',
         depth: 'Surface', feed: 'Inkjet', rpm: 'UV 395nm',
-        instructions: 'Switch between Front Side (silkscreen_top) and Back Side (silkscreen_bottom) with optional Mirror View. Empty Back side indicates no back silkscreen features in Gerber.'
+        instructions: 'Top silkscreen component legends (silkscreen_top).'
+      }},
+      'Step6_Silkscreen_Back': {{
+        title: 'Step 8: Bottom Silkscreen Component Legend',
+        tool: 'Flatbed Inkjet DoD Printhead (# TODO)',
+        depth: 'Surface', feed: 'Inkjet', rpm: 'UV 395nm',
+        instructions: 'Bottom silkscreen component legends (silkscreen_bottom). Empty view indicates no back silkscreen features in Gerber.'
       }},
       'Step7_Cutout_SnapTab': {{
-        title: 'Step 7: Dual-Sided Smooth Breakaway & Step Cutouts',
+        title: 'Step 9: Dual-Sided Smooth Breakaway & Step Cutouts',
         tool: '1.0mm Corn Endmill &/or 30° V-Bit',
         depth: '-0.85 mm / side', feed: '200 mm/min', rpm: '10,000 RPM',
         instructions: 'Active mode: {breakaway_cfg.label}. Two evenly distributed ~2.0mm retention tabs along shortest edge with smooth tool-radius compensation.'
@@ -4295,7 +4386,11 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
 
     function selectCircuitStep(stepName) {{
       currentStep = stepName;
-      circuitMirrorEnabled = (stepName === 'Step4_Bottom_Copper');
+      circuitMirrorEnabled = (
+        stepName === 'Step4_Bottom_Copper' ||
+        stepName === 'Step5_Solder_Mask_Back' ||
+        stepName === 'Step6_Silkscreen_Back'
+      );
       document.querySelectorAll('.step-btn').forEach(btn => {{
         const active = (btn.id === 'step-btn-' + stepName);
         btn.classList.toggle('active', active);
@@ -4315,18 +4410,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
     }}
 
     function updateCircuitView() {{
-      const isDualLayer = (currentStep === 'Step5_Solder_Mask' || currentStep === 'Step6_Silkscreen');
       const isVias = (currentStep === 'Step2_Vias');
-
-      const sideWrap = document.getElementById('circuit-side-controls');
-      if (sideWrap) sideWrap.style.display = isDualLayer ? 'inline-flex' : 'none';
-      document.querySelectorAll('.circuit-side-btn').forEach(btn => {{
-        const active = (btn.id === 'circuit-side-' + circuitSide);
-        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-        btn.className = active
-          ? `circuit-side-btn px-3 py-1 text-xs font-semibold rounded-md ${{circuitSide === 'back' ? 'bg-violet-600' : 'bg-blue-600'}} text-white cursor-pointer transition`
-          : 'circuit-side-btn px-3 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white cursor-pointer transition';
-      }});
 
       const mirrorWrap = document.getElementById('circuit-mirror-wrap');
       const mirrorBtn = document.getElementById('circuit-mirror-btn');
@@ -4354,12 +4438,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         }}
       }} else {{
         if (viasCard) viasCard.style.display = 'none';
-        let base = currentStep;
-        if (currentStep === 'Step5_Solder_Mask') {{
-          base = (circuitSide === 'back') ? 'Step5_Solder_Mask_Back' : 'Step5_Solder_Mask_Front';
-        }} else if (currentStep === 'Step6_Silkscreen') {{
-          base = (circuitSide === 'back') ? 'Step6_Silkscreen_Back' : 'Step6_Silkscreen_Front';
-        }}
+        const base = currentStep;
         const suffix = circuitMirrorEnabled ? '_Mirrored' : '';
         const svgPath = `${{imgPrefix}}Circuit_${{currentProject}}_${{base}}${{suffix}}.svg`;
         if (img) {{
@@ -4818,6 +4897,56 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
     let fluidncDispatcherCat = 'ALL';
     let fluidncDispatcherSearch = '';
     const fluidncSentFiles = new Set();
+    let dispatchDoneSet = new Set();
+    try {{
+      const savedDone = JSON.parse(localStorage.getItem('pcb_dispatch_done') || '[]');
+      if (Array.isArray(savedDone)) dispatchDoneSet = new Set(savedDone);
+    }} catch (e) {{}}
+
+    function toggleDispatchDone(gcodeFile, checked) {{
+      if (checked) dispatchDoneSet.add(gcodeFile);
+      else dispatchDoneSet.delete(gcodeFile);
+      try {{ localStorage.setItem('pcb_dispatch_done', JSON.stringify([...dispatchDoneSet])); }} catch (e) {{}}
+      renderFluidNCDispatcher();
+    }}
+
+    function initFloatingTooltips() {{
+      let tip = document.getElementById('ui-tooltip');
+      if (!tip) {{
+        tip = document.createElement('div');
+        tip.id = 'ui-tooltip';
+        document.body.appendChild(tip);
+      }}
+      let activeTarget = null;
+      const show = (el) => {{
+        const txt = el.getAttribute('data-tip');
+        if (!txt) return;
+        activeTarget = el;
+        tip.textContent = txt;
+        tip.style.opacity = '1';
+        const r = el.getBoundingClientRect();
+        const tw = tip.offsetWidth || 120;
+        const th = tip.offsetHeight || 24;
+        let top = r.top - th - 8;
+        if (top < 6) top = r.bottom + 8;
+        let left = r.left + r.width / 2 - tw / 2;
+        left = Math.max(8, Math.min(window.innerWidth - tw - 8, left));
+        tip.style.top = `${{top}}px`;
+        tip.style.left = `${{left}}px`;
+      }};
+      const hide = () => {{
+        activeTarget = null;
+        tip.style.opacity = '0';
+      }};
+      document.addEventListener('mouseover', (e) => {{
+        const el = e.target.closest && e.target.closest('[data-tip]');
+        if (el) show(el);
+      }});
+      document.addEventListener('mouseout', (e) => {{
+        if (activeTarget && (!e.relatedTarget || !activeTarget.contains(e.relatedTarget))) hide();
+      }});
+      document.addEventListener('scroll', hide, true);
+    }}
 
     function getApiBase() {{
       return (window.location.protocol === 'file:') ? 'http://localhost:8088' : '';
@@ -4849,9 +4978,31 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       if (!badge || !dot || !text) return;
 
       dot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-ping';
-      text.innerText = `Pinging ${{fluidncTargetIp}}...`;
+      text.innerText = `Checking ${{fluidncTargetIp}}...`;
 
-      // 1. Check HTTP reachability directly
+      // 1. Primary: Query local Python bridge /api/fluidnc_status (no WebSocket conflict or CORS hang)
+      if (window.location.protocol.startsWith('http')) {{
+        try {{
+          const ctrl = new AbortController();
+          const tid = setTimeout(() => ctrl.abort(), 3500);
+          const res = await fetch(`${{getApiBase()}}/api/fluidnc_status?ip=${{encodeURIComponent(fluidncTargetIp)}}`, {{ signal: ctrl.signal, cache: 'no-store' }});
+          clearTimeout(tid);
+          if (res.ok) {{
+            const data = await res.json();
+            if (data.online) {{
+              dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+              const st = (data.status || 'Online').replace(/^<|>$/g, '');
+              const shortSt = st.split('|').slice(0, 2).join(' | ');
+              text.innerText = shortSt || `Online (${{fluidncTargetIp}})`;
+              badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-950/40 border border-emerald-500/40 text-[11px] font-mono text-emerald-300';
+              if (sdIndicator) sdIndicator.innerHTML = `<span class="text-emerald-400">Telnet/HTTP Ready</span>`;
+              return;
+            }}
+          }}
+        }} catch (e) {{}}
+      }}
+
+      // 2. Fallback: Direct HTTP reachability check
       let httpReachable = false;
       try {{
         const ctrl = new AbortController();
@@ -4861,112 +5012,279 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         httpReachable = true;
       }} catch (e) {{}}
 
-      // 2. Query SD card status via /upload?path=/
-      try {{
-        const sdRes = await fetch(`http://${{fluidncTargetIp}}/upload?path=/`, {{ cache: 'no-store' }});
-        if (sdRes.ok) {{
-          const sdData = await sdRes.json();
-          fluidncSdMounted = (sdData.status !== 'No SD card');
-          if (sdIndicator) {{
-            sdIndicator.innerHTML = fluidncSdMounted
-              ? `<span class="text-emerald-400 font-semibold">SD Card: Mounted (${{sdData.total || 'OK'}})</span>`
-              : `<span class="text-amber-400 font-semibold">SD Card: Missing (TF Slot Empty) - Streaming Active</span>`;
-          }}
-        }}
-      }} catch (e) {{
-        if (sdIndicator) {{
-          sdIndicator.innerHTML = `<span class="text-slate-400">SD Card: Missing / Direct Stream Active</span>`;
-        }}
-      }}
-
-      // 3. Connect WebSocket with subprotocol 'arduino' to get live machine state (Idle, Alarm, MPos)
-      try {{
-        const wsUrl = `ws://${{fluidncTargetIp}}/?independent_session=1`;
-        const ws = new WebSocket(wsUrl, 'arduino');
-        let gotStatus = false;
-
-        const wsTimeout = setTimeout(() => {{
-          if (!gotStatus) {{
-            try {{ ws.close(); }} catch (e) {{}}
-            if (httpReachable) {{
-              dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
-              text.innerText = `FluidNC Online (HTTP Ready) - ${{fluidncTargetIp}}`;
-              badge.className = 'inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-950/40 border border-emerald-500/50 text-xs font-mono text-emerald-300';
-            }} else {{
-              setOfflineBadge();
-            }}
-          }}
-        }}, 2000);
-
-        ws.onopen = () => {{
-          const q = new Uint8Array([63]); // '?' status query
-          ws.send(q);
-        }};
-
-        ws.onmessage = (evt) => {{
-          const msg = (typeof evt.data === 'string') ? evt.data : new TextDecoder().decode(evt.data);
-          for (const line of msg.split('\\n')) {{
-            const trimmed = line.trim();
-            if (trimmed.startsWith('<') && trimmed.endsWith('>')) {{
-              gotStatus = true;
-              clearTimeout(wsTimeout);
-              const body = trimmed.slice(1, -1);
-              const parts = body.split('|');
-              fluidncMachineState = parts[0] || 'Idle';
-              for (const p of parts) {{
-                if (p.startsWith('MPos:')) fluidncMPos = p.replace('MPos:', '');
-              }}
-              dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
-              text.innerText = `FluidNC Online (${{fluidncMachineState}}${{fluidncMPos ? ' | MPos: ' + fluidncMPos : ''}})`;
-              badge.className = 'inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-950/40 border border-emerald-500/50 text-xs font-mono text-emerald-300';
-              try {{ ws.close(); }} catch (e) {{}}
-              break;
-            }}
-          }}
-        }};
-
-        ws.onerror = () => {{
-          if (!gotStatus) {{
-            clearTimeout(wsTimeout);
-            if (httpReachable) {{
-              dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
-              text.innerText = `FluidNC Reachable (${{fluidncTargetIp}})`;
-              badge.className = 'inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-950/40 border border-emerald-500/50 text-xs font-mono text-emerald-300';
-            }} else {{
-              setOfflineBadge();
-            }}
-          }}
-        }};
-        return;
-      }} catch (err) {{
-        if (httpReachable) {{
-          dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
-          text.innerText = `FluidNC Reachable (${{fluidncTargetIp}})`;
-          badge.className = 'inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-950/40 border border-emerald-500/50 text-xs font-mono text-emerald-300';
-          return;
-        }}
-        setOfflineBadge();
-      }}
-
-      function setOfflineBadge() {{
+      if (httpReachable) {{
+        dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+        text.innerText = `Reachable (${{fluidncTargetIp}})`;
+        badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-950/40 border border-emerald-500/40 text-[11px] font-mono text-emerald-300';
+      }} else {{
         dot.className = 'w-2 h-2 rounded-full bg-red-400';
-        text.innerText = `FluidNC Offline (${{fluidncTargetIp}})`;
-        badge.className = 'inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-950/40 border border-red-500/50 text-xs font-mono text-red-300';
+        text.innerText = `Offline (${{fluidncTargetIp}})`;
+        badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-950/40 border border-red-500/40 text-[11px] font-mono text-red-300';
       }}
     }}
 
     async function sendFluidNCRealtime(cmd) {{
+      const dot = document.getElementById('fluidnc-status-dot');
+      const text = document.getElementById('fluidnc-status-text');
+      const jogLbl = document.getElementById('jog-status-lbl');
+      const isHoming = cmd.trim().toUpperCase().startsWith('$H');
+      if (isHoming && dot && text) {{
+        dot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-ping';
+        text.innerText = 'Homing ($H)...';
+      }}
+      if (jogLbl) jogLbl.innerText = `Sending: ${{cmd}}`;
+
+      const apiUrl = `${{getApiBase()}}/api/fluidnc_cmd`;
       try {{
-        const ws = new WebSocket(`ws://${{fluidncTargetIp}}/?independent_session=1`, 'arduino');
-        ws.onopen = () => {{
-          ws.send(cmd + '\\n');
-          setTimeout(() => {{
-            try {{ ws.close(); }} catch (e) {{}}
-            testFluidNCConnection();
-          }}, 300);
-        }};
+        const res = await fetch(apiUrl, {{
+          method: 'POST',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ ip: fluidncTargetIp, cmd: cmd }})
+        }});
+        const data = await res.json();
+        setTimeout(() => testFluidNCConnection(), 350);
+        if (jogLbl) jogLbl.innerText = data.success ? `OK: ${{cmd}}` : (`Err: ${{data.message || data.error}}`);
+        if (!data.success && !(isHoming && String(data.message || '').toLowerCase().includes('timed out'))) {{
+          console.warn('FluidNC command error:', data);
+        }}
+        return;
       }} catch (e) {{
-        alert('Failed to send command to FluidNC: ' + e);
+        // Fallback: direct HTTP command to FluidNC if local Python server isn't reachable
+        try {{
+          await fetch(`http://${{fluidncTargetIp}}/command?plain=${{encodeURIComponent(cmd)}}`, {{ mode: 'no-cors' }});
+          if (jogLbl) jogLbl.innerText = `Direct: ${{cmd}}`;
+          setTimeout(() => testFluidNCConnection(), 400);
+          return;
+        }} catch (e2) {{
+          if (jogLbl) jogLbl.innerText = 'Server offline — run --serve';
+        }}
+      }}
+    }}
+
+    let streamPollTimer = null;
+
+    let pendingPreflight = null;
+
+    async function confirmAndStream(filename, buttonEl, isMacro = false) {{
+      const modal = document.getElementById('preflight-confirm-modal');
+      if (!modal) return _executeStreamStart(filename, buttonEl);
+      pendingPreflight = {{ filename, buttonEl }};
+      document.getElementById('pf-filename').innerText = filename;
+      document.getElementById('pf-prompt').innerText = 'Confirm spindle is OFF, clamps are clear, and tool is safe before streaming to CNC.';
+      document.getElementById('pf-meta').innerText = isMacro ? 'Custom Macro (macros/)' : 'Manufacturing G-Code';
+      try {{
+        const url = isMacro
+          ? `${{getApiBase()}}/api/macros_file?file=${{encodeURIComponent(filename)}}`
+          : `${{getApiBase()}}/manufacture_gcode/${{filename}}`;
+        const res = await fetch(url, {{ cache: 'no-store' }});
+        let txt = '';
+        if (isMacro) {{
+          const d = await res.json();
+          txt = d.content || '';
+        }} else if (res.ok) {{
+          txt = await res.text();
+        }}
+        if (txt) {{
+          const lines = txt.split(/\\r?\\n/).filter(l => l.trim() && !l.trim().startsWith(';'));
+          const msgMatch = txt.match(/\\(\\s*MSG\\s*,\\s*([^)]+)\\)/i) || txt.match(/M0\\s*\\(([^)]+)\\)/i);
+          if (msgMatch) document.getElementById('pf-prompt').innerText = msgMatch[1].trim();
+          document.getElementById('pf-meta').innerText = `${{isMacro ? 'Macro' : 'G-Code'}} • ${{lines.length}} commands`;
+        }}
+      }} catch (e) {{}}
+      modal.classList.remove('hidden');
+    }}
+
+    function cancelPreflight() {{
+      pendingPreflight = null;
+      document.getElementById('preflight-confirm-modal')?.classList.add('hidden');
+    }}
+
+    function proceedPreflight() {{
+      const job = pendingPreflight;
+      pendingPreflight = null;
+      document.getElementById('preflight-confirm-modal')?.classList.add('hidden');
+      if (job) _executeStreamStart(job.filename, job.buttonEl);
+    }}
+
+    async function streamGCodeToFluidNC(filename, buttonEl) {{
+      return confirmAndStream(filename, buttonEl, false);
+    }}
+
+    async function _executeStreamStart(filename, buttonEl) {{
+      if (buttonEl) {{
+        buttonEl.disabled = true;
+        buttonEl.classList.add('opacity-50');
+      }}
+      try {{
+        const res = await fetch(`${{getApiBase()}}/api/fluidnc_stream_start`, {{
+          method: 'POST',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ ip: fluidncTargetIp, filename: filename }})
+        }});
+        const data = await res.json();
+        if (data.success) {{
+          startStreamStatusPolling(buttonEl);
+        }} else {{
+          alert('Stream failed: ' + (data.error || data.message));
+          if (buttonEl) {{ buttonEl.disabled = false; buttonEl.classList.remove('opacity-50'); }}
+        }}
+      }} catch (e) {{
+        alert('Stream error: ' + e);
+        if (buttonEl) {{ buttonEl.disabled = false; buttonEl.classList.remove('opacity-50'); }}
+      }}
+    }}
+
+    function startStreamStatusPolling(buttonEl) {{
+      if (streamPollTimer) clearInterval(streamPollTimer);
+      streamPollTimer = setInterval(async () => {{
+        try {{
+          const sRes = await fetch(`${{getApiBase()}}/api/fluidnc_stream_status`, {{ cache: 'no-store' }});
+          const s = await sRes.json();
+          const stText = document.getElementById('fluidnc-status-text');
+          const mSt = document.getElementById('macros-status');
+          if (stText && s.total) stText.innerText = `${{s.state}} (${{s.sent}}/${{s.total}})`;
+          if (mSt && s.active) mSt.innerText = s.message || s.state;
+
+          if (s.state === 'waiting_confirm') {{
+            showM0ConfirmModal(s.prompt, s.filename, s.sent, s.total);
+          }} else if (!s.active) {{
+            clearInterval(streamPollTimer);
+            streamPollTimer = null;
+            hideM0ConfirmModal();
+            if (buttonEl) {{
+              buttonEl.disabled = false;
+              buttonEl.classList.remove('opacity-50');
+              if (s.state === 'done') {{
+                buttonEl.classList.remove('bg-sky-600/20', 'text-sky-300');
+                buttonEl.classList.add('bg-emerald-600', 'text-white');
+              }}
+            }}
+            testFluidNCConnection();
+            if (s.state === 'error') alert(s.message);
+          }}
+        }} catch (e) {{}}
+      }}, 450);
+    }}
+
+    async function showM0ConfirmModal(promptText, fname, sent, total) {{
+      const modal = document.getElementById('m0-confirm-modal');
+      if (!modal) return;
+      document.getElementById('m0-prompt-text').innerText = promptText || 'Operator pause (M0). Verify tool position & clamps before continuing.';
+      document.getElementById('m0-file-meta').innerText = `${{fname || 'CNC Job'}} — Line ${{sent || 0}} / ${{total || 0}}`;
+      try {{
+        const stRes = await fetch(`${{getApiBase()}}/api/fluidnc_status?ip=${{encodeURIComponent(fluidncTargetIp)}}`, {{ cache: 'no-store' }});
+        const stData = await stRes.json();
+        const pos = stData.wpos || stData.mpos;
+        if (pos && document.getElementById('m0-live-pos')) {{
+          document.getElementById('m0-live-pos').innerText = `X:${{pos[0].toFixed(3)}}  Y:${{pos[1].toFixed(3)}}  Z:${{pos[2].toFixed(3)}} mm`;
+        }}
+      }} catch (e) {{}}
+      modal.classList.remove('hidden');
+    }}
+
+    function hideM0ConfirmModal() {{
+      document.getElementById('m0-confirm-modal')?.classList.add('hidden');
+    }}
+
+    async function sendM0Action(action) {{
+      try {{
+        await fetch(`${{getApiBase()}}/api/fluidnc_stream_action`, {{
+          method: 'POST',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ action: action, ip: fluidncTargetIp }})
+        }});
+        hideM0ConfirmModal();
+      }} catch (e) {{
+        alert('Action failed: ' + e);
+      }}
+    }}
+
+    function togglePrinterPanel() {{
+      const p = document.getElementById('stm32-printer-panel');
+      if (!p) return;
+      p.classList.toggle('hidden');
+      if (!p.classList.contains('hidden')) loadPrinterSettings();
+    }}
+
+    async function loadPrinterSettings() {{
+      try {{
+        const res = await fetch(`${{getApiBase()}}/api/printer_ports`);
+        const data = await res.json();
+        const sel = document.getElementById('printer-port-select');
+        if (sel) {{
+          const cur = (data.config && data.config.port) || 'auto';
+          let opts = `<option value="auto" ${{cur === 'auto' ? 'selected' : ''}}>Auto-Detect STM32 USB</option>`;
+          (data.ports || []).forEach(p => {{
+            const tag = p.is_stm32 ? ' [STM32]' : '';
+            opts += `<option value="${{p.device}}" ${{cur === p.device ? 'selected' : ''}}>${{p.device}} (${{p.label}})${{tag}}</option>`;
+          }});
+          sel.innerHTML = opts;
+        }}
+        if (data.config) {{
+          if (document.getElementById('printer-baud-select')) document.getElementById('printer-baud-select').value = String(data.config.baudrate || 115200);
+          if (document.getElementById('printer-dpi-select')) document.getElementById('printer-dpi-select').value = String(data.config.dpi || 600);
+          if (document.getElementById('printer-uv-input')) document.getElementById('printer-uv-input').value = String(data.config.uv_led_power_pct ?? 85);
+          if (document.getElementById('printer-xoff-input')) document.getElementById('printer-xoff-input').value = String(data.config.x_offset_mm ?? 0);
+          if (document.getElementById('printer-yoff-input')) document.getElementById('printer-yoff-input').value = String(data.config.y_offset_mm ?? 0);
+        }}
+      }} catch (e) {{}}
+    }}
+
+    async function savePrinterSettings() {{
+      const st = document.getElementById('printer-usb-status');
+      const payload = {{
+        port: document.getElementById('printer-port-select')?.value || 'auto',
+        baudrate: Number(document.getElementById('printer-baud-select')?.value || 115200),
+        dpi: Number(document.getElementById('printer-dpi-select')?.value || 600),
+        uv_led_power_pct: Number(document.getElementById('printer-uv-input')?.value || 85),
+        x_offset_mm: Number(document.getElementById('printer-xoff-input')?.value || 0),
+        y_offset_mm: Number(document.getElementById('printer-yoff-input')?.value || 0),
+      }};
+      try {{
+        const res = await fetch(`${{getApiBase()}}/api/printer_config`, {{
+          method: 'POST', headers: {{ 'Content-Type': 'application/json' }}, body: JSON.stringify(payload)
+        }});
+        const d = await res.json();
+        if (st) st.innerText = d.success ? 'Saved' : ('Error: ' + (d.error || ''));
+      }} catch (e) {{ if (st) st.innerText = 'Save failed'; }}
+    }}
+
+    async function testPrinterUSB() {{
+      const st = document.getElementById('printer-usb-status');
+      if (st) st.innerText = 'Testing USB...';
+      try {{
+        const res = await fetch(`${{getApiBase()}}/api/printer_test`, {{
+          method: 'POST',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{
+            port: document.getElementById('printer-port-select')?.value || 'auto',
+            baudrate: Number(document.getElementById('printer-baud-select')?.value || 115200),
+          }})
+        }});
+        const d = await res.json();
+        if (st) st.innerText = d.message || d.error || (d.success ? 'Connected' : 'Failed');
+      }} catch (e) {{ if (st) st.innerText = 'USB test error'; }}
+    }}
+
+    async function printSilkscreenViaSTM32(filename, buttonEl) {{
+      if (buttonEl) {{ buttonEl.disabled = true; buttonEl.classList.add('opacity-50'); }}
+      try {{
+        const res = await fetch(`${{getApiBase()}}/api/printer_print`, {{
+          method: 'POST',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ filename: filename }})
+        }});
+        const d = await res.json();
+        if (d.success) {{
+          if (buttonEl) {{ buttonEl.classList.remove('bg-purple-600'); buttonEl.classList.add('bg-emerald-600'); }}
+          alert('Silkscreen sent to STM32 Inkjet: ' + d.message);
+        }} else {{
+          alert('Printer error: ' + (d.message || d.error));
+        }}
+      }} catch (e) {{
+        alert('Printer request failed: ' + e);
+      }} finally {{
+        if (buttonEl) {{ buttonEl.disabled = false; buttonEl.classList.remove('opacity-50'); }}
       }}
     }}
 
@@ -5991,6 +6309,11 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       if (!container) return;
 
       const ops = getFilteredDispatcherOps();
+      const doneBadge = document.getElementById('dispatch-done-badge');
+      if (doneBadge) {{
+        const doneCount = ops.filter(op => dispatchDoneSet.has(op.gcode_file)).length;
+        doneBadge.innerText = `${{doneCount}} / ${{ops.length}} Done`;
+      }}
       if (!ops.length) {{
         container.innerHTML = `<div class="p-8 text-center text-slate-500 text-xs">No matching G-code operations found for current filters.</div>`;
         return;
@@ -5999,6 +6322,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       let html = '';
       ops.forEach(op => {{
         const isSent = fluidncSentFiles.has(op.gcode_file);
+        const isDone = dispatchDoneSet.has(op.gcode_file);
         const btnClass = isSent
           ? 'p-1.5 rounded-lg bg-emerald-600 text-white shadow-sm transition cursor-pointer'
           : 'p-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white shadow-sm transition cursor-pointer';
@@ -6013,8 +6337,12 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
           : '';
 
         html += `
-          <div class="p-2.5 rounded-xl border border-slate-800/90 bg-[#0b101b]/90 hover:border-slate-700 transition flex items-center justify-between gap-3 text-xs">
+          <div class="p-2.5 rounded-xl border ${{isDone ? 'border-emerald-500/30 bg-emerald-950/15 opacity-70' : 'border-slate-800/90 bg-[#0b101b]/90'}} hover:border-slate-700 transition flex items-center justify-between gap-3 text-xs">
             <div class="flex items-center gap-2.5 min-w-0">
+              <input type="checkbox" ${{isDone ? 'checked' : ''}}
+                     onchange="toggleDispatchDone('${{op.gcode_file}}', this.checked)"
+                     class="w-4 h-4 rounded accent-emerald-500 bg-slate-900 border-slate-600 cursor-pointer shrink-0"
+                     data-tip="Mark step done">
               <div draggable="true"
                    ondragstart="onGCodeDragStart(event, '${{op.gcode_file}}')"
                    class="cursor-grab active:cursor-grabbing p-1.5 rounded-lg bg-slate-800/80 hover:bg-blue-600/20 text-slate-400 hover:text-blue-300 border border-slate-700/70 select-none shrink-0"
@@ -6025,7 +6353,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
               <div class="min-w-0">
                 <div class="flex items-center gap-2 flex-wrap">
                   <button type="button" onclick="openGCodeViewer('${{op.gcode_file}}')"
-                          class="font-mono font-semibold text-slate-100 hover:text-cyan-300 transition truncate max-w-xs sm:max-w-md text-left cursor-pointer"
+                          class="font-mono font-semibold ${{isDone ? 'line-through text-slate-400' : 'text-slate-100'}} hover:text-cyan-300 transition truncate max-w-xs sm:max-w-md text-left cursor-pointer"
                           data-tip="Inspect toolpath in 2D/3D Viewer">
                     ${{op.gcode_file}}
                   </button>
@@ -6043,6 +6371,13 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
             </div>
 
             <div class="flex items-center gap-1.5 shrink-0">
+              ${{op.step_code.startsWith('Step6') ? `
+              <button type="button" onclick="printSilkscreenViaSTM32('${{op.gcode_file}}', this)"
+                      class="p-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white shadow-sm transition cursor-pointer"
+                      data-tip="Print Silkscreen via STM32 USB" aria-label="Print Silkscreen">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+              </button>
+              ` : `
               <button type="button" onclick="openGCodeViewer('${{op.gcode_file}}')"
                       class="p-1.5 rounded-lg bg-cyan-600/20 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-500/30 transition cursor-pointer"
                       data-tip="2D/3D G-Code Viewer" aria-label="View G-Code">
@@ -6052,6 +6387,11 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
                       class="p-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 transition cursor-pointer"
                       data-tip="Copy File Path" aria-label="Copy Path">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              </button>
+              <button type="button" onclick="streamGCodeToFluidNC('${{op.gcode_file}}', this)"
+                      class="p-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600 text-sky-300 hover:text-white border border-sky-500/30 transition cursor-pointer"
+                      data-tip="Stream Live to CNC (Telnet :23)" aria-label="Stream to CNC">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
               </button>
               <button type="button" id="btn-send-${{op.sheet_num}}-${{op.seq}}"
                       onclick="sendGCodeToFluidNC('${{op.gcode_file}}', this, false)"
@@ -6064,9 +6404,10 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
                       data-tip="Upload & Run ($SD/Run)" aria-label="Upload and Run">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               </button>
+              `}}
               <a href="${{getApiBase()}}/manufacture_gcode/${{op.gcode_file}}" download="${{op.gcode_file}}"
                  class="p-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 transition"
-                 data-tip="Download .gcode" aria-label="Download G-Code">
+                 data-tip="Download" aria-label="Download">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               </a>
             </div>
@@ -6108,7 +6449,578 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       }});
     }}
 
+    // -------------------------------------------------------------------
+    // Section: Custom Macros (macros/) & Bed Height Map Scanner/Viewer
+    // -------------------------------------------------------------------
+    let macrosCatalog = [];
+    let currentHeightmap = null;
+    let hmViewMode = '2d';
+
+    async function loadMacrosAndHeightMap() {{
+      try {{
+        const mRes = await fetch(`${{getApiBase()}}/api/macros`);
+        const mData = await mRes.json();
+        macrosCatalog = mData.macros || [];
+        renderMacrosList();
+        renderDispatchMacrosBar();
+      }} catch (e) {{}}
+      try {{
+        const hRes = await fetch(`${{getApiBase()}}/api/heightmap`);
+        const hData = await hRes.json();
+        if (hData.defaults) {{
+          const d = hData.defaults;
+          if (document.getElementById('hm-xmin')) document.getElementById('hm-xmin').value = d.x_min_mm ?? 25;
+          if (document.getElementById('hm-xmax')) document.getElementById('hm-xmax').value = d.x_max_mm ?? 185;
+          if (document.getElementById('hm-ymin')) document.getElementById('hm-ymin').value = d.y_min_mm ?? 25;
+          if (document.getElementById('hm-ymax')) document.getElementById('hm-ymax').value = d.y_max_mm ?? 130;
+          if (document.getElementById('hm-nx')) document.getElementById('hm-nx').value = d.nx ?? 5;
+          if (document.getElementById('hm-ny')) document.getElementById('hm-ny').value = d.ny ?? 4;
+          if (document.getElementById('hm-zmin')) document.getElementById('hm-zmin').value = d.probe_min_z_mm ?? -3.0;
+          if (document.getElementById('hm-feed')) document.getElementById('hm-feed').value = d.feed_mm_min ?? 60;
+        }}
+        if (hData.heightmap) {{
+          currentHeightmap = hData.heightmap;
+          renderHeightMap();
+        }}
+      }} catch (e) {{}}
+    }}
+
+    function renderMacrosList() {{
+      const el = document.getElementById('macros-list');
+      if (!el) return;
+      if (!macrosCatalog.length) {{
+        el.innerHTML = '<div class="text-xs text-slate-500 p-4 text-center">No .gcode files found in macros/</div>';
+        return;
+      }}
+      el.innerHTML = macrosCatalog.map(m => `
+        <div class="p-2.5 rounded-xl border border-slate-800/90 bg-[#0b101b] flex items-center justify-between gap-2 text-xs">
+          <div class="min-w-0">
+            <div class="font-semibold text-slate-100 truncate">${{m.name}}</div>
+            <div class="text-[11px] font-mono text-slate-400 truncate">${{m.file}} &middot; ${{m.lines}} lines</div>
+          </div>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button type="button" onclick="viewMacroInModal('${{m.file}}')" class="p-1.5 rounded-lg bg-cyan-600/20 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-500/30 cursor-pointer" data-tip="Inspect in 2D/3D Viewer">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+            <button type="button" onclick="editMacroFile('${{m.file}}')" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 cursor-pointer" data-tip="Edit Macro">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button type="button" onclick="runMacroOnCNC('${{m.file}}', this)" class="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer" data-tip="Run Macro on CNC">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }}
+
+    async function viewMacroInModal(fname) {{
+      try {{
+        const res = await fetch(`${{getApiBase()}}/api/macros_file?file=${{encodeURIComponent(fname)}}`);
+        const data = await res.json();
+        if (data.content) {{
+          const modal = document.getElementById('gcode-viewer-modal');
+          if (modal) modal.classList.remove('hidden');
+          document.getElementById('gv-filename').innerText = fname;
+          document.getElementById('gv-filepath').innerText = 'macros/' + fname;
+          document.getElementById('gv-file-fallback')?.classList.add('hidden');
+          loadGCodeTextIntoViewer(data.content, fname);
+        }}
+      }} catch (e) {{ alert('Failed to open macro: ' + e); }}
+    }}
+
+    async function editMacroFile(fname) {{
+      try {{
+        const res = await fetch(`${{getApiBase()}}/api/macros_file?file=${{encodeURIComponent(fname)}}`);
+        const data = await res.json();
+        document.getElementById('macro-edit-name').value = fname;
+        document.getElementById('macro-edit-code').value = data.content || '';
+        document.getElementById('macro-editor-box').classList.remove('hidden');
+      }} catch (e) {{}}
+    }}
+
+    function newMacroFile() {{
+      document.getElementById('macro-edit-name').value = 'custom_macro.gcode';
+      document.getElementById('macro-edit-code').value = '; Custom G-Code Macro\\nG21\\nG90\\nG0 Z5.000\\n';
+      document.getElementById('macro-editor-box').classList.remove('hidden');
+    }}
+
+    async function saveMacroFile() {{
+      const fname = document.getElementById('macro-edit-name').value.trim();
+      const content = document.getElementById('macro-edit-code').value;
+      if (!fname) return;
+      const res = await fetch(`${{getApiBase()}}/api/macros_save`, {{
+        method: 'POST', headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{ file: fname, content: content }})
+      }});
+      const d = await res.json();
+      if (d.success) {{
+        document.getElementById('macro-editor-box').classList.add('hidden');
+        loadMacrosAndHeightMap();
+      }} else {{
+        alert('Save failed: ' + (d.error || ''));
+      }}
+    }}
+
+    async function runMacroOnCNC(fname, btn) {{
+      return confirmAndStream(fname, btn, true);
+    }}
+
+    let jogStepMm = 1.0;
+    function setJogStep(step) {{
+      jogStepMm = step;
+      document.querySelectorAll('.jog-step-btn').forEach(b => {{
+        const active = (Number(b.dataset.step) === step);
+        b.className = active
+          ? 'jog-step-btn px-2 py-1 rounded bg-blue-600 text-white font-mono text-[11px] font-semibold cursor-pointer'
+          : 'jog-step-btn px-2 py-1 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer';
+      }});
+    }}
+
+    async function sendJog(axis, dir) {{
+      const dist = (jogStepMm * dir).toFixed(3);
+      const xyFeed = Number(document.getElementById('jog-feed-select')?.value || 1200);
+      const feed = (axis === 'Z') ? Math.min(400, xyFeed) : xyFeed;
+      await sendFluidNCRealtime(`$J=G91 G21 ${{axis}}${{dist}} F${{feed}}`);
+      setTimeout(refreshLiveBedTool, 350);
+    }}
+
+    async function sendJogDiag(dx, dy) {{
+      const xyFeed = Number(document.getElementById('jog-feed-select')?.value || 1200);
+      await sendFluidNCRealtime(`$J=G91 G21 X${{(jogStepMm * dx).toFixed(3)}} Y${{(jogStepMm * dy).toFixed(3)}} F${{xyFeed}}`);
+      setTimeout(refreshLiveBedTool, 350);
+    }}
+
+    let uiConfigState = {{
+      touch_probe_enabled: false,
+      show_macros_in_dispatch: true,
+      enable_homing_btn: true,
+      enable_unlock_btn: true,
+      enable_zero_work_btn: true,
+      enable_pcb_z_offset: true,
+      pcb_thickness_mm: 1.6
+    }};
+
+    async function loadUIConfig() {{
+      try {{
+        const res = await fetch(`${{getApiBase()}}/api/ui_config`, {{ cache: 'no-store' }});
+        if (res.ok) {{
+          uiConfigState = await res.json();
+          applyUIConfig();
+        }}
+      }} catch (e) {{}}
+    }}
+
+    async function saveUIConfigPartial(patch) {{
+      try {{
+        const res = await fetch(`${{getApiBase()}}/api/ui_config`, {{
+          method: 'POST', headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify(patch)
+        }});
+        if (res.ok) {{
+          uiConfigState = await res.json();
+          applyUIConfig();
+          loadMacrosAndHeightMap();
+        }}
+      }} catch (e) {{}}
+    }}
+
+    function applyUIConfig() {{
+      const u = uiConfigState;
+      const setChk = (id, val) => {{ const el = document.getElementById(id); if (el) el.checked = !!val; }};
+      setChk('cfg-touch-probe', u.touch_probe_enabled);
+      setChk('cfg-show-macros-dispatch', u.show_macros_in_dispatch);
+      setChk('cfg-enable-homing', u.enable_homing_btn);
+      setChk('cfg-enable-unlock', u.enable_unlock_btn);
+      setChk('cfg-enable-zero', u.enable_zero_work_btn);
+      const tIn = document.getElementById('cfg-pcb-thickness');
+      if (tIn) tIn.value = Number(u.pcb_thickness_mm ?? 1.6).toFixed(2);
+
+      // Toggle Homing / Unlock / Zero buttons in Dispatch & Macros
+      const toggleVis = (ids, show) => ids.forEach(id => {{
+        const el = document.getElementById(id);
+        if (el) el.style.display = show ? '' : 'none';
+      }});
+      toggleVis(['btn-dispatch-home', 'btn-macro-home'], u.enable_homing_btn);
+      toggleVis(['btn-dispatch-unlock', 'btn-macro-unlock'], u.enable_unlock_btn);
+      toggleVis(['btn-dispatch-zero', 'btn-macro-zero-xy', 'btn-macro-zero-z'], u.enable_zero_work_btn);
+
+      // Gate Touch-Probe buttons when touch_probe_enabled is false
+      ['btn-hm-scan', 'btn-align-probe'].forEach(id => {{
+        const b = document.getElementById(id);
+        if (!b) return;
+        b.disabled = !u.touch_probe_enabled;
+        b.classList.toggle('opacity-40', !u.touch_probe_enabled);
+        b.classList.toggle('cursor-not-allowed', !u.touch_probe_enabled);
+        b.setAttribute('data-tip', u.touch_probe_enabled
+          ? 'Run G38.2 Touch Probe'
+          : 'Touch Probe disabled in ui_config.json');
+      }});
+
+      // Show/hide Quick Macros strip in Dispatch
+      const dBar = document.getElementById('dispatch-macros-bar');
+      if (dBar) dBar.style.display = u.show_macros_in_dispatch ? 'flex' : 'none';
+    }}
+
+    function renderDispatchMacrosBar() {{
+      const list = document.getElementById('dispatch-macros-list');
+      if (!list) return;
+      list.innerHTML = (macrosCatalog || []).map(m => `
+        <button type="button" onclick="runMacroOnCNC('${{m.file}}', this)"
+                class="px-2.5 py-1 rounded-lg bg-slate-800/90 hover:bg-blue-600 text-slate-200 hover:text-white border border-slate-700/80 text-[11px] font-medium transition cursor-pointer flex items-center gap-1.5"
+                data-tip="${{m.description || m.file}}">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          <span>${{m.name}}</span>
+        </button>
+      `).join('');
+    }}
+
+    async function applyPcbThicknessZero() {{
+      const t = Number(document.getElementById('cfg-pcb-thickness')?.value || 1.6);
+      await saveUIConfigPartial({{ pcb_thickness_mm: t }});
+      await runMacroOnCNC('pcb_z_zero_thickness.gcode', null);
+    }}
+
+    let liveBedTimer = null;
+    let lastLiveToolPos = null;
+
+    function startLiveBedPolling() {{
+      refreshLiveBedTool();
+      if (liveBedTimer) clearInterval(liveBedTimer);
+      liveBedTimer = setInterval(() => {{
+        const sec = document.getElementById('section-macros');
+        if (sec && sec.style.display !== 'none') refreshLiveBedTool();
+      }}, 1200);
+    }}
+
+    async function refreshLiveBedTool() {{
+      try {{
+        const res = await fetch(`${{getApiBase()}}/api/fluidnc_status?ip=${{encodeURIComponent(fluidncTargetIp)}}`, {{ cache: 'no-store' }});
+        const d = await res.json();
+        lastLiveToolPos = d;
+        const lbl = document.getElementById('macro-live-pos-lbl');
+        if (lbl) {{
+          const p = d.wpos || d.mpos;
+          lbl.innerText = (d.online && p)
+            ? `${{d.state}} | X:${{p[0].toFixed(2)}} Y:${{p[1].toFixed(2)}} Z:${{p[2].toFixed(2)}}`
+            : (d.online ? d.state : 'Offline');
+        }}
+        drawLiveBedToolCanvas(d);
+      }} catch (e) {{}}
+    }}
+
+    function drawLiveBedToolCanvas(statusObj) {{
+      const canvas = document.getElementById('macro-live-bed-canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width = canvas.clientWidth || 420;
+      const H = canvas.height = 220;
+      ctx.fillStyle = '#070a10';
+      ctx.fillRect(0, 0, W, H);
+
+      const pad = 18;
+      const sc = Math.min((W - 2 * pad) / cncBedTravelX, (H - 2 * pad) / cncBedTravelY);
+      const ox = (W - cncBedTravelX * sc) / 2;
+      const oy = H - (H - cncBedTravelY * sc) / 2;
+      const tx = (x) => ox + x * sc;
+      const ty = (y) => oy - y * sc;
+
+      // Bed outline (0..275 x 0..170)
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(tx(0), ty(cncBedTravelY), cncBedTravelX * sc, cncBedTravelY * sc);
+
+      // Milling zone (0..260)
+      ctx.setLineDash([4, 3]);
+      ctx.strokeStyle = '#0284c7';
+      ctx.strokeRect(tx(0), ty(cncBedTravelY), cncBedMillingX * sc, cncBedTravelY * sc);
+      ctx.setLineDash([]);
+
+      // A4 Front Half outline (0..210 x 0..145)
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.08)';
+      ctx.fillRect(tx(0), ty(145), 210 * sc, 145 * sc);
+      ctx.strokeStyle = 'rgba(16, 185, 129, 0.45)';
+      ctx.strokeRect(tx(0), ty(145), 210 * sc, 145 * sc);
+
+      // Bed clamps
+      (bedHoldersList || []).forEach(h => {{
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.25)';
+        ctx.strokeStyle = '#ef4444';
+        if ((h.shape || '').toLowerCase() === 'circle') {{
+          const r = ((h.diameter || 12) / 2 + (h.holder_gap || 3)) * sc;
+          ctx.beginPath();
+          ctx.arc(tx(h.x), ty(h.y), r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }} else {{
+          const hw = (h.width || 12) / 2 + (h.holder_gap || 3.5);
+          const hl = (h.length || 22) / 2 + (h.holder_gap || 3.5);
+          ctx.fillRect(tx(h.x - hw), ty(h.y + hl), hw * 2 * sc, hl * 2 * sc);
+          ctx.strokeRect(tx(h.x - hw), ty(h.y + hl), hw * 2 * sc, hl * 2 * sc);
+        }}
+      }});
+
+      // Z-Probe Limit Switch
+      if (bedZSwitch && bedZSwitch.enabled !== false) {{
+        const sx = bedZSwitch.x_mm || 272.001, sy = bedZSwitch.y_mm || 135.002;
+        const sw = (bedZSwitch.width_mm || 7) / 2 + (bedZSwitch.danger_margin_mm || 6);
+        const sl = (bedZSwitch.length_mm || 20) / 2 + (bedZSwitch.danger_margin_mm || 6);
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.35)';
+        ctx.fillRect(tx(sx - sw), ty(sy + sl), sw * 2 * sc, sl * 2 * sc);
+      }}
+
+      // Live Tool Crosshair
+      const pos = statusObj && (statusObj.wpos || statusObj.mpos);
+      if (pos) {{
+        const px = tx(pos[0]), py = ty(pos[1]);
+        ctx.strokeStyle = 'rgba(34, 211, 238, 0.6)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(px, ty(cncBedTravelY)); ctx.lineTo(px, ty(0));
+        ctx.moveTo(tx(0), py); ctx.lineTo(tx(cncBedTravelX), py);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(px, py, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#22d3ee';
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }}
+    }}
+
+    async function runHeightMapScan() {{
+      const btn = document.getElementById('btn-hm-scan');
+      const st = document.getElementById('hm-status');
+      if (btn) {{ btn.disabled = true; btn.classList.add('opacity-50'); }}
+      if (st) st.innerText = 'Scanning bed height map (G38.2)...';
+      const payload = {{
+        ip: fluidncTargetIp,
+        x_min: Number(document.getElementById('hm-xmin').value || 25),
+        x_max: Number(document.getElementById('hm-xmax').value || 185),
+        y_min: Number(document.getElementById('hm-ymin').value || 25),
+        y_max: Number(document.getElementById('hm-ymax').value || 130),
+        nx: Number(document.getElementById('hm-nx').value || 5),
+        ny: Number(document.getElementById('hm-ny').value || 4),
+        probe_min_z: Number(document.getElementById('hm-zmin').value || -3),
+        feed: Number(document.getElementById('hm-feed').value || 60),
+        safe_z: 5.0,
+        half: 'front'
+      }};
+      try {{
+        const res = await fetch(`${{getApiBase()}}/api/heightmap_scan`, {{
+          method: 'POST', headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify(payload)
+        }});
+        const d = await res.json();
+        if (d.success) {{
+          currentHeightmap = d;
+          if (st) st.innerText = `Scanned ${{d.probed_count}} pts | Warpage: ${{d.range_mm}} mm`;
+          renderHeightMap();
+        }} else {{
+          if (st) st.innerText = 'Scan failed: ' + (d.error || 'Unknown error');
+        }}
+      }} catch (e) {{
+        if (st) st.innerText = 'Scan error: ' + e;
+      }} finally {{
+        if (btn) {{ btn.disabled = false; btn.classList.remove('opacity-50'); }}
+      }}
+    }}
+
+    function setHeightMapMode(mode) {{
+      hmViewMode = mode;
+      document.getElementById('hm-mode-2d').className = mode === '2d'
+        ? 'px-2.5 py-1 bg-cyan-600 text-white font-semibold text-xs cursor-pointer'
+        : 'px-2.5 py-1 bg-slate-800 text-slate-300 text-xs cursor-pointer';
+      document.getElementById('hm-mode-3d').className = mode === '3d'
+        ? 'px-2.5 py-1 bg-cyan-600 text-white font-semibold text-xs cursor-pointer'
+        : 'px-2.5 py-1 bg-slate-800 text-slate-300 text-xs cursor-pointer';
+      renderHeightMap();
+    }}
+
+    function _hmColor(dz, halfSpan) {{
+      const t = halfSpan > 1e-5 ? Math.max(-1, Math.min(1, dz / halfSpan)) : 0;
+      if (t < 0) {{
+        const u = 1 + t;
+        const r = Math.round(30 + u * 20);
+        const g = Math.round(120 + u * 110);
+        const b = Math.round(240 - u * 80);
+        return `rgb(${{r}},${{g}},${{b}})`;
+      }} else {{
+        const r = Math.round(50 + t * 195);
+        const g = Math.round(230 - t * 160);
+        const b = Math.round(160 - t * 110);
+        return `rgb(${{r}},${{g}},${{b}})`;
+      }}
+    }}
+
+    function renderHeightMap() {{
+      const canvas = document.getElementById('hm-canvas');
+      const stats = document.getElementById('hm-stats');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width = canvas.clientWidth || 640;
+      const H = canvas.height = 360;
+      ctx.fillStyle = '#070a10';
+      ctx.fillRect(0, 0, W, H);
+
+      if (!currentHeightmap || !currentHeightmap.points || !currentHeightmap.points.length) {{
+        ctx.fillStyle = '#64748b';
+        ctx.font = '12px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('No height map scanned yet. Configure grid and click Scan Bed.', W / 2, H / 2);
+        return;
+      }}
+
+      const hm = currentHeightmap;
+      if (stats) {{
+        stats.innerText = `Pts: ${{hm.probed_count}} | Min: ${{hm.min_z.toFixed(3)}}mm | Max: ${{hm.max_z.toFixed(3)}}mm | ΔZ: ${{hm.range_mm.toFixed(3)}}mm (${{hm.scanned_at}})`;
+      }}
+
+      const validPts = hm.points.filter(p => p.dz !== null && !p.skipped);
+      const maxAbs = Math.max(0.05, ...validPts.map(p => Math.abs(p.dz)));
+      const pad = 42;
+
+      if (hmViewMode === '2d') {{
+        const uw = W - 2 * pad;
+        const uh = H - 2 * pad;
+        const cw = uw / Math.max(1, hm.nx);
+        const ch = uh / Math.max(1, hm.ny);
+        const xs = [...new Set(hm.points.map(p => p.x))].sort((a, b) => a - b);
+        const ys = [...new Set(hm.points.map(p => p.y))].sort((a, b) => a - b);
+
+        hm.points.forEach(p => {{
+          const ix = xs.indexOf(p.x);
+          const iy = ys.indexOf(p.y);
+          const rx = pad + ix * cw;
+          const ry = H - pad - (iy + 1) * ch;
+          ctx.fillStyle = p.skipped ? '#1e293b' : (p.dz === null ? '#3f1d2b' : _hmColor(p.dz, maxAbs));
+          ctx.fillRect(rx + 2, ry + 2, Math.max(4, cw - 4), Math.max(4, ch - 4));
+          ctx.fillStyle = '#090d16';
+          ctx.font = 'bold 10px monospace';
+          ctx.textAlign = 'center';
+          const lbl = p.skipped ? 'CLAMP' : (p.dz === null ? 'ERR' : (p.dz >= 0 ? '+' : '') + p.dz.toFixed(3));
+          if (p.skipped || p.dz === null) ctx.fillStyle = '#94a3b8';
+          ctx.fillText(lbl, rx + cw / 2, ry + ch / 2 + 3);
+        }});
+      }} else {{
+        // 3D Isometric Mesh
+        const cx = W / 2, cy = H / 2 + 35;
+        const scale = Math.min(W, H) * 0.0022;
+        const zScale = 80.0 / maxAbs;
+        const proj = (x, y, dz) => {{
+          const nx0 = (x - (hm.x_min + hm.x_max) / 2) * scale;
+          const ny0 = (y - (hm.y_min + hm.y_max) / 2) * scale;
+          const sx = cx + (nx0 - ny0) * 120;
+          const sy = cy + (nx0 + ny0) * 60 - (dz || 0) * zScale;
+          return [sx, sy];
+        }};
+        hm.points.forEach(p => {{
+          const [sx, sy] = proj(p.x, p.y, p.dz || 0);
+          ctx.beginPath();
+          ctx.arc(sx, sy, 5, 0, Math.PI * 2);
+          ctx.fillStyle = p.skipped ? '#475569' : (p.dz === null ? '#ef4444' : _hmColor(p.dz, maxAbs));
+          ctx.fill();
+          ctx.fillStyle = '#cbd5e1';
+          ctx.font = '10px monospace';
+          ctx.textAlign = 'center';
+          if (p.dz !== null) ctx.fillText((p.dz >= 0 ? '+' : '') + p.dz.toFixed(2), sx, sy - 8);
+        }});
+      }}
+    }}
+
+    let boardAlignState = {{ enabled: false, dx: 0, dy: 0, theta_deg: 0, points: {{ l1: [0,30], l2: [0,115], f1: [45,0], f2: [165,0] }} }};
+
+    async function loadBoardAlignment() {{
+      try {{
+        const res = await fetch(`${{getApiBase()}}/api/board_alignment`, {{ cache: 'no-store' }});
+        const d = await res.json();
+        boardAlignState = d;
+        renderBoardAlignmentUI();
+      }} catch (e) {{}}
+    }}
+
+    function renderBoardAlignmentUI() {{
+      const a = boardAlignState;
+      const chk = document.getElementById('align-enabled-chk');
+      if (chk) chk.checked = !!a.enabled;
+      if (a.points) {{
+        ['l1', 'l2', 'f1', 'f2'].forEach(k => {{
+          const el = document.getElementById('align-pt-' + k);
+          if (el && a.points[k]) el.innerText = `${{Number(a.points[k][0]).toFixed(2)}}, ${{Number(a.points[k][1]).toFixed(2)}}`;
+        }});
+      }}
+      const sum = document.getElementById('align-summary');
+      if (sum) sum.innerText = `ΔX: ${{Number(a.dx || 0).toFixed(3)}}mm | ΔY: ${{Number(a.dy || 0).toFixed(3)}}mm | θ: ${{Number(a.theta_deg || 0).toFixed(3)}}°`;
+      const badge = document.getElementById('dispatch-align-badge');
+      if (badge) {{
+        if (a.enabled) {{
+          badge.classList.remove('hidden');
+          badge.innerText = `Align: ΔX${{Number(a.dx).toFixed(2)}} ΔY${{Number(a.dy).toFixed(2)}} ${{Number(a.theta_deg).toFixed(2)}}°`;
+        }} else {{
+          badge.classList.add('hidden');
+        }}
+      }}
+    }}
+
+    async function captureEdgePoint(key) {{
+      try {{
+        const stRes = await fetch(`${{getApiBase()}}/api/fluidnc_status?ip=${{encodeURIComponent(fluidncTargetIp)}}`, {{ cache: 'no-store' }});
+        const st = await stRes.json();
+        const pos = st.wpos || st.mpos;
+        if (!pos) {{ alert('CNC Offline - cannot capture position'); return; }}
+        boardAlignState.points[key] = [Number(pos[0].toFixed(3)), Number(pos[1].toFixed(3))];
+        const res = await fetch(`${{getApiBase()}}/api/board_alignment_save`, {{
+          method: 'POST', headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ points: boardAlignState.points, enabled: true }})
+        }});
+        boardAlignState = await res.json();
+        renderBoardAlignmentUI();
+      }} catch (e) {{ alert('Capture failed: ' + e); }}
+    }}
+
+    async function toggleBoardAlignment(enabled) {{
+      const res = await fetch(`${{getApiBase()}}/api/board_alignment_save`, {{
+        method: 'POST', headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{ enabled: enabled }})
+      }});
+      boardAlignState = await res.json();
+      renderBoardAlignmentUI();
+    }}
+
+    async function resetBoardAlignment() {{
+      const res = await fetch(`${{getApiBase()}}/api/board_alignment_save`, {{
+        method: 'POST', headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{ reset: true }})
+      }});
+      boardAlignState = await res.json();
+      renderBoardAlignmentUI();
+    }}
+
+    async function probe4PtAlignment() {{
+      const btn = document.getElementById('btn-align-probe');
+      if (btn) {{ btn.disabled = true; btn.classList.add('opacity-50'); }}
+      try {{
+        const res = await fetch(`${{getApiBase()}}/api/board_alignment_probe`, {{
+          method: 'POST', headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ ip: fluidncTargetIp }})
+        }});
+        const d = await res.json();
+        if (d.success) {{
+          boardAlignState = d;
+          renderBoardAlignmentUI();
+        }} else {{
+          alert('Edge probe failed: ' + (d.error || ''));
+        }}
+      }} catch (e) {{
+        alert('Probe error: ' + e);
+      }} finally {{
+        if (btn) {{ btn.disabled = false; btn.classList.remove('opacity-50'); }}
+      }}
+    }}
+
     window.addEventListener('DOMContentLoaded', function() {{
+      initFloatingTooltips();
       switchDashboardTab('section-fluidnc-upload');
       updateCircuitView();
       filterUnitSubmenu('ALL');
@@ -6116,6 +7028,10 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       updateChecklistProgress();
       initFluidNCDispatcher();
       initGCodeCanvasEvents();
+      loadUIConfig();
+      loadMacrosAndHeightMap();
+      loadBoardAlignment();
+      startLiveBedPolling();
     }});
   </script>
 </head>
@@ -6168,6 +7084,11 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
           <span>Checklist</span>
         </button>
+        <button type="button" data-tab="section-macros" onclick="switchDashboardTab('section-macros')" role="tab" aria-selected="false"
+                class="nav-tab px-3 py-1.5 rounded-lg border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 transition font-medium flex items-center gap-1.5 cursor-pointer" data-tip="Custom Macros &amp; Bed Height Map">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          <span>Macros</span>
+        </button>
       </nav>
 
       <!-- Compact Status & Safety Indicators -->
@@ -6196,6 +7117,8 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       <div class="flex flex-wrap items-center justify-between pb-3 mb-4 border-b border-slate-800/80 gap-3">
         <div class="flex items-center gap-3">
           <h2 class="text-base font-semibold text-slate-100">G-Code Dispatch</h2>
+          <span id="dispatch-done-badge" class="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-mono text-[11px]" data-tip="Completed steps in current view">0 / 0 Done</span>
+          <span id="dispatch-align-badge" class="hidden px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30 font-mono text-[11px]" data-tip="Active 4-Point Edge Alignment compensation">Align Off</span>
           <div id="fluidnc-status-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-mono text-slate-300">
             <span id="fluidnc-status-dot" class="w-2 h-2 rounded-full bg-slate-500"></span>
             <span id="fluidnc-status-text">Checking...</span>
@@ -6208,14 +7131,17 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
           <button type="button" onclick="testFluidNCConnection()" class="p-2 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700/80 transition cursor-pointer" data-tip="Ping FluidNC" aria-label="Ping FluidNC">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
           </button>
-          <button type="button" onclick="sendFluidNCRealtime('$X')" class="p-2 rounded-lg bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/30 transition cursor-pointer" data-tip="Unlock Alarm ($X)" aria-label="Unlock Alarm">
+          <button type="button" id="btn-dispatch-unlock" onclick="sendFluidNCRealtime('$X')" class="p-2 rounded-lg bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/30 transition cursor-pointer" data-tip="Unlock Alarm ($X)" aria-label="Unlock Alarm">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
           </button>
-          <button type="button" onclick="sendFluidNCRealtime('$H')" class="p-2 rounded-lg bg-sky-600/20 hover:bg-sky-600 text-sky-300 hover:text-white border border-sky-500/30 transition cursor-pointer" data-tip="Home Machine ($H)" aria-label="Home Machine">
+          <button type="button" id="btn-dispatch-home" onclick="sendFluidNCRealtime('$H')" class="p-2 rounded-lg bg-sky-600/20 hover:bg-sky-600 text-sky-300 hover:text-white border border-sky-500/30 transition cursor-pointer" data-tip="Home Machine ($H)" aria-label="Home Machine">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
           </button>
-          <button type="button" onclick="sendFluidNCRealtime('G10 L20 P1 X0 Y0 Z0')" class="p-2 rounded-lg bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 transition cursor-pointer" data-tip="Zero Work XYZ (G10 L20)" aria-label="Zero Work">
+          <button type="button" id="btn-dispatch-zero" onclick="sendFluidNCRealtime('G10 L20 P1 X0 Y0 Z0')" class="p-2 rounded-lg bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 transition cursor-pointer" data-tip="Zero Work XYZ (G10 L20)" aria-label="Zero Work">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/></svg>
+          </button>
+          <button type="button" onclick="togglePrinterPanel()" class="p-2 rounded-lg bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 transition cursor-pointer" data-tip="STM32 Inkjet Printer Settings" aria-label="Inkjet Printer Settings">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
           </button>
           <button type="button" onclick="toggleFluidNCFrame()" id="btn-toggle-fluidnc-frame" class="p-2 rounded-lg bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 transition cursor-pointer" data-tip="Toggle Embedded FluidNC UI" aria-label="Embedded View">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
@@ -6223,6 +7149,58 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
           <a id="fluidnc-open-link" href="http://{svg_escape(fluidnc_ip)}" target="_blank" rel="noopener noreferrer" class="p-2 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/30 transition" data-tip="Open FluidNC in New Tab" aria-label="Open FluidNC Tab">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
           </a>
+        </div>
+      </div>
+
+      <!-- Collapsible STM32 USB Inkjet Silkscreen Printer Panel -->
+      <div id="stm32-printer-panel" class="hidden mb-4 p-3.5 rounded-xl bg-slate-900/90 border border-purple-500/30 text-xs">
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-3 border-b border-slate-800">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-purple-400"></span>
+            <span class="font-semibold text-slate-100">STM32 USB Inkjet Silkscreen Printer</span>
+            <span id="printer-usb-status" class="font-mono text-[11px] text-slate-400">Ready</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button type="button" onclick="loadPrinterSettings()" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 cursor-pointer" data-tip="Refresh USB Ports">Scan</button>
+            <button type="button" onclick="testPrinterUSB()" class="px-2.5 py-1 rounded bg-sky-600/80 hover:bg-sky-500 text-white font-medium cursor-pointer" data-tip="Send Ping to STM32 USB">Test USB</button>
+            <button type="button" onclick="savePrinterSettings()" class="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-medium cursor-pointer">Save</button>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+          <div class="col-span-2">
+            <label class="block text-[10px] uppercase text-slate-400 mb-1" for="printer-port-select">STM32 USB Port</label>
+            <select id="printer-port-select" class="w-full bg-slate-950 border border-slate-700/80 rounded-lg px-2 py-1 text-slate-100 font-mono text-xs"></select>
+          </div>
+          <div>
+            <label class="block text-[10px] uppercase text-slate-400 mb-1" for="printer-baud-select">Baudrate</label>
+            <select id="printer-baud-select" class="w-full bg-slate-950 border border-slate-700/80 rounded-lg px-2 py-1 text-slate-100 font-mono text-xs">
+              <option value="115200">115200</option>
+              <option value="230400">230400</option>
+              <option value="57600">57600</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[10px] uppercase text-slate-400 mb-1" for="printer-dpi-select">DPI</label>
+            <select id="printer-dpi-select" class="w-full bg-slate-950 border border-slate-700/80 rounded-lg px-2 py-1 text-slate-100 font-mono text-xs">
+              <option value="300">300 DPI</option>
+              <option value="600" selected>600 DPI</option>
+              <option value="1200">1200 DPI</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[10px] uppercase text-slate-400 mb-1" for="printer-uv-input">UV LED %</label>
+            <input type="number" id="printer-uv-input" min="0" max="100" value="85" class="w-full bg-slate-950 border border-slate-700/80 rounded-lg px-2 py-1 text-slate-100 font-mono text-xs">
+          </div>
+          <div class="grid grid-cols-2 gap-1.5">
+            <div>
+              <label class="block text-[10px] uppercase text-slate-400 mb-1" for="printer-xoff-input">X Off</label>
+              <input type="number" step="0.1" id="printer-xoff-input" value="0.0" class="w-full bg-slate-950 border border-slate-700/80 rounded-lg px-1.5 py-1 text-slate-100 font-mono text-xs">
+            </div>
+            <div>
+              <label class="block text-[10px] uppercase text-slate-400 mb-1" for="printer-yoff-input">Y Off</label>
+              <input type="number" step="0.1" id="printer-yoff-input" value="0.0" class="w-full bg-slate-950 border border-slate-700/80 rounded-lg px-1.5 py-1 text-slate-100 font-mono text-xs">
+            </div>
+          </div>
         </div>
       </div>
 
@@ -6291,8 +7269,15 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
           <button type="button" onclick="setFluidNCDispatcherCat('Step3')" class="fnc-cat-btn px-2 py-1 rounded bg-slate-900 text-slate-400 hover:text-white cursor-pointer">Top Cu</button>
           <button type="button" onclick="setFluidNCDispatcherCat('Step4')" class="fnc-cat-btn px-2 py-1 rounded bg-slate-900 text-slate-400 hover:text-white cursor-pointer">Bot Cu</button>
           <button type="button" onclick="setFluidNCDispatcherCat('Step5')" class="fnc-cat-btn px-2 py-1 rounded bg-slate-900 text-slate-400 hover:text-white cursor-pointer">Mask</button>
+          <button type="button" onclick="setFluidNCDispatcherCat('Step6')" class="fnc-cat-btn px-2 py-1 rounded bg-slate-900 text-slate-400 hover:text-white cursor-pointer">Silk</button>
           <button type="button" onclick="setFluidNCDispatcherCat('Step7')" class="fnc-cat-btn px-2 py-1 rounded bg-slate-900 text-slate-400 hover:text-white cursor-pointer">Cut</button>
         </div>
+      </div>
+
+      <!-- Quick Macros Bar (toggled by ui_config.json show_macros_in_dispatch) -->
+      <div id="dispatch-macros-bar" class="mb-3 p-2.5 rounded-xl bg-slate-900/70 border border-slate-800/80 flex flex-wrap items-center gap-2 text-xs">
+        <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider shrink-0">Macros</span>
+        <div id="dispatch-macros-list" class="flex flex-wrap items-center gap-1.5"></div>
       </div>
 
       <div id="fluidnc-dispatcher-table" class="space-y-1.5 max-h-[580px] overflow-y-auto pr-1"></div>
@@ -6312,7 +7297,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         </div>
       </div>
 
-      <div class="grid grid-cols-4 sm:grid-cols-8 gap-1.5 mb-4" role="tablist" aria-label="Gerber Steps">
+      <div class="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-1.5 mb-4" role="tablist" aria-label="Gerber Steps">
         <button type="button" onclick="selectCircuitStep('Composite_Stackup')" id="step-btn-Composite_Stackup" aria-pressed="true" class="step-btn active p-2 rounded-lg border border-slate-800 bg-[#0b101b] text-center text-xs transition cursor-pointer">
           <span class="block font-semibold">All</span>
         </button>
@@ -6328,22 +7313,24 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         <button type="button" onclick="selectCircuitStep('Step4_Bottom_Copper')" id="step-btn-Step4_Bottom_Copper" aria-pressed="false" class="step-btn p-2 rounded-lg border border-slate-800 bg-[#0b101b] text-center text-xs transition cursor-pointer">
           <span class="block font-semibold">4. Bot Cu</span>
         </button>
-        <button type="button" onclick="selectCircuitStep('Step5_Solder_Mask')" id="step-btn-Step5_Solder_Mask" aria-pressed="false" class="step-btn p-2 rounded-lg border border-slate-800 bg-[#0b101b] text-center text-xs transition cursor-pointer">
-          <span class="block font-semibold">5. Mask</span>
+        <button type="button" onclick="selectCircuitStep('Step5_Solder_Mask_Front')" id="step-btn-Step5_Solder_Mask_Front" aria-pressed="false" class="step-btn p-2 rounded-lg border border-slate-800 bg-[#0b101b] text-center text-xs transition cursor-pointer">
+          <span class="block font-semibold">5. Top Mask</span>
         </button>
-        <button type="button" onclick="selectCircuitStep('Step6_Silkscreen')" id="step-btn-Step6_Silkscreen" aria-pressed="false" class="step-btn p-2 rounded-lg border border-slate-800 bg-[#0b101b] text-center text-xs transition cursor-pointer">
-          <span class="block font-semibold">6. Silk</span>
+        <button type="button" onclick="selectCircuitStep('Step5_Solder_Mask_Back')" id="step-btn-Step5_Solder_Mask_Back" aria-pressed="false" class="step-btn p-2 rounded-lg border border-slate-800 bg-[#0b101b] text-center text-xs transition cursor-pointer">
+          <span class="block font-semibold">6. Bot Mask</span>
+        </button>
+        <button type="button" onclick="selectCircuitStep('Step6_Silkscreen_Front')" id="step-btn-Step6_Silkscreen_Front" aria-pressed="false" class="step-btn p-2 rounded-lg border border-slate-800 bg-[#0b101b] text-center text-xs transition cursor-pointer">
+          <span class="block font-semibold">7. Top Silk</span>
+        </button>
+        <button type="button" onclick="selectCircuitStep('Step6_Silkscreen_Back')" id="step-btn-Step6_Silkscreen_Back" aria-pressed="false" class="step-btn p-2 rounded-lg border border-slate-800 bg-[#0b101b] text-center text-xs transition cursor-pointer">
+          <span class="block font-semibold">8. Bot Silk</span>
         </button>
         <button type="button" onclick="selectCircuitStep('Step7_Cutout_SnapTab')" id="step-btn-Step7_Cutout_SnapTab" aria-pressed="false" class="step-btn p-2 rounded-lg border border-slate-800 bg-[#0b101b] text-center text-xs transition cursor-pointer">
-          <span class="block font-semibold">7. Cut</span>
+          <span class="block font-semibold">9. Cut</span>
         </button>
       </div>
 
-      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
-        <div id="circuit-side-controls" style="display: none;" class="inline-flex rounded-lg bg-[#0a0e17] p-1 border border-slate-800" role="group">
-          <button type="button" onclick="setCircuitSide('front')" id="circuit-side-front" aria-pressed="true" class="circuit-side-btn px-3 py-1 text-xs font-semibold rounded-md bg-blue-600 text-white cursor-pointer transition">Front</button>
-          <button type="button" onclick="setCircuitSide('back')" id="circuit-side-back" aria-pressed="false" class="circuit-side-btn px-3 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white cursor-pointer transition">Back</button>
-        </div>
+      <div class="flex flex-wrap items-center justify-end gap-2 mb-4">
         <div id="circuit-mirror-wrap" class="inline-flex items-center gap-2 ml-auto">
           <button type="button" onclick="toggleCircuitMirror()" id="circuit-mirror-btn" aria-pressed="false" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700 cursor-pointer transition">
             Mirror: Off
@@ -6600,7 +7587,227 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         {"".join(chk_rows_html)}
       </div>
     </section>
+
+    <!-- TAB 7: CUSTOM MACROS, JOG, UI CONFIG & BED HEIGHT MAP -->
+    <section id="section-macros" class="dash-section space-y-4" style="display:none;">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <!-- BOX 1: FigUI Jog Pad + Live Tool on Bed -->
+        <div class="lg:col-span-4 glass-panel p-4 rounded-2xl border border-slate-800/90 flex flex-col gap-3">
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800/80">
+            <h2 class="text-sm font-semibold text-slate-100">Navigation &amp; Jog</h2>
+            <div class="flex items-center gap-1">
+              <button type="button" onclick="setJogStep(0.1)" data-step="0.1" class="jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer">0.1</button>
+              <button type="button" onclick="setJogStep(1)" data-step="1" class="jog-step-btn px-1.5 py-0.5 rounded bg-blue-600 text-white font-mono text-[11px] font-semibold cursor-pointer">1</button>
+              <button type="button" onclick="setJogStep(5)" data-step="5" class="jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer">5</button>
+              <button type="button" onclick="setJogStep(10)" data-step="10" class="jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer">10</button>
+              <button type="button" onclick="setJogStep(50)" data-step="50" class="jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer">50</button>
+            </div>
+          </div>
+
+          <!-- FigUI 3x3 XY Compass + Z Column -->
+          <div class="grid grid-cols-4 gap-1.5 text-xs font-mono">
+            <button type="button" onclick="sendJogDiag(-1, 1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X- Y+">&#8598;</button>
+            <button type="button" onclick="sendJog('Y', 1)" class="p-2 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-100 border border-slate-700 font-semibold cursor-pointer" data-tip="Jog Y+">Y+</button>
+            <button type="button" onclick="sendJogDiag(1, 1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X+ Y+">&#8599;</button>
+            <button type="button" onclick="sendJog('Z', 1)" class="p-2 rounded-lg bg-cyan-950/50 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-500/30 font-semibold cursor-pointer" data-tip="Jog Z+">Z+</button>
+
+            <button type="button" onclick="sendJog('X', -1)" class="p-2 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-100 border border-slate-700 font-semibold cursor-pointer" data-tip="Jog X-">X-</button>
+            <button type="button" onclick="sendFluidNCRealtime('G90 G0 X0 Y0')" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 cursor-pointer" data-tip="Go to Work X0 Y0">XY0</button>
+            <button type="button" onclick="sendJog('X', 1)" class="p-2 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-100 border border-slate-700 font-semibold cursor-pointer" data-tip="Jog X+">X+</button>
+            <button type="button" id="btn-macro-zero-z" onclick="sendFluidNCRealtime('G10 L20 P1 Z0')" class="p-2 rounded-lg bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 cursor-pointer" data-tip="Zero Z">0 Z</button>
+
+            <button type="button" onclick="sendJogDiag(-1, -1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X- Y-">&#8601;</button>
+            <button type="button" onclick="sendJog('Y', -1)" class="p-2 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-100 border border-slate-700 font-semibold cursor-pointer" data-tip="Jog Y-">Y-</button>
+            <button type="button" onclick="sendJogDiag(1, -1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X+ Y-">&#8600;</button>
+            <button type="button" onclick="sendJog('Z', -1)" class="p-2 rounded-lg bg-cyan-950/50 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-500/30 font-semibold cursor-pointer" data-tip="Jog Z-">Z-</button>
+          </div>
+
+          <!-- Quick Machine Actions + Feedrate -->
+          <div class="flex flex-wrap items-center justify-between gap-1.5 text-[11px] font-mono">
+            <div class="flex items-center gap-1">
+              <button type="button" id="btn-macro-home" onclick="sendFluidNCRealtime('$H')" class="px-2 py-1 rounded bg-sky-600/20 hover:bg-sky-600 text-sky-300 hover:text-white border border-sky-500/30 cursor-pointer" data-tip="Home ($H)">$H</button>
+              <button type="button" id="btn-macro-unlock" onclick="sendFluidNCRealtime('$X')" class="px-2 py-1 rounded bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/30 cursor-pointer" data-tip="Unlock ($X)">$X</button>
+              <button type="button" id="btn-macro-zero-xy" onclick="sendFluidNCRealtime('G10 L20 P1 X0 Y0')" class="px-2 py-1 rounded bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 cursor-pointer" data-tip="Zero XY">0 XY</button>
+              <button type="button" onclick="sendFluidNCRealtime('!')" class="px-2 py-1 rounded bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white border border-red-500/30 cursor-pointer" data-tip="Feed Hold (!)">!</button>
+              <button type="button" onclick="sendFluidNCRealtime('~')" class="px-2 py-1 rounded bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/30 cursor-pointer" data-tip="Resume (~)">~</button>
+            </div>
+            <select id="jog-feed-select" class="bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-slate-300 font-mono text-[11px]" data-tip="Jog Feedrate">
+              <option value="300">F300</option>
+              <option value="600">F600</option>
+              <option value="1200" selected>F1200</option>
+              <option value="2000">F2000</option>
+            </select>
+          </div>
+          <div id="jog-status-lbl" class="text-[11px] font-mono text-slate-400 truncate">Ready</div>
+
+          <div class="p-2.5 rounded-xl bg-[#0b101b] border border-slate-800 space-y-1.5">
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-semibold text-slate-200">Live Tool on Bed</span>
+              <span id="macro-live-pos-lbl" class="font-mono text-[11px] text-cyan-300">--</span>
+            </div>
+            <canvas id="macro-live-bed-canvas" class="w-full h-[190px] rounded bg-[#070a10] border border-slate-800/80"></canvas>
+          </div>
+        </div>
+
+        <!-- BOX 2: PCB Thickness Z-Zero & UI Config + BOX 3: Custom Macros -->
+        <div class="lg:col-span-4 flex flex-col gap-4">
+          <div class="glass-panel p-4 rounded-2xl border border-slate-800/90 space-y-3 text-xs">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-800/80">
+              <h2 class="text-sm font-semibold text-slate-100">Z-Zero &amp; UI Config</h2>
+              <span class="text-[10px] font-mono text-slate-400">ui_config.json</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="flex-1">
+                <label class="block text-[10px] text-slate-400 mb-1" for="cfg-pcb-thickness">PCB Thickness (mm)</label>
+                <input type="number" step="0.05" id="cfg-pcb-thickness" value="1.60"
+                       onchange="saveUIConfigPartial({{ pcb_thickness_mm: Number(this.value) }})"
+                       class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 font-mono text-slate-100">
+              </div>
+              <button type="button" onclick="applyPcbThicknessZero()" class="mt-4 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold cursor-pointer" data-tip="Raise Z by PCB thickness from Bed Z0 &amp; set PCB Top Z0">
+                Set PCB Z0
+              </button>
+            </div>
+            <div class="grid grid-cols-2 gap-2 pt-1 text-[11px]">
+              <label class="flex items-center gap-1.5 cursor-pointer text-slate-300" data-tip="Enable G38.2 touch probe actions">
+                <input type="checkbox" id="cfg-touch-probe" onchange="saveUIConfigPartial({{ touch_probe_enabled: this.checked }})" class="accent-emerald-500">
+                <span>Touch Probe</span>
+              </label>
+              <label class="flex items-center gap-1.5 cursor-pointer text-slate-300" data-tip="Show quick macros bar in Dispatch">
+                <input type="checkbox" id="cfg-show-macros-dispatch" onchange="saveUIConfigPartial({{ show_macros_in_dispatch: this.checked }})" class="accent-blue-500">
+                <span>Macros in Dispatch</span>
+              </label>
+              <label class="flex items-center gap-1.5 cursor-pointer text-slate-300">
+                <input type="checkbox" id="cfg-enable-homing" onchange="saveUIConfigPartial({{ enable_homing_btn: this.checked }})" class="accent-sky-500">
+                <span>Homing ($H)</span>
+              </label>
+              <label class="flex items-center gap-1.5 cursor-pointer text-slate-300">
+                <input type="checkbox" id="cfg-enable-unlock" onchange="saveUIConfigPartial({{ enable_unlock_btn: this.checked }})" class="accent-amber-500">
+                <span>Unlock ($X)</span>
+              </label>
+              <label class="flex items-center gap-1.5 cursor-pointer text-slate-300">
+                <input type="checkbox" id="cfg-enable-zero" onchange="saveUIConfigPartial({{ enable_zero_work_btn: this.checked }})" class="accent-purple-500">
+                <span>Zero Controls</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="glass-panel p-4 rounded-2xl border border-slate-800/90 flex-1 flex flex-col gap-2.5">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-800/80">
+              <h2 class="text-sm font-semibold text-slate-100">Custom Macros</h2>
+              <div class="flex items-center gap-1.5">
+                <span id="macros-status" class="text-[11px] font-mono text-slate-400"></span>
+                <button type="button" onclick="newMacroFile()" class="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold cursor-pointer">+ New</button>
+              </div>
+            </div>
+            <div id="macros-list" class="space-y-1.5 max-h-[240px] overflow-y-auto pr-1"></div>
+            <div id="macro-editor-box" class="hidden p-2.5 rounded-xl bg-[#0b101b] border border-slate-800 space-y-2 text-xs">
+              <div class="flex items-center justify-between gap-2">
+                <input type="text" id="macro-edit-name" class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 font-mono text-slate-100">
+                <button type="button" onclick="saveMacroFile()" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold cursor-pointer">Save</button>
+              </div>
+              <textarea id="macro-edit-code" rows="5" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 font-mono text-[11px] text-slate-200"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- BOX 4: 4-Point Edge Alignment + BOX 5: Bed Height Map -->
+        <div class="lg:col-span-4 flex flex-col gap-4">
+          <div class="glass-panel p-4 rounded-2xl border border-slate-800/90 space-y-2.5 text-xs">
+            <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800/80">
+              <div class="flex items-center gap-2">
+                <h2 class="text-sm font-semibold text-slate-100">4-Pt Edge Align</h2>
+                <label class="inline-flex items-center gap-1 cursor-pointer text-[11px] text-emerald-300" data-tip="Apply offset &amp; rotation to milled G-code">
+                  <input type="checkbox" id="align-enabled-chk" onchange="toggleBoardAlignment(this.checked)" class="accent-emerald-500">
+                  <span>Active</span>
+                </label>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <button type="button" id="btn-align-probe" onclick="probe4PtAlignment()" class="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] cursor-pointer">Auto-Probe</button>
+                <button type="button" onclick="resetBoardAlignment()" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] cursor-pointer">Reset</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-1.5 font-mono text-[11px]">
+              <button type="button" onclick="captureEdgePoint('l1')" class="p-1.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-800 flex justify-between cursor-pointer" data-tip="Capture current XY as Left-Front"><span class="text-slate-400">L1</span><span id="align-pt-l1" class="text-slate-200">0.0, 30.0</span></button>
+              <button type="button" onclick="captureEdgePoint('l2')" class="p-1.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-800 flex justify-between cursor-pointer" data-tip="Capture current XY as Left-Back"><span class="text-slate-400">L2</span><span id="align-pt-l2" class="text-slate-200">0.0, 115.0</span></button>
+              <button type="button" onclick="captureEdgePoint('f1')" class="p-1.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-800 flex justify-between cursor-pointer" data-tip="Capture current XY as Front-Left"><span class="text-slate-400">F1</span><span id="align-pt-f1" class="text-slate-200">45.0, 0.0</span></button>
+              <button type="button" onclick="captureEdgePoint('f2')" class="p-1.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-800 flex justify-between cursor-pointer" data-tip="Capture current XY as Front-Right"><span class="text-slate-400">F2</span><span id="align-pt-f2" class="text-slate-200">165.0, 0.0</span></button>
+            </div>
+            <div id="align-summary" class="font-mono text-[11px] text-amber-300">ΔX: 0.000mm | ΔY: 0.000mm | θ: 0.000°</div>
+          </div>
+
+          <div class="glass-panel p-4 rounded-2xl border border-slate-800/90 flex-1 flex flex-col gap-2.5">
+            <div class="flex flex-wrap items-center justify-between pb-2 border-b border-slate-800/80 gap-2">
+              <div class="flex items-center gap-2">
+                <h2 class="text-sm font-semibold text-slate-100">Bed Height Map</h2>
+                <div class="inline-flex rounded-lg border border-slate-700 overflow-hidden">
+                  <button type="button" id="hm-mode-2d" onclick="setHeightMapMode('2d')" class="px-2 py-0.5 bg-cyan-600 text-white font-semibold text-[11px] cursor-pointer">2D</button>
+                  <button type="button" id="hm-mode-3d" onclick="setHeightMapMode('3d')" class="px-2 py-0.5 bg-slate-800 text-slate-300 text-[11px] cursor-pointer">3D</button>
+                </div>
+              </div>
+              <button type="button" id="btn-hm-scan" onclick="runHeightMapScan()" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold cursor-pointer">Scan Bed</button>
+            </div>
+            <div class="grid grid-cols-4 gap-1.5 text-[11px]">
+              <div><label class="block text-[9px] text-slate-400">X Min</label><input id="hm-xmin" type="number" value="25" class="w-full bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 font-mono text-slate-100"></div>
+              <div><label class="block text-[9px] text-slate-400">X Max</label><input id="hm-xmax" type="number" value="185" class="w-full bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 font-mono text-slate-100"></div>
+              <div><label class="block text-[9px] text-slate-400">Y Min</label><input id="hm-ymin" type="number" value="25" class="w-full bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 font-mono text-slate-100"></div>
+              <div><label class="block text-[9px] text-slate-400">Y Max</label><input id="hm-ymax" type="number" value="130" class="w-full bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 font-mono text-slate-100"></div>
+              <div><label class="block text-[9px] text-slate-400">Nx</label><input id="hm-nx" type="number" value="5" class="w-full bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 font-mono text-slate-100"></div>
+              <div><label class="block text-[9px] text-slate-400">Ny</label><input id="hm-ny" type="number" value="4" class="w-full bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 font-mono text-slate-100"></div>
+              <div><label class="block text-[9px] text-slate-400">Probe Z</label><input id="hm-zmin" type="number" step="0.5" value="-3" class="w-full bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 font-mono text-slate-100"></div>
+              <div><label class="block text-[9px] text-slate-400">Feed</label><input id="hm-feed" type="number" value="60" class="w-full bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 font-mono text-slate-100"></div>
+            </div>
+            <canvas id="hm-canvas" class="w-full h-[210px] rounded bg-[#070a10] border border-slate-800/80"></canvas>
+            <div id="hm-stats" class="text-[10px] font-mono text-slate-400 flex justify-between"><span id="hm-status">Ready</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
   </main>
+
+  <!-- Pre-Flight Confirmation Modal (Asked BEFORE streaming any Macro or G-code) -->
+  <div id="preflight-confirm-modal" class="hidden fixed inset-0 z-[75] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-[#0d111a] border border-blue-500/50 rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4">
+      <div class="flex items-center gap-3">
+        <span class="p-2 rounded-xl bg-blue-500/15 border border-blue-500/40 text-blue-300">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        </span>
+        <div>
+          <h3 class="text-sm font-bold text-slate-100">Confirm Before Streaming</h3>
+          <div id="pf-filename" class="text-xs font-mono text-cyan-300">job.gcode</div>
+          <div id="pf-meta" class="text-[11px] font-mono text-slate-400">CNC Job</div>
+        </div>
+      </div>
+      <p id="pf-prompt" class="text-xs text-amber-200 bg-amber-950/30 border border-amber-500/30 rounded-xl p-3 leading-relaxed"></p>
+      <div class="flex items-center justify-end gap-2 pt-1">
+        <button type="button" onclick="cancelPreflight()" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer">Cancel</button>
+        <button type="button" onclick="proceedPreflight()" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold cursor-pointer">Proceed &amp; Stream</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- M0 Operator Verification / Continue or Abort Modal -->
+  <div id="m0-confirm-modal" class="hidden fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-[#0d111a] border border-amber-500/50 rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4">
+      <div class="flex items-center gap-3">
+        <span class="p-2 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </span>
+        <div>
+          <h3 class="text-sm font-bold text-slate-100">Operator Confirmation Required (M0)</h3>
+          <div id="m0-file-meta" class="text-[11px] font-mono text-slate-400">CNC Job</div>
+        </div>
+      </div>
+      <p id="m0-prompt-text" class="text-xs text-amber-200 bg-amber-950/30 border border-amber-500/30 rounded-xl p-3 leading-relaxed"></p>
+      <div class="flex items-center justify-between text-xs font-mono bg-slate-900/90 border border-slate-800 rounded-lg px-3 py-2">
+        <span class="text-slate-400">Tool Position</span>
+        <span id="m0-live-pos" class="text-cyan-300">--</span>
+      </div>
+      <div class="flex items-center justify-end gap-2 pt-1">
+        <button type="button" onclick="sendM0Action('abort')" class="px-4 py-2 rounded-lg bg-red-600/80 hover:bg-red-500 text-white text-xs font-semibold cursor-pointer">Abort</button>
+        <button type="button" onclick="sendM0Action('continue')" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold cursor-pointer">Continue (~)</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Interactive G-Code Toolpath Viewer Modal -->
   <div id="gcode-viewer-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6">
@@ -6714,14 +7921,54 @@ def generate_html_dashboard(sheets, holders_mgr: HolderManager, generated_files,
 # Lightweight Local Web Server & FluidNC Network Bridge
 # ---------------------------------------------------------------------------
 
+_FLUIDNC_WCO_CACHE: Dict[str, Tuple[float, float, float]] = {}
+
+
+def parse_fluidnc_status_line(text: str, ip: str = "192.168.8.109") -> Dict[str, Any]:
+    """Parse <State|MPos:x,y,z|WCO:x,y,z|...> into structured coordinates."""
+    info: Dict[str, Any] = {"state": "Unknown", "mpos": None, "wpos": None}
+    m = re.search(r"<([^>]+)>", text or "")
+    if not m:
+        return info
+    parts = m.group(1).split("|")
+    info["state"] = parts[0] or "Unknown"
+    mpos = None
+    wpos = None
+    wco = _FLUIDNC_WCO_CACHE.get(ip)
+    for p in parts[1:]:
+        if p.startswith("MPos:"):
+            vals = [float(v) for v in p[5:].split(",")[:3]]
+            if len(vals) == 3:
+                mpos = vals
+        elif p.startswith("WPos:"):
+            vals = [float(v) for v in p[5:].split(",")[:3]]
+            if len(vals) == 3:
+                wpos = vals
+        elif p.startswith("WCO:"):
+            vals = [float(v) for v in p[4:].split(",")[:3]]
+            if len(vals) == 3:
+                wco = (vals[0], vals[1], vals[2])
+                _FLUIDNC_WCO_CACHE[ip] = wco
+    if mpos is not None and wpos is None:
+        if wco is not None:
+            wpos = [round(mpos[0] - wco[0], 3), round(mpos[1] - wco[1], 3), round(mpos[2] - wco[2], 3)]
+        else:
+            wpos = list(mpos)
+    elif wpos is not None and mpos is None and wco is not None:
+        mpos = [round(wpos[0] + wco[0], 3), round(wpos[1] + wco[1], 3), round(wpos[2] + wco[2], 3)]
+    info["mpos"] = mpos
+    info["wpos"] = wpos
+    return info
+
+
 def check_fluidnc_online(ip: str, timeout: float = 2.0) -> Tuple[bool, str]:
-    """Test HTTP connection to FluidNC controller [ESP800] info endpoint."""
+    """Test HTTP connection to FluidNC controller using /command?plain=? (no WebSocket needed)."""
     try:
-        url = f"http://{ip}/command?cmd=%5BESP800%5Djson=yes"
+        url = f"http://{ip}/command?plain=%3F"
         req = urllib.request.Request(url, headers={"User-Agent": "PCBPanelizer/2.0"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            text = resp.read().decode("utf-8", errors="replace")
-            return True, text.strip()
+            text = resp.read().decode("utf-8", errors="replace").strip()
+            return True, text or "Online"
     except Exception:
         try:
             req = urllib.request.Request(f"http://{ip}/", headers={"User-Agent": "PCBPanelizer/2.0"})
@@ -6729,6 +7976,875 @@ def check_fluidnc_online(ip: str, timeout: float = 2.0) -> Tuple[bool, str]:
                 return (resp.status == 200), "HTTP 200 OK"
         except Exception as e:
             return False, str(e)
+
+
+def send_fluidnc_plain_cmd(ip: str, cmd: str, timeout: float = 3.0) -> Tuple[bool, str]:
+    """Send a single GRBL/FluidNC command via HTTP /command?plain=... with Telnet :23 fallback."""
+    import socket
+    cmd_clean = cmd.strip()
+    is_long = cmd_clean.upper().startswith("$H") or "G38." in cmd_clean.upper()
+    eff_timeout = max(timeout, 45.0 if is_long else 5.0)
+    encoded = urllib.parse.quote(cmd_clean)
+    try:
+        url = f"http://{ip}/command?plain={encoded}"
+        req = urllib.request.Request(url, headers={"User-Agent": "PCBPanelizer/2.0"})
+        with urllib.request.urlopen(req, timeout=eff_timeout) as resp:
+            return True, resp.read().decode("utf-8", errors="replace").strip()
+    except Exception:
+        try:
+            with socket.create_connection((ip, 23), timeout=eff_timeout) as s:
+                s.settimeout(eff_timeout)
+                s.sendall((cmd_clean + "\n").encode("utf-8"))
+                buf = ""
+                t0 = time.time()
+                while time.time() - t0 < eff_timeout:
+                    chunk = s.recv(1024).decode("utf-8", errors="replace")
+                    if not chunk:
+                        break
+                    buf += chunk
+                    if "ok" in buf or "error:" in buf or "ALARM:" in buf:
+                        break
+                if "error:" in buf or "ALARM:" in buf:
+                    return False, buf.strip()
+                return True, buf.strip() or "ok"
+        except Exception as e:
+            return False, str(e)
+
+
+def stream_gcode_to_fluidnc(ip: str, gcode_text: str, timeout: float = 10.0) -> Tuple[bool, str]:
+    """Stream G-code line-by-line to FluidNC over Telnet (port 23) with ok/error flow control."""
+    import socket
+    lines = []
+    for raw in gcode_text.splitlines():
+        line = raw.split(";")[0].strip()
+        if not line:
+            continue
+        # Strip inline parenthetical comments unless it's a MSG
+        if line.startswith("(") and line.endswith(")"):
+            continue
+        lines.append(line)
+    if not lines:
+        return False, "No executable G-code lines found"
+    try:
+        sent = 0
+        with socket.create_connection((ip, 23), timeout=timeout) as s:
+            s.settimeout(timeout)
+            for line in lines:
+                s.sendall((line + "\n").encode("utf-8"))
+                buf = ""
+                t0 = time.time()
+                while time.time() - t0 < timeout:
+                    chunk = s.recv(1024).decode("utf-8", errors="replace")
+                    if not chunk:
+                        break
+                    buf += chunk
+                    if "error:" in buf or "ALARM:" in buf:
+                        return False, f"Controller error at line {sent + 1} ({line}): {buf.strip()}"
+                    if "ok" in buf:
+                        break
+                sent += 1
+        return True, f"Streamed {sent} G-code command(s) via Telnet :23"
+    except Exception as e:
+        return False, f"Telnet stream failed: {e}"
+
+
+import threading
+
+_STREAM_LOCK = threading.Lock()
+_STREAM_SESSION: Dict[str, Any] = {
+    "active": False,
+    "state": "idle",  # idle | running | waiting_confirm | done | aborted | error
+    "ip": "192.168.8.109",
+    "filename": "",
+    "sent": 0,
+    "total": 0,
+    "prompt": "",
+    "message": "",
+    "abort": False,
+    "event": None,
+}
+
+
+def start_fluidnc_stream_session(ip: str, gcode_text: str, filename: str = "") -> Dict[str, Any]:
+    """Start background Telnet :23 streaming session that pauses at M0/M1 for UI confirmation."""
+    import socket
+    parsed_lines: List[Tuple[str, str]] = []
+    pending_msg = ""
+    for raw in gcode_text.splitlines():
+        code = raw.split(";")[0].strip()
+        if not code:
+            continue
+        m_msg = re.match(r"^\(\s*MSG\s*,\s*(.+?)\s*\)$", code, re.IGNORECASE)
+        if m_msg:
+            pending_msg = m_msg.group(1).strip()
+            continue
+        if code.startswith("(") and code.endswith(")"):
+            continue
+        base_cmd = re.sub(r"\([^)]*\)", "", code).strip().upper()
+        if base_cmd in ("M0", "M1"):
+            m_inline = re.search(r"\(([^)]+)\)", code)
+            if m_inline and not pending_msg:
+                pending_msg = m_inline.group(1).strip()
+            parsed_lines.append((base_cmd, pending_msg))
+            pending_msg = ""
+        else:
+            parsed_lines.append((code, pending_msg))
+
+    if not parsed_lines:
+        return {"success": False, "error": "No executable G-code lines found"}
+
+    ev = threading.Event()
+    with _STREAM_LOCK:
+        if _STREAM_SESSION.get("active") and _STREAM_SESSION.get("event"):
+            _STREAM_SESSION["abort"] = True
+            _STREAM_SESSION["event"].set()
+        _STREAM_SESSION.update({
+            "active": True,
+            "state": "running",
+            "ip": ip,
+            "filename": filename,
+            "sent": 0,
+            "total": len(parsed_lines),
+            "prompt": "",
+            "message": f"Streaming {filename or 'G-code'}...",
+            "abort": False,
+            "event": ev,
+        })
+
+    def _worker():
+        try:
+            with socket.create_connection((ip, 23), timeout=15.0) as s:
+                s.settimeout(15.0)
+                for idx, (cmd, msg_txt) in enumerate(parsed_lines):
+                    with _STREAM_LOCK:
+                        if _STREAM_SESSION["abort"]:
+                            break
+                    s.sendall((cmd + "\n").encode("utf-8"))
+                    buf = ""
+                    t0 = time.time()
+                    while time.time() - t0 < 20.0:
+                        chunk = s.recv(1024).decode("utf-8", errors="replace")
+                        if not chunk:
+                            break
+                        buf += chunk
+                        if "error:" in buf or "ALARM:" in buf:
+                            with _STREAM_LOCK:
+                                _STREAM_SESSION["state"] = "error"
+                                _STREAM_SESSION["message"] = f"Error at line {idx+1} ({cmd}): {buf.strip()}"
+                                _STREAM_SESSION["active"] = False
+                            return
+                        if "ok" in buf:
+                            break
+                    with _STREAM_LOCK:
+                        _STREAM_SESSION["sent"] = idx + 1
+
+                    if cmd.upper() in ("M0", "M1"):
+                        ev.clear()
+                        with _STREAM_LOCK:
+                            _STREAM_SESSION["state"] = "waiting_confirm"
+                            _STREAM_SESSION["prompt"] = msg_txt or "Operator pause (M0). Verify tool position & clamps to continue."
+                            _STREAM_SESSION["message"] = "Paused at M0 — awaiting operator confirmation"
+                        ev.wait()
+                        with _STREAM_LOCK:
+                            if _STREAM_SESSION["abort"]:
+                                s.sendall(b"\x18\nM5\n")
+                                _STREAM_SESSION["state"] = "aborted"
+                                _STREAM_SESSION["message"] = "Aborted by operator at M0"
+                                _STREAM_SESSION["active"] = False
+                                return
+                        s.sendall(b"~\n")
+                        time.sleep(0.2)
+                        with _STREAM_LOCK:
+                            _STREAM_SESSION["state"] = "running"
+                            _STREAM_SESSION["prompt"] = ""
+                            _STREAM_SESSION["message"] = f"Resumed {filename or 'G-code'}..."
+
+            with _STREAM_LOCK:
+                if not _STREAM_SESSION["abort"]:
+                    _STREAM_SESSION["state"] = "done"
+                    _STREAM_SESSION["message"] = f"Completed {len(parsed_lines)} commands"
+                _STREAM_SESSION["active"] = False
+        except Exception as e:
+            with _STREAM_LOCK:
+                _STREAM_SESSION["state"] = "error"
+                _STREAM_SESSION["message"] = f"Stream error: {e}"
+                _STREAM_SESSION["active"] = False
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+    return {"success": True, "total": len(parsed_lines)}
+
+
+def fluidnc_stream_action(action: str, ip: str = "192.168.8.109") -> Dict[str, Any]:
+    """Handle operator Continue (~) or Abort (Ctrl-X) during M0 pause or Hold."""
+    act = (action or "").lower().strip()
+    with _STREAM_LOCK:
+        ev = _STREAM_SESSION.get("event")
+        active = _STREAM_SESSION.get("active", False)
+        target_ip = _STREAM_SESSION.get("ip") or ip
+        if active and ev is not None:
+            if act == "abort":
+                _STREAM_SESSION["abort"] = True
+                _STREAM_SESSION["state"] = "aborted"
+                _STREAM_SESSION["message"] = "Aborted by operator"
+                _STREAM_SESSION["active"] = False
+            else:
+                _STREAM_SESSION["abort"] = False
+            ev.set()
+            return {"success": True, "action": act}
+    # Fallback if Hold happened during SD card run
+    if act == "abort":
+        ok, msg = send_fluidnc_plain_cmd(target_ip, "\x18")
+    else:
+        ok, msg = send_fluidnc_plain_cmd(target_ip, "~")
+    return {"success": ok, "action": act, "message": msg}
+
+
+import threading
+
+_STREAM_LOCK = threading.Lock()
+_STREAM_SESSION: Dict[str, Any] = {
+    "active": False,
+    "state": "idle",  # idle | running | waiting_confirm | done | aborted | error
+    "ip": "192.168.8.109",
+    "filename": "",
+    "sent": 0,
+    "total": 0,
+    "prompt": "",
+    "message": "",
+    "abort": False,
+    "event": None,
+}
+
+
+def start_fluidnc_stream_session(ip: str, gcode_text: str, filename: str = "") -> Dict[str, Any]:
+    """Start background Telnet :23 streaming session that pauses at M0/M1 for UI confirmation."""
+    import socket
+    parsed_lines: List[Tuple[str, str]] = []
+    pending_msg = ""
+    for raw in gcode_text.splitlines():
+        code = raw.split(";")[0].strip()
+        if not code:
+            continue
+        m_msg = re.match(r"^\(\s*MSG\s*,\s*(.+?)\s*\)$", code, re.IGNORECASE)
+        if m_msg:
+            pending_msg = m_msg.group(1).strip()
+            continue
+        if code.startswith("(") and code.endswith(")"):
+            continue
+        base_cmd = re.sub(r"\([^)]*\)", "", code).strip().upper()
+        if base_cmd in ("M0", "M1"):
+            m_inline = re.search(r"\(([^)]+)\)", code)
+            if m_inline and not pending_msg:
+                pending_msg = m_inline.group(1).strip()
+            parsed_lines.append((base_cmd, pending_msg))
+            pending_msg = ""
+        else:
+            parsed_lines.append((code, pending_msg))
+
+    if not parsed_lines:
+        return {"success": False, "error": "No executable G-code lines found"}
+
+    ev = threading.Event()
+    with _STREAM_LOCK:
+        if _STREAM_SESSION.get("active") and _STREAM_SESSION.get("event"):
+            _STREAM_SESSION["abort"] = True
+            _STREAM_SESSION["event"].set()
+        _STREAM_SESSION.update({
+            "active": True,
+            "state": "running",
+            "ip": ip,
+            "filename": filename,
+            "sent": 0,
+            "total": len(parsed_lines),
+            "prompt": "",
+            "message": f"Streaming {filename or 'G-code'}...",
+            "abort": False,
+            "event": ev,
+        })
+
+    def _worker():
+        try:
+            with socket.create_connection((ip, 23), timeout=15.0) as s:
+                s.settimeout(15.0)
+                for idx, (cmd, msg_txt) in enumerate(parsed_lines):
+                    with _STREAM_LOCK:
+                        if _STREAM_SESSION["abort"]:
+                            break
+                    s.sendall((cmd + "\n").encode("utf-8"))
+                    buf = ""
+                    t0 = time.time()
+                    while time.time() - t0 < 20.0:
+                        chunk = s.recv(1024).decode("utf-8", errors="replace")
+                        if not chunk:
+                            break
+                        buf += chunk
+                        if "error:" in buf or "ALARM:" in buf:
+                            with _STREAM_LOCK:
+                                _STREAM_SESSION["state"] = "error"
+                                _STREAM_SESSION["message"] = f"Error at line {idx+1} ({cmd}): {buf.strip()}"
+                                _STREAM_SESSION["active"] = False
+                            return
+                        if "ok" in buf:
+                            break
+                    with _STREAM_LOCK:
+                        _STREAM_SESSION["sent"] = idx + 1
+
+                    if cmd.upper() in ("M0", "M1"):
+                        ev.clear()
+                        with _STREAM_LOCK:
+                            _STREAM_SESSION["state"] = "waiting_confirm"
+                            _STREAM_SESSION["prompt"] = msg_txt or "Operator pause (M0). Verify tool position & clamps to continue."
+                            _STREAM_SESSION["message"] = "Paused at M0 — awaiting operator confirmation"
+                        ev.wait()
+                        with _STREAM_LOCK:
+                            if _STREAM_SESSION["abort"]:
+                                s.sendall(b"\x18\nM5\n")
+                                _STREAM_SESSION["state"] = "aborted"
+                                _STREAM_SESSION["message"] = "Aborted by operator at M0"
+                                _STREAM_SESSION["active"] = False
+                                return
+                        s.sendall(b"~\n")
+                        time.sleep(0.2)
+                        with _STREAM_LOCK:
+                            _STREAM_SESSION["state"] = "running"
+                            _STREAM_SESSION["prompt"] = ""
+                            _STREAM_SESSION["message"] = f"Resumed {filename or 'G-code'}..."
+
+            with _STREAM_LOCK:
+                if not _STREAM_SESSION["abort"]:
+                    _STREAM_SESSION["state"] = "done"
+                    _STREAM_SESSION["message"] = f"Completed {len(parsed_lines)} commands"
+                _STREAM_SESSION["active"] = False
+        except Exception as e:
+            with _STREAM_LOCK:
+                _STREAM_SESSION["state"] = "error"
+                _STREAM_SESSION["message"] = f"Stream error: {e}"
+                _STREAM_SESSION["active"] = False
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+    return {"success": True, "total": len(parsed_lines)}
+
+
+def fluidnc_stream_action(action: str, ip: str = "192.168.8.109") -> Dict[str, Any]:
+    """Handle operator Continue (~) or Abort (Ctrl-X) during M0 pause or Hold."""
+    act = (action or "").lower().strip()
+    with _STREAM_LOCK:
+        ev = _STREAM_SESSION.get("event")
+        active = _STREAM_SESSION.get("active", False)
+        target_ip = _STREAM_SESSION.get("ip") or ip
+        if active and ev is not None:
+            if act == "abort":
+                _STREAM_SESSION["abort"] = True
+                _STREAM_SESSION["state"] = "aborted"
+                _STREAM_SESSION["message"] = "Aborted by operator"
+                _STREAM_SESSION["active"] = False
+            else:
+                _STREAM_SESSION["abort"] = False
+            ev.set()
+            return {"success": True, "action": act}
+    # Fallback if Hold happened during SD card run
+    if act == "abort":
+        ok, msg = send_fluidnc_plain_cmd(target_ip, "\x18")
+    else:
+        ok, msg = send_fluidnc_plain_cmd(target_ip, "~")
+    return {"success": ok, "action": act, "message": msg}
+
+
+def list_stm32_usb_ports() -> List[Dict[str, str]]:
+    """Discover USB CDC/ACM serial ports (STM32 custom inkjet controller)."""
+    ports: List[Dict[str, str]] = []
+    seen = set()
+    try:
+        import serial.tools.list_ports
+        for p in serial.tools.list_ports.comports():
+            seen.add(p.device)
+            desc = f"{p.description or ''} {p.manufacturer or ''}".strip()
+            is_stm = ("STM" in desc.upper()) or (p.vid == 0x0483) or ("ttyACM" in p.device)
+            ports.append({"device": p.device, "label": desc or p.device, "is_stm32": is_stm})
+    except Exception:
+        pass
+    for pat in ("/dev/ttyACM*", "/dev/ttyUSB*"):
+        for dev in sorted(glob.glob(pat)):
+            if dev in seen:
+                continue
+            seen.add(dev)
+            ports.append({"device": dev, "label": os.path.basename(dev), "is_stm32": ("ttyACM" in dev)})
+    return ports
+
+
+def _resolve_stm32_port(requested_port: str) -> Optional[str]:
+    if requested_port and requested_port != "auto" and os.path.exists(requested_port):
+        return requested_port
+    ports = list_stm32_usb_ports()
+    for p in ports:
+        if p.get("is_stm32"):
+            return p["device"]
+    return ports[0]["device"] if ports else None
+
+
+def send_stm32_usb_payload(port: str, baudrate: int, lines: List[str], timeout: float = 2.0) -> Tuple[bool, str]:
+    """Send commands to STM32 USB CDC serial port using pyserial or pure-stdlib termios."""
+    resolved = _resolve_stm32_port(port)
+    if not resolved:
+        return False, "No STM32 USB serial device found (/dev/ttyACM* or /dev/ttyUSB*)"
+    payload = ("\n".join(lines) + "\n").encode("utf-8")
+    try:
+        import serial
+        with serial.Serial(resolved, int(baudrate), timeout=timeout) as ser:
+            ser.write(payload)
+            ser.flush()
+            time.sleep(0.15)
+            reply = ser.read_all().decode("utf-8", errors="replace").strip()
+            return True, f"Sent {len(lines)} cmd(s) to {resolved}" + (f" -> {reply}" if reply else "")
+    except ImportError:
+        import termios, select
+        baud_map = {
+            9600: termios.B9600, 19200: termios.B19200, 38400: termios.B38400,
+            57600: termios.B57600, 115200: termios.B115200, 230400: termios.B230400,
+        }
+        try:
+            fd = os.open(resolved, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+            try:
+                attrs = termios.tcgetattr(fd)
+                attrs[0] = 0
+                attrs[1] = 0
+                attrs[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
+                attrs[3] = 0
+                spd = baud_map.get(int(baudrate), termios.B115200)
+                attrs[4] = spd
+                attrs[5] = spd
+                termios.tcsetattr(fd, termios.TCSANOW, attrs)
+                os.write(fd, payload)
+                rlist, _, _ = select.select([fd], [], [], 0.3)
+                reply = os.read(fd, 1024).decode("utf-8", errors="replace").strip() if rlist else ""
+                return True, f"Sent {len(lines)} cmd(s) to {resolved}" + (f" -> {reply}" if reply else "")
+            finally:
+                os.close(fd)
+        except Exception as e:
+            return False, f"Serial error on {resolved}: {e}"
+    except Exception as e:
+        return False, f"Serial error on {resolved}: {e}"
+
+
+def _parse_macro_config_yaml(yaml_path: str) -> Dict[str, Any]:
+    """Zero-dependency parser for macros/macro_config.yaml."""
+    result: Dict[str, Any] = {"macros": [], "heightmap_defaults": {}}
+    if not os.path.isfile(yaml_path):
+        return result
+    section = None
+    cur_item: Optional[Dict[str, Any]] = None
+    with open(yaml_path, "r", encoding="utf-8", errors="replace") as f:
+        for raw in f:
+            line = raw.split("#")[0].rstrip()
+            if not line.strip():
+                continue
+            stripped = line.strip()
+            if stripped == "macros:":
+                section = "macros"
+                cur_item = None
+                continue
+            if stripped == "heightmap_defaults:":
+                section = "heightmap_defaults"
+                cur_item = None
+                continue
+            if section == "macros":
+                if stripped.startswith("- "):
+                    cur_item = {}
+                    result["macros"].append(cur_item)
+                    stripped = stripped[2:].strip()
+                if cur_item is not None and ":" in stripped:
+                    k, v = stripped.split(":", 1)
+                    cur_item[k.strip()] = v.strip().strip('"').strip("'")
+            elif section == "heightmap_defaults" and ":" in stripped:
+                k, v = stripped.split(":", 1)
+                val_s = v.strip().strip('"').strip("'")
+                try:
+                    val: Any = int(val_s) if "." not in val_s else float(val_s)
+                except ValueError:
+                    val = val_s
+                result["heightmap_defaults"][k.strip()] = val
+    return result
+
+
+def load_macros_catalog(macros_dir: str = "macros") -> Dict[str, Any]:
+    """Scan macros/ folder for .gcode/.nc files and merge metadata from macro_config.yaml."""
+    os.makedirs(macros_dir, exist_ok=True)
+    cfg = _parse_macro_config_yaml(os.path.join(macros_dir, "macro_config.yaml"))
+    meta_by_file = {m.get("file"): m for m in cfg.get("macros", []) if m.get("file")}
+    macros: List[Dict[str, Any]] = []
+    for fname in sorted(os.listdir(macros_dir)):
+        if not fname.lower().endswith((".gcode", ".nc", ".ngc", ".tap")):
+            continue
+        fpath = os.path.join(macros_dir, fname)
+        meta = meta_by_file.get(fname, {})
+        try:
+            with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+                lines_cnt = sum(1 for ln in f if ln.strip() and not ln.strip().startswith(";"))
+        except Exception:
+            lines_cnt = 0
+        macros.append({
+            "id": meta.get("id") or os.path.splitext(fname)[0],
+            "name": meta.get("name") or os.path.splitext(fname)[0].replace("_", " ").title(),
+            "file": fname,
+            "category": meta.get("category", "custom"),
+            "color": meta.get("color", "blue"),
+            "description": meta.get("description", "Custom G-code macro"),
+            "lines": lines_cnt,
+        })
+    return {
+        "macros": macros,
+        "heightmap_defaults": cfg.get("heightmap_defaults", {
+            "x_min_mm": 25.0, "x_max_mm": 185.0,
+            "y_min_mm": 25.0, "y_max_mm": 130.0,
+            "nx": 5, "ny": 4,
+            "safe_z_mm": 5.0, "probe_min_z_mm": -3.0, "feed_mm_min": 60.0,
+        }),
+    }
+
+
+def load_saved_heightmap(hm_path: str = os.path.join("macros", "bed_heightmap.json")) -> Optional[Dict[str, Any]]:
+    if os.path.isfile(hm_path):
+        try:
+            with open(hm_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return None
+    return None
+
+
+def scan_bed_heightmap(
+    ip: str,
+    x_min: float = 25.0,
+    x_max: float = 185.0,
+    y_min: float = 25.0,
+    y_max: float = 130.0,
+    nx: int = 5,
+    ny: int = 4,
+    safe_z: float = 5.0,
+    probe_min_z: float = -3.0,
+    feed: float = 60.0,
+    half: str = "front",
+    hm_path: str = os.path.join("macros", "bed_heightmap.json"),
+) -> Tuple[bool, Dict[str, Any]]:
+    """Probe a grid of points on the CNC bed via Telnet :23 (G38.2), skipping clamp keep-outs."""
+    import socket
+    nx = max(2, min(20, int(nx)))
+    ny = max(2, min(20, int(ny)))
+    cfg = {}
+    if os.path.exists("manufacture_config.json"):
+        try:
+            with open("manufacture_config.json", "r", encoding="utf-8") as cf:
+                cfg = json.load(cf)
+        except Exception:
+            pass
+    y_split = float(cfg.get("cnc_limits", {}).get("y_split_threshold_mm", 145.0))
+    bed_y = float(cfg.get("cnc_limits", {}).get("bed_travel_y_mm", 170.0))
+    hmgr = HolderManager("pcb_holders.json", y_split=y_split, bed_travel_y=bed_y, config=cfg)
+
+    xs = [round(x_min + i * (x_max - x_min) / (nx - 1), 3) for i in range(nx)]
+    ys = [round(y_min + j * (y_max - y_min) / (ny - 1), 3) for j in range(ny)]
+
+    points: List[Dict[str, Any]] = []
+    valid_zs: List[float] = []
+
+    try:
+        with socket.create_connection((ip, 23), timeout=15.0) as s:
+            s.settimeout(20.0)
+
+            def _send_wait(cmd: str) -> str:
+                s.sendall((cmd + "\n").encode("utf-8"))
+                buf = ""
+                t0 = time.time()
+                while time.time() - t0 < 20.0:
+                    chunk = s.recv(2048).decode("utf-8", errors="replace")
+                    if not chunk:
+                        break
+                    buf += chunk
+                    if "error:" in buf or "ALARM:" in buf:
+                        raise RuntimeError(f"CNC error on '{cmd}': {buf.strip()}")
+                    if "ok" in buf:
+                        break
+                return buf
+
+            _send_wait("G21")
+            _send_wait("G90")
+            _send_wait(f"G0 Z{safe_z:.3f}")
+
+            for j, y in enumerate(ys):
+                row_xs = xs if (j % 2 == 0) else list(reversed(xs))
+                for x in row_xs:
+                    is_corner_holder = (x <= 22.0 or x >= 186.0) and (y <= 22.0 or y >= 128.0)
+                    if is_corner_holder or hmgr.is_bed_point_blocked(x, y, half=half, tool_radius=2.5):
+                        points.append({"x": x, "y": y, "z": None, "dz": None, "skipped": True})
+                        continue
+                    _send_wait(f"G0 X{x:.3f} Y{y:.3f}")
+                    reply = _send_wait(f"G38.2 Z{probe_min_z:.3f} F{feed:.1f}")
+                    _send_wait(f"G0 Z{safe_z:.3f}")
+                    m = re.search(r"\[PRB:([-0-9.]+),([-0-9.]+),([-0-9.]+):(\d)\]", reply)
+                    if m and m.group(4) == "1":
+                        pz = float(m.group(3))
+                        valid_zs.append(pz)
+                        points.append({"x": x, "y": y, "z": round(pz, 4), "dz": 0.0, "skipped": False})
+                    else:
+                        points.append({"x": x, "y": y, "z": None, "dz": None, "skipped": False, "error": "No trigger"})
+
+            _send_wait(f"G0 Z{safe_z:.3f}")
+    except Exception as e:
+        return False, {"error": str(e)}
+
+    z_ref = (sum(valid_zs) / len(valid_zs)) if valid_zs else 0.0
+    for pt in points:
+        if pt["z"] is not None:
+            pt["dz"] = round(pt["z"] - z_ref, 4)
+
+    result = {
+        "scanned_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "ip": ip,
+        "half": half,
+        "x_min": x_min, "x_max": x_max,
+        "y_min": y_min, "y_max": y_max,
+        "nx": nx, "ny": ny,
+        "z_ref": round(z_ref, 4),
+        "min_z": round(min(valid_zs), 4) if valid_zs else 0.0,
+        "max_z": round(max(valid_zs), 4) if valid_zs else 0.0,
+        "range_mm": round(max(valid_zs) - min(valid_zs), 4) if len(valid_zs) >= 2 else 0.0,
+        "probed_count": len(valid_zs),
+        "points": points,
+    }
+    os.makedirs(os.path.dirname(hm_path), exist_ok=True)
+    with open(hm_path, "w", encoding="utf-8") as f:
+        json.dump(result, f, indent=2)
+    return True, result
+
+
+def load_ui_config(cfg_path: str = "ui_config.json") -> Dict[str, Any]:
+    default_ui = {
+        "touch_probe_enabled": False,
+        "show_macros_in_dispatch": True,
+        "enable_homing_btn": True,
+        "enable_unlock_btn": True,
+        "enable_zero_work_btn": True,
+        "enable_pcb_z_offset": True,
+        "pcb_thickness_mm": 1.6,
+    }
+    if os.path.isfile(cfg_path):
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            default_ui.update(data)
+        except Exception:
+            pass
+    return default_ui
+
+
+def save_ui_config(updates: Dict[str, Any], cfg_path: str = "ui_config.json") -> Dict[str, Any]:
+    cur = load_ui_config(cfg_path)
+    for k in ("touch_probe_enabled", "show_macros_in_dispatch", "enable_homing_btn",
+              "enable_unlock_btn", "enable_zero_work_btn", "enable_pcb_z_offset"):
+        if k in updates:
+            cur[k] = bool(updates[k])
+    if "pcb_thickness_mm" in updates:
+        cur["pcb_thickness_mm"] = round(float(updates["pcb_thickness_mm"]), 3)
+    with open(cfg_path, "w", encoding="utf-8") as f:
+        json.dump(cur, f, indent=2)
+    # Keep macros/pcb_z_zero_thickness.gcode synced to pcb_thickness_mm
+    t_mm = float(cur.get("pcb_thickness_mm", 1.6))
+    os.makedirs("macros", exist_ok=True)
+    macro_txt = (
+        "; === PCB Thickness Z-Zero Calibration Macro ===\n"
+        f"; Raises Z by {t_mm:.3f} mm from BED Z=0 and sets top copper surface as G54 Z=0\n"
+        "G21 ; Millimeters\nG90 ; Absolute positioning\nM5 ; Ensure spindle is off\n"
+        f"(MSG, Confirm tool is at BED Z=0 and spindle is OFF before applying +{t_mm:.3f}mm PCB thickness offset)\n"
+        f"M0 (Confirm tool is at BED Z=0 and spindle is OFF)\n"
+        f"G0 Z{t_mm:.3f} ; Move to top surface of {t_mm:.3f}mm copper board\n"
+        "G10 L20 P1 Z0.000 ; Set PCB top copper surface as Z=0\n"
+        f"G0 Z{t_mm + 3.4:.3f} ; Retract safely above copper board\n"
+        f"(MSG, PCB Top Z=0 calibrated for {t_mm:.3f}mm board)\n"
+    )
+    with open(os.path.join("macros", "pcb_z_zero_thickness.gcode"), "w", encoding="utf-8") as mf:
+        mf.write(macro_txt)
+    return cur
+
+
+def load_board_alignment(align_path: str = os.path.join("macros", "board_alignment.json")) -> Dict[str, Any]:
+    default_align = {
+        "enabled": False,
+        "dx": 0.0,
+        "dy": 0.0,
+        "theta_deg": 0.0,
+        "points": {
+            "l1": [0.0, 30.0],
+            "l2": [0.0, 115.0],
+            "f1": [45.0, 0.0],
+            "f2": [165.0, 0.0],
+        },
+        "calibrated_at": "",
+    }
+    if os.path.isfile(align_path):
+        try:
+            with open(align_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            default_align.update(data)
+        except Exception:
+            pass
+    return default_align
+
+
+def compute_4pt_edge_alignment(
+    l1: Tuple[float, float],
+    l2: Tuple[float, float],
+    f1: Tuple[float, float],
+    f2: Tuple[float, float],
+    enabled: bool = True,
+    align_path: str = os.path.join("macros", "board_alignment.json"),
+) -> Dict[str, Any]:
+    """Compute rigid 2D translation (dx, dy) and rotation (theta_deg) from 2 left-edge + 2 front-edge points."""
+    angles: List[float] = []
+    if abs(l2[1] - l1[1]) > 1.0:
+        angles.append(math.atan2(-(l2[0] - l1[0]), l2[1] - l1[1]))
+    if abs(f2[0] - f1[0]) > 1.0:
+        angles.append(math.atan2(f2[1] - f1[1], f2[0] - f1[0]))
+    theta_rad = sum(angles) / len(angles) if angles else 0.0
+
+    # Line intersection of L1->L2 and F1->F2 for board origin (dx, dy)
+    x1, y1 = l1
+    x2, y2 = l2
+    x3, y3 = f1
+    x4, y4 = f2
+    denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+    if abs(denom) > 1e-6:
+        px = ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) / denom
+        py = ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / denom
+    else:
+        px = 0.5 * (x1 + x2)
+        py = 0.5 * (y3 + y4)
+
+    res = {
+        "enabled": bool(enabled),
+        "dx": round(px, 4),
+        "dy": round(py, 4),
+        "theta_deg": round(math.degrees(theta_rad), 4),
+        "points": {
+            "l1": [round(x1, 3), round(y1, 3)],
+            "l2": [round(x2, 3), round(y2, 3)],
+            "f1": [round(x3, 3), round(y3, 3)],
+            "f2": [round(x4, 3), round(y4, 3)],
+        },
+        "calibrated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    os.makedirs(os.path.dirname(align_path), exist_ok=True)
+    with open(align_path, "w", encoding="utf-8") as f:
+        json.dump(res, f, indent=2)
+    return res
+
+
+def probe_4pt_edge_alignment(
+    ip: str,
+    probe_z: float = -0.5,
+    feed: float = 60.0,
+    safe_z: float = 5.0,
+) -> Tuple[bool, Dict[str, Any]]:
+    """Probe 4 copper board edge points (2 left-edge + 2 front-edge) via Telnet :23 G38.2."""
+    import socket
+    try:
+        with socket.create_connection((ip, 23), timeout=15.0) as s:
+            s.settimeout(20.0)
+
+            def _send_wait(cmd: str) -> str:
+                s.sendall((cmd + "\n").encode("utf-8"))
+                buf = ""
+                t0 = time.time()
+                while time.time() - t0 < 20.0:
+                    chunk = s.recv(2048).decode("utf-8", errors="replace")
+                    if not chunk:
+                        break
+                    buf += chunk
+                    if "error:" in buf or "ALARM:" in buf:
+                        raise RuntimeError(f"CNC error on '{cmd}': {buf.strip()}")
+                    if "ok" in buf:
+                        break
+                return buf
+
+            def _probe_pt(start_x: float, start_y: float, target_cmd: str) -> Tuple[float, float]:
+                _send_wait(f"G0 Z{safe_z:.3f}")
+                _send_wait(f"G0 X{start_x:.3f} Y{start_y:.3f}")
+                _send_wait(f"G0 Z{probe_z:.3f}")
+                rep = _send_wait(target_cmd)
+                _send_wait(f"G0 Z{safe_z:.3f}")
+                m = re.search(r"\[PRB:([-0-9.]+),([-0-9.]+),([-0-9.]+):(\d)\]", rep)
+                if not (m and m.group(4) == "1"):
+                    raise RuntimeError(f"Edge probe did not trigger at ({start_x}, {start_y})")
+                return (float(m.group(1)), float(m.group(2)))
+
+            _send_wait("G21")
+            _send_wait("G90")
+            l1 = _probe_pt(-5.0, 30.0, f"G38.2 X6.000 F{feed:.1f}")
+            l2 = _probe_pt(-5.0, 115.0, f"G38.2 X6.000 F{feed:.1f}")
+            f1 = _probe_pt(45.0, -5.0, f"G38.2 Y6.000 F{feed:.1f}")
+            f2 = _probe_pt(165.0, -5.0, f"G38.2 Y6.000 F{feed:.1f}")
+            _send_wait("G0 X0.000 Y0.000")
+
+        res = compute_4pt_edge_alignment(l1, l2, f1, f2, enabled=True)
+        return True, res
+    except Exception as e:
+        return False, {"error": str(e)}
+
+
+def apply_alignment_to_gcode(gcode_text: str, align_data: Dict[str, Any]) -> str:
+    """Apply active 2D rigid board alignment (rotation + translation) to G90 X/Y moves."""
+    if not align_data or not align_data.get("enabled"):
+        return gcode_text
+    dx = float(align_data.get("dx", 0.0))
+    dy = float(align_data.get("dy", 0.0))
+    theta_deg = float(align_data.get("theta_deg", 0.0))
+    if abs(dx) < 1e-4 and abs(dy) < 1e-4 and abs(theta_deg) < 1e-4:
+        return gcode_text
+
+    cos_t = math.cos(math.radians(theta_deg))
+    sin_t = math.sin(math.radians(theta_deg))
+    cur_x, cur_y = 0.0, 0.0
+    is_abs = True
+    out_lines: List[str] = []
+
+    for raw in gcode_text.splitlines():
+        code = raw.split(";")[0].strip()
+        up = code.upper()
+        if "G91" in up:
+            is_abs = False
+        elif "G90" in up:
+            is_abs = True
+
+        if not is_abs or "G53" in up or code.startswith("(") or not code:
+            out_lines.append(raw)
+            continue
+
+        mx = re.search(r"X([-0-9.]+)", code, re.IGNORECASE)
+        my = re.search(r"Y([-0-9.]+)", code, re.IGNORECASE)
+        if not mx and not my:
+            out_lines.append(raw)
+            continue
+
+        nx = float(mx.group(1)) if mx else cur_x
+        ny = float(my.group(1)) if my else cur_y
+        cur_x, cur_y = nx, ny
+
+        tx = nx * cos_t - ny * sin_t + dx
+        ty = nx * sin_t + ny * cos_t + dy
+
+        new_code = code
+        if mx:
+            new_code = re.sub(r"X[-0-9.]+", f"X{tx:.3f}", new_code, count=1, flags=re.IGNORECASE)
+        else:
+            new_code += f" X{tx:.3f}"
+        if my:
+            new_code = re.sub(r"Y[-0-9.]+", f"Y{ty:.3f}", new_code, count=1, flags=re.IGNORECASE)
+        else:
+            new_code += f" Y{ty:.3f}"
+        out_lines.append(new_code)
+
+    return "\n".join(out_lines) + "\n"
 
 
 def upload_gcode_to_fluidnc(ip: str, filename: str, content: bytes, target: str = "sd", timeout: float = 15.0) -> Tuple[bool, str]:
@@ -6844,11 +8960,92 @@ class ChecklistHandler(http.server.SimpleHTTPRequestHandler):
             query = urllib.parse.parse_qs(parsed.query)
             ip = query.get("ip", ["192.168.8.109"])[0].strip() or "192.168.8.109"
             online, status_text = check_fluidnc_online(ip)
-            resp = json.dumps({"online": online, "status": status_text, "ip": ip}).encode("utf-8")
+            parsed_pos = parse_fluidnc_status_line(status_text, ip=ip) if online else {"state": "Offline", "mpos": None, "wpos": None}
+            resp = json.dumps({
+                "online": online, "status": status_text, "ip": ip,
+                "state": parsed_pos["state"], "mpos": parsed_pos["mpos"], "wpos": parsed_pos["wpos"],
+            }).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(resp)
+            return
+
+        if parsed.path == "/api/fluidnc_stream_status":
+            with _STREAM_LOCK:
+                snap = {k: v for k, v in _STREAM_SESSION.items() if k != "event"}
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(snap).encode("utf-8"))
+            return
+
+        if parsed.path == "/api/printer_ports":
+            ports = list_stm32_usb_ports()
+            cfg = {}
+            if os.path.exists("manufacture_config.json"):
+                try:
+                    with open("manufacture_config.json", "r", encoding="utf-8") as cf:
+                        cfg = json.load(cf)
+                except Exception:
+                    pass
+            printer_cfg = cfg.get("inkjet_printer", {})
+            resp = json.dumps({"ports": ports, "config": printer_cfg}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(resp)
+            return
+
+        if parsed.path == "/api/macros":
+            cat = load_macros_catalog("macros")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(cat).encode("utf-8"))
+            return
+
+        if parsed.path == "/api/macros_file":
+            query = urllib.parse.parse_qs(parsed.query)
+            fname = os.path.basename(query.get("file", [""])[0])
+            fpath = os.path.join("macros", fname)
+            if not fname or not os.path.isfile(fpath):
+                self.send_response(404)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Macro not found"}).encode("utf-8"))
+                return
+            with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"file": fname, "content": content}).encode("utf-8"))
+            return
+
+        if parsed.path == "/api/heightmap":
+            cat = load_macros_catalog("macros")
+            hm = load_saved_heightmap()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"heightmap": hm, "defaults": cat.get("heightmap_defaults", {})}).encode("utf-8"))
+            return
+
+        if parsed.path == "/api/board_alignment":
+            al = load_board_alignment()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(al).encode("utf-8"))
+            return
+
+        if parsed.path == "/api/ui_config":
+            ucfg = load_ui_config()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(ucfg).encode("utf-8"))
             return
 
         super().do_GET()
@@ -7004,6 +9201,394 @@ class ChecklistHandler(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps(resp_obj).encode("utf-8"))
                 print(f"[API] Processed upload {job_id}: {len(results)} G-code files, uploaded: {sum(1 for r in results if r['uploaded'])}")
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+                return
+
+        if parsed.path == "/api/macros_save":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                req_data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+                fname = os.path.basename(req_data.get("file", "").strip())
+                if not fname:
+                    raise ValueError("Filename required")
+                if not fname.lower().endswith((".gcode", ".nc", ".ngc", ".tap")):
+                    fname += ".gcode"
+                os.makedirs("macros", exist_ok=True)
+                fpath = os.path.join("macros", fname)
+                with open(fpath, "w", encoding="utf-8") as f:
+                    f.write(req_data.get("content", ""))
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True, "file": fname}).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+                return
+
+        if parsed.path == "/api/macros_run":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                req_data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+                ip = req_data.get("ip", "192.168.8.109").strip() or "192.168.8.109"
+                fname = os.path.basename(req_data.get("file", ""))
+                fpath = os.path.join("macros", fname)
+                if not os.path.isfile(fpath):
+                    self.send_response(404)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": False, "error": f"Macro {fname} not found"}).encode("utf-8"))
+                    return
+                with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+                    gcode_text = f.read()
+                ok, msg = stream_gcode_to_fluidnc(ip, gcode_text, timeout=45.0)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": ok, "message": msg}).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+                return
+
+        if parsed.path == "/api/heightmap_scan":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                req_data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+                ip = req_data.get("ip", "192.168.8.109").strip() or "192.168.8.109"
+                ok, data = scan_bed_heightmap(
+                    ip=ip,
+                    x_min=float(req_data.get("x_min", 25.0)),
+                    x_max=float(req_data.get("x_max", 185.0)),
+                    y_min=float(req_data.get("y_min", 25.0)),
+                    y_max=float(req_data.get("y_max", 130.0)),
+                    nx=int(req_data.get("nx", 5)),
+                    ny=int(req_data.get("ny", 4)),
+                    safe_z=float(req_data.get("safe_z", 5.0)),
+                    probe_min_z=float(req_data.get("probe_min_z", -3.0)),
+                    feed=float(req_data.get("feed", 60.0)),
+                    half=str(req_data.get("half", "front")),
+                )
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": ok, **data}).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+                return
+
+        if parsed.path == "/api/fluidnc_cmd":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                req_data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+                ip = req_data.get("ip", "192.168.8.109").strip() or "192.168.8.109"
+                cmd = req_data.get("cmd", "?").strip()
+                ok, msg = send_fluidnc_plain_cmd(ip, cmd)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": ok, "message": msg}).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+                return
+
+        if parsed.path == "/api/ui_config":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                req_data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+                ucfg = save_ui_config(req_data)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True, **ucfg}).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+                return
+
+        if parsed.path == "/api/board_alignment_save":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                req_data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+                if req_data.get("reset"):
+                    res_obj = compute_4pt_edge_alignment((0.0, 30.0), (0.0, 115.0), (45.0, 0.0), (165.0, 0.0), enabled=False)
+                elif "points" in req_data:
+                    pts = req_data["points"]
+                    res_obj = compute_4pt_edge_alignment(
+                        tuple(pts["l1"]), tuple(pts["l2"]), tuple(pts["f1"]), tuple(pts["f2"]),
+                        enabled=bool(req_data.get("enabled", True)),
+                    )
+                else:
+                    cur = load_board_alignment()
+                    cur["enabled"] = bool(req_data.get("enabled", cur.get("enabled", False)))
+                    with open(os.path.join("macros", "board_alignment.json"), "w", encoding="utf-8") as af:
+                        json.dump(cur, af, indent=2)
+                    res_obj = cur
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True, **res_obj}).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+                return
+
+        if parsed.path == "/api/board_alignment_probe":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                req_data = json.loads(self.rfile.read(content_length).decode("utf-8")) if content_length else {}
+                ip = req_data.get("ip", "192.168.8.109").strip() or "192.168.8.109"
+                ok, data = probe_4pt_edge_alignment(ip=ip)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": ok, **data}).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+                return
+
+        if parsed.path == "/api/fluidnc_stream_start":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                req_data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+                ip = req_data.get("ip", "192.168.8.109").strip() or "192.168.8.109"
+                fname = os.path.basename(req_data.get("filename", ""))
+                gcode_text = req_data.get("gcode", "")
+                if not gcode_text and fname:
+                    for folder in ("manufacture_gcode", "macros"):
+                        fpath = os.path.join(folder, fname)
+                        if os.path.isfile(fpath):
+                            with open(fpath, "r", encoding="utf-8", errors="replace") as gf:
+                                gcode_text = gf.read()
+                            break
+                if fname not in ("edge_4pt_align.gcode", "z_tool_zero.gcode", "bed_height_scan.gcode"):
+                    al = load_board_alignment()
+                    gcode_text = apply_alignment_to_gcode(gcode_text, al)
+                res_obj = start_fluidnc_stream_session(ip, gcode_text, filename=fname)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(res_obj).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+                return
+
+        if parsed.path == "/api/fluidnc_stream_action":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                req_data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+                res_obj = fluidnc_stream_action(req_data.get("action", "continue"), ip=req_data.get("ip", "192.168.8.109"))
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(res_obj).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+                return
+
+        if parsed.path == "/api/fluidnc_stream_start":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                req_data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+                ip = req_data.get("ip", "192.168.8.109").strip() or "192.168.8.109"
+                fname = os.path.basename(req_data.get("filename", ""))
+                gcode_text = req_data.get("gcode", "")
+                if not gcode_text and fname:
+                    for folder in ("manufacture_gcode", "macros"):
+                        fpath = os.path.join(folder, fname)
+                        if os.path.isfile(fpath):
+                            with open(fpath, "r", encoding="utf-8", errors="replace") as gf:
+                                gcode_text = gf.read()
+                            break
+                res_obj = start_fluidnc_stream_session(ip, gcode_text, filename=fname)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(res_obj).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+                return
+
+        if parsed.path == "/api/fluidnc_stream_action":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                req_data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+                res_obj = fluidnc_stream_action(req_data.get("action", "continue"), ip=req_data.get("ip", "192.168.8.109"))
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(res_obj).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+                return
+
+        if parsed.path == "/api/fluidnc_stream":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                req_data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+                ip = req_data.get("ip", "192.168.8.109").strip() or "192.168.8.109"
+                gcode_text = req_data.get("gcode", "")
+                if not gcode_text and req_data.get("filename"):
+                    fname = os.path.basename(req_data["filename"])
+                    fpath = os.path.join("manufacture_gcode", fname)
+                    if os.path.isfile(fpath):
+                        with open(fpath, "r", encoding="utf-8", errors="replace") as gf:
+                            gcode_text = gf.read()
+                ok, msg = stream_gcode_to_fluidnc(ip, gcode_text)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": ok, "message": msg}).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+                return
+
+        if parsed.path == "/api/printer_config":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                req_data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+                cfg = {}
+                if os.path.exists("manufacture_config.json"):
+                    with open("manufacture_config.json", "r", encoding="utf-8") as cf:
+                        cfg = json.load(cf)
+                p_cfg = cfg.setdefault("inkjet_printer", {})
+                for k in ("port", "connection_type"):
+                    if k in req_data:
+                        p_cfg[k] = str(req_data[k]).strip()
+                for k in ("baudrate", "dpi", "uv_led_power_pct"):
+                    if k in req_data:
+                        p_cfg[k] = int(req_data[k])
+                for k in ("x_offset_mm", "y_offset_mm", "pass_speed_mm_s"):
+                    if k in req_data:
+                        p_cfg[k] = float(req_data[k])
+                if "uv_cure_enabled" in req_data:
+                    p_cfg["uv_cure_enabled"] = bool(req_data["uv_cure_enabled"])
+                with open("manufacture_config.json", "w", encoding="utf-8") as cf:
+                    json.dump(cfg, cf, indent=2)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True, "config": p_cfg}).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+                return
+
+        if parsed.path == "/api/printer_test":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                req_data = json.loads(self.rfile.read(content_length).decode("utf-8")) if content_length else {}
+                port = str(req_data.get("port", "auto"))
+                baud = int(req_data.get("baudrate", 115200))
+                ok, msg = send_stm32_usb_payload(port, baud, ["INKJET:PING", "M115"])
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": ok, "message": msg}).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+                return
+
+        if parsed.path == "/api/printer_print":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                req_data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+                fname = os.path.basename(req_data.get("filename", ""))
+                fpath = os.path.join("manufacture_gcode", fname)
+                if not os.path.isfile(fpath):
+                    self.send_response(404)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": False, "error": f"Job file {fname} not found"}).encode("utf-8"))
+                    return
+                with open(fpath, "r", encoding="utf-8") as jf:
+                    job = json.load(jf)
+                cfg = {}
+                if os.path.exists("manufacture_config.json"):
+                    with open("manufacture_config.json", "r", encoding="utf-8") as cf:
+                        cfg = json.load(cf)
+                p_cfg = cfg.get("inkjet_printer", {})
+                port = str(req_data.get("port") or p_cfg.get("port", "auto"))
+                baud = int(req_data.get("baudrate") or p_cfg.get("baudrate", 115200))
+                x_off = float(p_cfg.get("x_offset_mm", 0.0))
+                y_off = float(p_cfg.get("y_offset_mm", 0.0))
+                uv_pwr = int(p_cfg.get("uv_led_power_pct", 85)) if p_cfg.get("uv_cure_enabled", True) else 0
+                dpi = int(p_cfg.get("dpi", job.get("dpi", 600)))
+                lines = [
+                    f"INKJET:INIT DPI={dpi} UV={uv_pwr}",
+                    f"INKJET:OFFSET X={x_off:.3f} Y={y_off:.3f}",
+                ]
+                for poly in job.get("polylines", []):
+                    if not poly:
+                        continue
+                    x0, y0 = poly[0]
+                    lines.append(f"G0 X{x0 + x_off:.3f} Y{y0 + y_off:.3f}")
+                    lines.append("JET:1")
+                    for px, py in poly[1:]:
+                        lines.append(f"G1 X{px + x_off:.3f} Y{py + y_off:.3f}")
+                    lines.append("JET:0")
+                lines.append("INKJET:DONE")
+                ok, msg = send_stm32_usb_payload(port, baud, lines)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": ok, "message": msg, "commands": len(lines)}).encode("utf-8"))
                 return
             except Exception as e:
                 self.send_response(500)
