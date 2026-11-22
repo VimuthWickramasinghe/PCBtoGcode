@@ -4185,6 +4185,32 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       background: rgba(59, 130, 246, 0.14);
       color: #f8fafc;
     }}
+    .nav-tab.active {{
+      background: rgba(59, 130, 246, 0.16);
+      color: #93c5fd;
+      border-color: rgba(59, 130, 246, 0.45);
+    }}
+    [data-tip] {{
+      position: relative;
+    }}
+    [data-tip]:hover::after {{
+      content: attr(data-tip);
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: #0f172a;
+      color: #e2e8f0;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      font-size: 11px;
+      font-weight: 500;
+      white-space: nowrap;
+      z-index: 60;
+      pointer-events: none;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.5);
+    }}
     ::-webkit-scrollbar {{ width: 8px; height: 8px; }}
     ::-webkit-scrollbar-track {{ background: #0a0e17; }}
     ::-webkit-scrollbar-thumb {{ background: #293548; border-radius: 999px; }}
@@ -4307,10 +4333,10 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       if (mirrorWrap) mirrorWrap.style.display = isVias ? 'none' : 'inline-flex';
       if (mirrorBtn) {{
         mirrorBtn.setAttribute('aria-pressed', circuitMirrorEnabled ? 'true' : 'false');
-        mirrorBtn.innerText = circuitMirrorEnabled ? 'Mirror View: Enabled (Y-Axis Flip)' : 'Mirror View: Disabled';
+        mirrorBtn.innerText = circuitMirrorEnabled ? 'Mirror: On' : 'Mirror: Off';
         mirrorBtn.className = circuitMirrorEnabled
-          ? 'px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-violet-600 hover:bg-violet-500 text-white border border-violet-400/60 shadow-sm cursor-pointer transition'
-          : 'px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700 cursor-pointer transition';
+          ? 'px-3 py-1.5 text-xs font-semibold rounded-lg bg-violet-600 hover:bg-violet-500 text-white border border-violet-400/60 shadow-sm cursor-pointer transition'
+          : 'px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700 cursor-pointer transition';
       }}
 
       const img = document.getElementById('circuit-svg-img');
@@ -4466,7 +4492,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       const uMirBtn = document.getElementById('unit-mirror-btn');
       if (uMirBtn) {{
         uMirBtn.setAttribute('aria-pressed', unitMirrorEnabled ? 'true' : 'false');
-        uMirBtn.innerText = unitMirrorEnabled ? 'Mirror: Enabled' : 'Mirror: Disabled';
+        uMirBtn.innerText = unitMirrorEnabled ? 'Mirror: On' : 'Mirror: Off';
         uMirBtn.className = unitMirrorEnabled
           ? 'px-3 py-1.5 text-xs font-semibold rounded-lg bg-violet-600 text-white border border-violet-400/60 cursor-pointer transition'
           : 'px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 text-slate-300 border border-slate-700 hover:text-white cursor-pointer transition';
@@ -5974,84 +6000,74 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       ops.forEach(op => {{
         const isSent = fluidncSentFiles.has(op.gcode_file);
         const btnClass = isSent
-          ? 'px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-medium text-xs flex items-center gap-1 shadow-sm transition'
-          : 'px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs flex items-center gap-1 shadow-sm transition cursor-pointer';
-        const btnText = isSent ? '✓ Sent to /sd/' : '⚡ Send to FluidNC';
+          ? 'p-1.5 rounded-lg bg-emerald-600 text-white shadow-sm transition cursor-pointer'
+          : 'p-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white shadow-sm transition cursor-pointer';
+        const btnTip = isSent ? 'Uploaded to /sd/ (click to re-upload)' : 'Upload to FluidNC';
 
         const halfBadge = op.bed_half === 'front'
-          ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Front Half</span>'
-          : '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">Back Half (-145mm)</span>';
+          ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/25" data-tip="Front Bed Half (Y 0-145mm)">Front</span>'
+          : '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-amber-500/15 text-amber-300 border border-amber-500/25" data-tip="Back Bed Half (Y-Shift -145mm)">Back</span>';
 
         const mirrorBadge = op.mirrored
-          ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-violet-500/20 text-violet-300 border border-violet-500/40">Mirrored X</span>'
+          ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-violet-500/20 text-violet-300 border border-violet-500/30" data-tip="Horizontally mirrored for Bottom Side">Flip</span>'
           : '';
 
         html += `
-          <div class="glass-panel p-2.5 sm:p-3 rounded-xl border border-slate-800/90 hover:border-slate-700/80 transition flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
+          <div class="p-2.5 rounded-xl border border-slate-800/90 bg-[#0b101b]/90 hover:border-slate-700 transition flex items-center justify-between gap-3 text-xs">
             <div class="flex items-center gap-2.5 min-w-0">
-              <!-- Draggable Handle -->
               <div draggable="true"
                    ondragstart="onGCodeDragStart(event, '${{op.gcode_file}}')"
-                   class="cursor-grab active:cursor-grabbing px-2 py-1 rounded-lg bg-slate-800/90 hover:bg-blue-600/20 text-slate-300 hover:text-blue-300 border border-slate-700/80 hover:border-blue-500/40 font-mono text-[11px] inline-flex items-center gap-1.5 select-none shrink-0"
-                   title="Click and drag directly into FluidNC WebUI dropzone or another browser tab">
+                   class="cursor-grab active:cursor-grabbing p-1.5 rounded-lg bg-slate-800/80 hover:bg-blue-600/20 text-slate-400 hover:text-blue-300 border border-slate-700/70 select-none shrink-0"
+                   data-tip="Drag to FluidNC">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg>
-                <span>Drag to CNC</span>
               </div>
 
               <div class="min-w-0">
                 <div class="flex items-center gap-2 flex-wrap">
-                  <a href="${{getApiBase()}}/manufacture_gcode/${{op.gcode_file}}" download="${{op.gcode_file}}"
-                     class="font-mono font-semibold text-slate-100 hover:text-blue-300 transition truncate max-w-xs sm:max-w-md block"
-                     title="Click to download ${{op.gcode_file}}">
+                  <button type="button" onclick="openGCodeViewer('${{op.gcode_file}}')"
+                          class="font-mono font-semibold text-slate-100 hover:text-cyan-300 transition truncate max-w-xs sm:max-w-md text-left cursor-pointer"
+                          data-tip="Inspect toolpath in 2D/3D Viewer">
                     ${{op.gcode_file}}
-                  </a>
-                  <span class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">Sheet ${{op.sheet_num}} &bull; Op #${{String(op.seq).padStart(2, '0')}}</span>
+                  </button>
+                  <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-400">S${{op.sheet_num}} #${{String(op.seq).padStart(2, '0')}}</span>
                   ${{halfBadge}} ${{mirrorBadge}}
                 </div>
                 <div class="text-[11px] text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap">
-                  <span class="text-slate-300 font-medium">${{op.step_title}}</span>
-                  <span>&bull;</span>
-                  <span class="text-amber-300">${{op.tool_name}}</span>
-                  <span>&bull;</span>
-                  <span class="font-mono text-slate-400">Z=${{op.depth_mm.toFixed(2)}}mm, F${{op.feed_mm_min}}</span>
+                  <span class="text-slate-300">${{op.step_title}}</span>
+                  <span class="text-slate-600">&bull;</span>
+                  <span class="text-amber-300/90">${{op.tool_name}}</span>
+                  <span class="text-slate-600">&bull;</span>
+                  <span class="font-mono text-slate-400">Z${{op.depth_mm.toFixed(2)}} F${{op.feed_mm_min}}</span>
                 </div>
               </div>
             </div>
 
-            <div class="flex items-center gap-1.5 flex-wrap shrink-0 self-end md:self-auto">
-              <button type="button"
-                      onclick="openGCodeViewer('${{op.gcode_file}}')"
-                      class="px-2.5 py-1 rounded-lg bg-cyan-600/90 hover:bg-cyan-500 text-white font-medium text-xs flex items-center gap-1 shadow-sm transition cursor-pointer"
-                      title="Open interactive G-code toolpath viewer">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                <span>View G-Code</span>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <button type="button" onclick="openGCodeViewer('${{op.gcode_file}}')"
+                      class="p-1.5 rounded-lg bg-cyan-600/20 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-500/30 transition cursor-pointer"
+                      data-tip="2D/3D G-Code Viewer" aria-label="View G-Code">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
               </button>
-              <button type="button"
-                      onclick="copyGCodePath('${{op.gcode_file}}', this)"
-                      class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium text-xs flex items-center gap-1 transition cursor-pointer"
-                      title="Copy full file path to clipboard">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                <span>Copy Path</span>
+              <button type="button" onclick="copyGCodePath('${{op.gcode_file}}', this)"
+                      class="p-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 transition cursor-pointer"
+                      data-tip="Copy File Path" aria-label="Copy Path">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
               </button>
               <button type="button" id="btn-send-${{op.sheet_num}}-${{op.seq}}"
                       onclick="sendGCodeToFluidNC('${{op.gcode_file}}', this, false)"
                       class="${{btnClass}}"
-                      title="Upload file to FluidNC storage">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                <span>${{btnText}}</span>
+                      data-tip="${{btnTip}}" aria-label="Upload to FluidNC">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
               </button>
-              <button type="button"
-                      onclick="sendGCodeToFluidNC('${{op.gcode_file}}', this, true)"
-                      class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs flex items-center gap-1 shadow-sm transition cursor-pointer"
-                      title="Upload to FluidNC and immediately run CNC job ($SD/Run)">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                <span>Upload &amp; Run</span>
+              <button type="button" onclick="sendGCodeToFluidNC('${{op.gcode_file}}', this, true)"
+                      class="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition cursor-pointer"
+                      data-tip="Upload & Run ($SD/Run)" aria-label="Upload and Run">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               </button>
               <a href="${{getApiBase()}}/manufacture_gcode/${{op.gcode_file}}" download="${{op.gcode_file}}"
-                 class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 font-medium text-xs transition flex items-center gap-1"
-                 title="Download ${{op.gcode_file}}">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                <span>DL</span>
+                 class="p-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 transition"
+                 data-tip="Download .gcode" aria-label="Download G-Code">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               </a>
             </div>
           </div>
@@ -6081,7 +6097,19 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       renderFluidNCDispatcher();
     }}
 
+    function switchDashboardTab(tabId) {{
+      document.querySelectorAll('.dash-section').forEach(sec => {{
+        sec.style.display = (sec.id === tabId) ? 'block' : 'none';
+      }});
+      document.querySelectorAll('.nav-tab').forEach(btn => {{
+        const active = (btn.dataset.tab === tabId);
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-selected', active ? 'true' : 'false');
+      }});
+    }}
+
     window.addEventListener('DOMContentLoaded', function() {{
+      switchDashboardTab('section-fluidnc-upload');
       updateCircuitView();
       filterUnitSubmenu('ALL');
       selectBedSheet(1);
@@ -6092,413 +6120,287 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
   </script>
 </head>
 <body class="min-h-screen antialiased selection:bg-blue-500/30 selection:text-white">
-  <!-- Sticky Navigation Header -->
-  <header class="sticky top-0 z-30 border-b border-slate-800/80 bg-[#090b10]/90 backdrop-blur-md">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-4">
-      <div class="flex items-center gap-3">
-        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/20" aria-hidden="true">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Minimalist Sticky Workspace Header -->
+  <header class="sticky top-0 z-30 border-b border-slate-800/80 bg-[#090b10]/95 backdrop-blur-md">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-sm" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="9" cy="9" r="1.5"/><circle cx="15" cy="15" r="1.5"/>
-            <path d="M9 10.5V15h4.5"/><path d="M2 9h2m-2 6h2m16-6h2m-2 6h2M9 2v2m6-2v2M9 20v2m6-2v2"/>
+            <path d="M9 10.5V15h4.5"/>
           </svg>
         </div>
         <div>
-          <h1 class="text-base sm:text-lg font-bold tracking-tight text-slate-100">PCB CAM &amp; Dual-Sided CNC Inspector</h1>
-          <p class="text-xs text-slate-400">Bed {bed_x:.0f}&times;{bed_y:.0f} mm &bull; Y-Shift {y_split:.0f} mm &bull; Mode: <span class="text-amber-300 font-medium">{svg_escape(breakaway_cfg.label)}</span></p>
+          <h1 class="text-sm font-bold tracking-tight text-slate-100">PCB CAM Studio</h1>
+          <div class="text-[11px] font-mono text-slate-400">{len(sheets)}S &middot; {total_units}U &middot; {bed_x:.0f}&times;{bed_y:.0f}mm</div>
         </div>
       </div>
 
-      <nav class="flex flex-wrap items-center gap-1.5 text-xs" aria-label="Dashboard Sections">
-        <a href="#section-fluidnc-upload" class="px-2.5 py-1.5 rounded-lg text-emerald-300 hover:text-white hover:bg-emerald-950/60 border border-emerald-500/30 transition font-medium flex items-center gap-1.5">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-          </svg>
-          <span>⚡ Send to FluidNC</span>
-        </a>
-        <a href="#section-gerber" class="px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/80 transition font-medium">1. Gerber Steps</a>
-        <a href="#section-units" class="px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/80 transition font-medium">2. Unit View</a>
-        <a href="#section-sheets" class="px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/80 transition font-medium">3. Sheets</a>
-        <a href="#section-cncbed" class="px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/80 transition font-medium">4. CNC Bed</a>
-        <a href="#section-checklist" class="px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/80 transition font-medium">5. Checklist</a>
-        <a href="http://{svg_escape(fluidnc_ip)}" target="_blank" rel="noopener noreferrer"
-           class="ml-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" aria-hidden="true"></span>
-          <span>FluidNC ({svg_escape(fluidnc_ip)})</span>
-        </a>
+      <!-- Minimalist Tab Switcher -->
+      <nav class="flex flex-wrap items-center gap-1 text-xs" role="tablist" aria-label="Workspace Tabs">
+        <button type="button" data-tab="section-fluidnc-upload" onclick="switchDashboardTab('section-fluidnc-upload')" role="tab" aria-selected="true"
+                class="nav-tab active px-3 py-1.5 rounded-lg border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 transition font-medium flex items-center gap-1.5 cursor-pointer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span>Dispatch</span>
+        </button>
+        <button type="button" data-tab="section-gerber" onclick="switchDashboardTab('section-gerber')" role="tab" aria-selected="false"
+                class="nav-tab px-3 py-1.5 rounded-lg border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 transition font-medium flex items-center gap-1.5 cursor-pointer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+          <span>Gerber</span>
+        </button>
+        <button type="button" data-tab="section-units" onclick="switchDashboardTab('section-units')" role="tab" aria-selected="false"
+                class="nav-tab px-3 py-1.5 rounded-lg border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 transition font-medium flex items-center gap-1.5 cursor-pointer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          <span>Units</span>
+        </button>
+        <button type="button" data-tab="section-sheets" onclick="switchDashboardTab('section-sheets')" role="tab" aria-selected="false"
+                class="nav-tab px-3 py-1.5 rounded-lg border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 transition font-medium flex items-center gap-1.5 cursor-pointer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span>Sheets</span>
+        </button>
+        <button type="button" data-tab="section-cncbed" onclick="switchDashboardTab('section-cncbed')" role="tab" aria-selected="false"
+                class="nav-tab px-3 py-1.5 rounded-lg border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 transition font-medium flex items-center gap-1.5 cursor-pointer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/></svg>
+          <span>CNC Bed</span>
+        </button>
+        <button type="button" data-tab="section-checklist" onclick="switchDashboardTab('section-checklist')" role="tab" aria-selected="false"
+                class="nav-tab px-3 py-1.5 rounded-lg border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 transition font-medium flex items-center gap-1.5 cursor-pointer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          <span>Checklist</span>
+        </button>
       </nav>
-    </div>
-        <a href="#section-gerber" class="px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/80 transition font-medium">1. Gerber Steps</a>
-        <a href="#section-units" class="px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/80 transition font-medium">2. Unit View</a>
-        <a href="#section-sheets" class="px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/80 transition font-medium">3. Sheets</a>
-        <a href="#section-cncbed" class="px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/80 transition font-medium">4. CNC Bed</a>
-        <a href="#section-checklist" class="px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/80 transition font-medium">5. Checklist</a>
+
+      <!-- Compact Status & Safety Indicators -->
+      <div class="flex items-center gap-2 text-xs">
+        <span class="p-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 cursor-help"
+              data-tip="Z-Switch Keep-Out: X{z_switch_x:.1f} Y{z_switch_y:.1f}mm">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </span>
+        <span class="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 font-mono text-[11px] text-amber-300"
+              data-tip="{len(holders_mgr.holders)} bed clamps &bull; Y-Split {y_split:.0f}mm &bull; {svg_escape(breakaway_cfg.label)}">
+          {len(holders_mgr.holders)} Clamps
+        </span>
         <a href="http://{svg_escape(fluidnc_ip)}" target="_blank" rel="noopener noreferrer"
-           class="ml-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition">
+           class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition"
+           data-tip="Open FluidNC WebUI in new tab">
           <span class="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" aria-hidden="true"></span>
-          <span>FluidNC ({svg_escape(fluidnc_ip)})</span>
+          <span class="font-mono text-[11px]">{svg_escape(fluidnc_ip)}</span>
         </a>
-      </nav>
+      </div>
     </div>
   </header>
 
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-10">
-    <!-- Top Telemetry Summary Strip -->
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      <div class="glass-panel rounded-xl px-4 py-3">
-        <div class="text-[11px] uppercase tracking-wider text-slate-400">Manufacturing Sheets</div>
-        <div class="text-lg font-bold font-mono text-slate-100 mt-0.5">{len(sheets)} A4 Sheets</div>
-      </div>
-      <div class="glass-panel rounded-xl px-4 py-3">
-        <div class="text-[11px] uppercase tracking-wider text-slate-400">Batch Output</div>
-        <div class="text-lg font-bold font-mono text-emerald-400 mt-0.5">{total_units} PCB Units</div>
-      </div>
-      <div class="glass-panel rounded-xl px-4 py-3">
-        <div class="text-[11px] uppercase tracking-wider text-slate-400">Constrained Bed</div>
-        <div class="text-lg font-bold font-mono text-sky-400 mt-0.5">{bed_x:.0f} &times; {bed_y:.0f} mm</div>
-      </div>
-      <div class="glass-panel rounded-xl px-4 py-3">
-        <div class="text-[11px] uppercase tracking-wider text-slate-400">Common Bed Washer Clamps</div>
-        <div class="text-sm font-bold font-mono text-amber-300 mt-1">{len(holders_mgr.holders)} Single-Half Washers</div>
-        <div class="text-[11px] text-slate-400 mt-0.5">No Through-PCB Drills &bull; Dowel Lock: <span class="text-slate-200">{'ENABLED' if enable_dowel_pin_lock else 'DISABLED'}</span></div>
-      </div>
-    </div>
-
-    <!-- Bed Limit Switch Danger Zone Alert Bar -->
-    <div class="rounded-xl border border-red-500/40 bg-red-950/30 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-      <div class="flex items-center gap-3">
-        <span class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-red-500/20 border border-red-500/50 text-red-300 shrink-0" aria-hidden="true">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-          </svg>
-        </span>
-        <div>
-          <div class="text-xs sm:text-sm font-bold text-red-200">BED Z-ZERO LIMIT SWITCH DANGER ZONE &mdash; X = {z_switch_x:.3f} mm, Y = {z_switch_y:.3f} mm</div>
-          <p class="text-[11px] sm:text-xs text-red-200/80">Keep A4 copper stock, M4 washer clamps, and non-probing rapid tool moves strictly clear of this bed switch zone. Only jog here intentionally during tool-change Z-Zero calibration.</p>
-        </div>
-      </div>
-      <span class="text-[11px] font-mono px-2.5 py-1 rounded-md bg-red-500/20 text-red-200 border border-red-500/40 shrink-0">DANGER KEEP-OUT</span>
-    </div>
-
-    <!-- FLUIDNC G-CODE DISPATCHER & WIRELESS TRANSFER STATION -->
-    <section id="section-fluidnc-upload" class="glass-panel p-5 sm:p-6 rounded-2xl scroll-mt-20 border border-blue-500/40 relative overflow-hidden shadow-2xl shadow-blue-950/20">
-      <!-- Glow ambient background -->
-      <div class="absolute -top-24 -right-24 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" aria-hidden="true"></div>
-      <div class="absolute -bottom-24 -left-24 w-80 h-80 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none" aria-hidden="true"></div>
-
-      <div class="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between pb-4 mb-5 border-b border-slate-800/80 gap-4">
-        <div>
-          <div class="flex items-center gap-2 mb-1">
-            <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-blue-500/20 border border-blue-500/40 text-blue-400 font-mono text-xs font-bold">CNC</span>
-            <h2 class="text-lg sm:text-xl font-bold text-slate-100 flex items-center gap-2">
-              <span>FluidNC G-Code Dispatcher &amp; Wireless Transfer Station</span>
-            </h2>
-            <span class="text-[10px] font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-md font-semibold">WEB &rarr; FLUIDNC</span>
-          </div>
-          <p class="text-xs text-slate-400">
-            Send generated PCB G-codes from this dashboard directly into your FluidNC Web UI. Use <strong>1-Click Wireless Push</strong>, <strong>Batch Sheet Upload</strong>, or <strong>Drag-and-Drop</strong> file chips directly into FluidNC.
-          </p>
-        </div>
-
-        <!-- Controller Status & Action Pills -->
-        <div class="flex flex-wrap items-center gap-2 shrink-0">
-          <div id="fluidnc-status-badge" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/90 border border-slate-700/80 text-xs font-mono text-slate-300">
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-5">
+    <!-- TAB 1: FLUIDNC DISPATCHER -->
+    <section id="section-fluidnc-upload" class="dash-section glass-panel p-4 sm:p-5 rounded-2xl border border-slate-800/90">
+      <div class="flex flex-wrap items-center justify-between pb-3 mb-4 border-b border-slate-800/80 gap-3">
+        <div class="flex items-center gap-3">
+          <h2 class="text-base font-semibold text-slate-100">G-Code Dispatch</h2>
+          <div id="fluidnc-status-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-mono text-slate-300">
             <span id="fluidnc-status-dot" class="w-2 h-2 rounded-full bg-slate-500"></span>
-            <span id="fluidnc-status-text">Checking controller...</span>
+            <span id="fluidnc-status-text">Checking...</span>
           </div>
-          <button type="button" onclick="testFluidNCConnection()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition cursor-pointer flex items-center gap-1">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
-            <span>Ping</span>
+          <span id="fluidnc-sd-indicator" class="font-mono text-[11px] text-slate-400" data-tip="FluidNC micro-SD status">SD: --</span>
+        </div>
+
+        <!-- Compact Icon Action Bar -->
+        <div class="flex flex-wrap items-center gap-1.5">
+          <button type="button" onclick="testFluidNCConnection()" class="p-2 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700/80 transition cursor-pointer" data-tip="Ping FluidNC" aria-label="Ping FluidNC">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
           </button>
-          <button type="button" onclick="sendFluidNCRealtime('$X')" class="px-2.5 py-1.5 rounded-lg bg-amber-600/80 hover:bg-amber-500 text-white text-xs font-semibold transition cursor-pointer flex items-center gap-1" title="Unlock Alarm ($X)">
-            <span>🔓 $X</span>
+          <button type="button" onclick="sendFluidNCRealtime('$X')" class="p-2 rounded-lg bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/30 transition cursor-pointer" data-tip="Unlock Alarm ($X)" aria-label="Unlock Alarm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
           </button>
-          <button type="button" onclick="sendFluidNCRealtime('$H')" class="px-2.5 py-1.5 rounded-lg bg-sky-600/80 hover:bg-sky-500 text-white text-xs font-semibold transition cursor-pointer flex items-center gap-1" title="Run Homing Cycle ($H)">
-            <span>🏠 $H</span>
+          <button type="button" onclick="sendFluidNCRealtime('$H')" class="p-2 rounded-lg bg-sky-600/20 hover:bg-sky-600 text-sky-300 hover:text-white border border-sky-500/30 transition cursor-pointer" data-tip="Home Machine ($H)" aria-label="Home Machine">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
           </button>
-          <button type="button" onclick="sendFluidNCRealtime('G10 L20 P1 X0 Y0 Z0')" class="px-2.5 py-1.5 rounded-lg bg-purple-600/80 hover:bg-purple-500 text-white text-xs font-semibold transition cursor-pointer flex items-center gap-1" title="Zero Work Coordinates (G10 L20 P1 X0 Y0 Z0)">
-            <span>🎯 Zero Work</span>
+          <button type="button" onclick="sendFluidNCRealtime('G10 L20 P1 X0 Y0 Z0')" class="p-2 rounded-lg bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 transition cursor-pointer" data-tip="Zero Work XYZ (G10 L20)" aria-label="Zero Work">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/></svg>
           </button>
-          <button type="button" onclick="toggleFluidNCFrame()" id="btn-toggle-fluidnc-frame" class="px-3 py-1.5 rounded-lg bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-sm">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-            <span>Embedded View</span>
+          <button type="button" onclick="toggleFluidNCFrame()" id="btn-toggle-fluidnc-frame" class="p-2 rounded-lg bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 transition cursor-pointer" data-tip="Toggle Embedded FluidNC UI" aria-label="Embedded View">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
           </button>
-          <a id="fluidnc-open-link" href="http://{svg_escape(fluidnc_ip)}" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 rounded-lg bg-blue-600/90 hover:bg-blue-500 text-white text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-sm shadow-blue-500/20">
-            <span>Open FluidNC Tab ↗</span>
+          <a id="fluidnc-open-link" href="http://{svg_escape(fluidnc_ip)}" target="_blank" rel="noopener noreferrer" class="p-2 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/30 transition" data-tip="Open FluidNC in New Tab" aria-label="Open FluidNC Tab">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
           </a>
         </div>
       </div>
 
-      <!-- Diagnostic & Storage Alert Banner -->
-      <div class="mb-4 p-3 bg-slate-900/90 border border-slate-800 rounded-xl text-xs space-y-1.5">
-        <div class="flex items-center justify-between">
-          <span class="font-semibold text-slate-200 flex items-center gap-1.5">
-            <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-            FluidNC Controller Diagnostics &amp; SD Storage
-          </span>
-          <span id="fluidnc-sd-indicator" class="font-mono text-[11px] text-slate-300">SD Card: Checking...</span>
-        </div>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px] text-slate-400">
-          <div class="bg-slate-950/70 p-2.5 rounded-lg border border-slate-800/80">
-            <strong class="text-slate-200">1. Upload &amp; Run Shortcut:</strong>
-            <p class="mt-0.5">Use <strong class="text-blue-300">Send to FluidNC</strong> or <strong class="text-emerald-400">Upload &amp; Run</strong> to push to SD (<code class="text-slate-300">/sd/</code>) and start the job. Requires a FAT32 micro-SD card in the MKS-DLC32 TF slot.</p>
+      <!-- Compact Controls Strip -->
+      <div class="flex flex-wrap items-center justify-between gap-2.5 mb-4 text-xs">
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-1" data-tip="FluidNC Controller IP">
+            <span class="text-slate-500 font-mono text-[11px]">IP</span>
+            <input type="text" id="fluidnc-ip-input" value="{svg_escape(fluidnc_ip)}" onchange="updateFluidNCIp(this.value)"
+                   class="w-28 bg-transparent text-slate-100 font-mono text-xs focus:outline-none">
           </div>
-          <div class="bg-slate-950/70 p-2.5 rounded-lg border border-slate-800/80">
-            <strong class="text-slate-200">2. Why FluidNC Shows "Offline":</strong>
-            <p class="mt-0.5">FluidNC allows <strong>1 active WebSocket client</strong>. If you open multiple browser tabs or devices to <code class="text-blue-300">192.168.8.109</code>, the controller disconnects extra tabs. Keep only 1 tab open.</p>
-          </div>
-          <div class="bg-slate-950/70 p-2.5 rounded-lg border border-slate-800/80">
-            <strong class="text-slate-200">3. Built-in G-Code Viewer &amp; Copy Path:</strong>
-            <p class="mt-0.5">Click <strong class="text-cyan-300">View G-Code</strong> to inspect toolpaths, rapids, and drill plunges right here, or click <strong class="text-slate-200">Copy Path</strong> to paste the exact file path into FluidNC or your file dialog.</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Settings & Controls Toolbar -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4 text-xs">
-        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-2.5">
-          <label class="block text-[11px] font-medium text-slate-400 mb-1" for="fluidnc-ip-input">Controller IP Address</label>
-          <input type="text" id="fluidnc-ip-input" value="{svg_escape(fluidnc_ip)}" onchange="updateFluidNCIp(this.value)"
-                 class="w-full bg-slate-950 border border-slate-700/80 rounded-lg px-2.5 py-1 text-slate-100 font-mono text-xs focus:outline-none focus:border-blue-500">
-        </div>
-
-        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-2.5">
-          <label class="block text-[11px] font-medium text-slate-400 mb-1" for="fluidnc-target-select">Destination Storage</label>
-          <select id="fluidnc-target-select" class="w-full bg-slate-950 border border-slate-700/80 rounded-lg px-2.5 py-1 text-slate-100 font-mono text-xs focus:outline-none focus:border-blue-500">
-            <option value="sd" selected>SD Card (/upload) [Recommended]</option>
-            <option value="flash">Internal Flash (/files)</option>
+          <select id="fluidnc-target-select" data-tip="Target Storage" class="bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 font-mono text-xs focus:outline-none">
+            <option value="sd" selected>SD (/upload)</option>
+            <option value="flash">Flash (/files)</option>
           </select>
+          <div class="relative">
+            <input type="text" id="fluidnc-search-input" placeholder="Filter files..." oninput="filterFluidNCSearch(this.value)"
+                   class="w-40 bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-100 font-mono text-xs focus:outline-none focus:border-blue-500">
+          </div>
         </div>
 
-        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between">
-          <div>
-            <div class="font-medium text-slate-200">Active Sheet Dispatch</div>
-            <div id="fluidnc-batch-sheet-lbl" class="text-[10px] text-slate-400">Sheet 1 (36 files)</div>
-          </div>
-          <button type="button" onclick="uploadAllSheetGCodeToFluidNC()" id="btn-batch-upload"
-                  class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            <span>Batch Upload Sheet</span>
-          </button>
-        </div>
-
-        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between">
-          <div>
-            <div class="font-medium text-slate-200">Search G-Code</div>
-            <div class="text-[10px] text-slate-400">Filter operations list</div>
-          </div>
-          <input type="text" id="fluidnc-search-input" placeholder="e.g. drill, 0.8mm, top..." oninput="filterFluidNCSearch(this.value)"
-                 class="w-36 bg-slate-950 border border-slate-700/80 rounded-lg px-2 py-1 text-slate-100 font-mono text-xs focus:outline-none focus:border-blue-500">
-        </div>
+        <button type="button" onclick="uploadAllSheetGCodeToFluidNC()" id="btn-batch-upload"
+                class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                data-tip="Upload all visible G-code files in sequence">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"/></svg>
+          <span>Batch Upload</span>
+          <span id="fluidnc-batch-sheet-lbl" class="font-mono text-[10px] opacity-80"></span>
+        </button>
       </div>
 
-      <!-- Batch Transfer Progress Strip (Hidden until triggered) -->
-      <div id="fluidnc-batch-progress-wrap" class="hidden mb-4 p-3 bg-slate-900/90 border border-slate-800 rounded-xl space-y-2">
+      <!-- Batch Transfer Progress Strip -->
+      <div id="fluidnc-batch-progress-wrap" class="hidden mb-3 p-2.5 bg-slate-900/90 border border-slate-800 rounded-xl space-y-1.5">
         <div class="flex items-center justify-between text-xs">
-          <span id="fluidnc-batch-status-text" class="font-medium text-slate-200 flex items-center gap-2">
-            <svg class="animate-spin w-3.5 h-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>
-            <span>Uploading batch to FluidNC...</span>
-          </span>
+          <span id="fluidnc-batch-status-text" class="font-medium text-slate-200 flex items-center gap-2">Uploading...</span>
           <span id="fluidnc-batch-pct" class="font-mono text-emerald-400 font-semibold">0%</span>
         </div>
-        <div class="w-full h-2 rounded-full bg-slate-950 border border-slate-800 overflow-hidden">
-          <div id="fluidnc-batch-progress-bar" class="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 transition-all duration-200 rounded-full" style="width: 0%;"></div>
+        <div class="w-full h-1.5 rounded-full bg-slate-950 overflow-hidden">
+          <div id="fluidnc-batch-progress-bar" class="h-full bg-emerald-500 transition-all duration-200 rounded-full" style="width: 0%;"></div>
         </div>
       </div>
 
-      <!-- Embedded FluidNC Split-View / Live Console (Toggleable) -->
-      <div id="fluidnc-embedded-panel" class="hidden mb-5 rounded-2xl border border-indigo-500/40 overflow-hidden bg-slate-950 shadow-2xl">
-        <div class="px-4 py-3 bg-slate-900/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
-          <div class="flex items-center gap-2">
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span class="text-xs font-mono font-bold text-slate-100">Live FluidNC WebUI &mdash; http://<span id="fluidnc-embedded-ip-label">{svg_escape(fluidnc_ip)}</span></span>
-            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/40">DRAG FILES TO RIGHT TO UPLOAD</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <button type="button" onclick="reloadFluidNCFrame()" class="text-slate-300 hover:text-white text-xs px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition">↻ Reload Frame</button>
-            <a id="fluidnc-frame-external-link" href="http://{svg_escape(fluidnc_ip)}" target="_blank" rel="noopener noreferrer" class="text-blue-300 hover:text-white text-xs px-2.5 py-1 rounded-lg bg-blue-600/40 hover:bg-blue-600 border border-blue-500/40 transition">Open in Tab ↗</a>
-            <button type="button" onclick="toggleFluidNCFrame()" class="text-slate-400 hover:text-white text-xs px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition">✕ Close Frame</button>
+      <!-- Embedded FluidNC WebUI (Toggleable) -->
+      <div id="fluidnc-embedded-panel" class="hidden mb-4 rounded-xl border border-indigo-500/40 overflow-hidden bg-slate-950">
+        <div class="px-3 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs">
+          <span class="font-mono text-slate-200">FluidNC &mdash; <span id="fluidnc-embedded-ip-label">{svg_escape(fluidnc_ip)}</span></span>
+          <div class="flex items-center gap-1.5">
+            <button type="button" onclick="reloadFluidNCFrame()" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] cursor-pointer">Reload</button>
+            <a id="fluidnc-frame-external-link" href="http://{svg_escape(fluidnc_ip)}" target="_blank" rel="noopener noreferrer" class="px-2 py-1 rounded bg-blue-600/30 text-blue-300 text-[11px]">Tab</a>
+            <button type="button" onclick="toggleFluidNCFrame()" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] cursor-pointer">Close</button>
           </div>
         </div>
-        <iframe id="fluidnc-iframe" src="about:blank" title="FluidNC WebUI" class="w-full h-[580px] border-0 bg-[#121620]"></iframe>
+        <iframe id="fluidnc-iframe" src="about:blank" title="FluidNC WebUI" class="w-full h-[520px] border-0 bg-[#121620]"></iframe>
       </div>
 
-      <!-- Sheet Tabs & Category Filters -->
-      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-3 mb-3 border-b border-slate-800/80 gap-3 text-xs">
+      <!-- Sheet & Step Filter Row -->
+      <div class="flex flex-wrap items-center justify-between pb-3 mb-3 border-b border-slate-800/80 gap-2 text-xs">
         <div class="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Sheet Filter">
-          <button type="button" onclick="setFluidNCDispatcherSheet('1')" id="btn-sheet-1" class="fnc-sheet-btn active px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer bg-blue-600 text-white shadow-sm">Sheet 1</button>
-          <button type="button" onclick="setFluidNCDispatcherSheet('2')" id="btn-sheet-2" class="fnc-sheet-btn px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer bg-slate-800/90 text-slate-300 hover:text-white border border-slate-700/70">Sheet 2</button>
-          <button type="button" onclick="setFluidNCDispatcherSheet('3')" id="btn-sheet-3" class="fnc-sheet-btn px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer bg-slate-800/90 text-slate-300 hover:text-white border border-slate-700/70">Sheet 3</button>
-          <button type="button" onclick="setFluidNCDispatcherSheet('ALL')" id="btn-sheet-ALL" class="fnc-sheet-btn px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer bg-slate-800/90 text-slate-300 hover:text-white border border-slate-700/70">All Sheets (102)</button>
+          {"".join([f'<button type="button" onclick="setFluidNCDispatcherSheet(\'{i+1}\')" id="btn-sheet-{i+1}" class="fnc-sheet-btn {"active bg-blue-600 text-white" if i==0 else "bg-slate-800/90 text-slate-300 border border-slate-700/70"} px-2.5 py-1 rounded-lg font-medium transition cursor-pointer">S{i+1:02d}</button>' for i in range(len(sheets))])}
+          <button type="button" onclick="setFluidNCDispatcherSheet('ALL')" id="btn-sheet-ALL" class="fnc-sheet-btn px-2.5 py-1 rounded-lg font-medium transition cursor-pointer bg-slate-800/90 text-slate-300 hover:text-white border border-slate-700/70">All</button>
         </div>
 
         <div class="flex flex-wrap items-center gap-1 text-[11px]">
-          <span class="text-slate-500 mr-1">Step:</span>
-          <button type="button" onclick="setFluidNCDispatcherCat('ALL')" class="fnc-cat-btn px-2 py-1 rounded bg-slate-800 text-blue-300 border border-blue-500/30">All</button>
-          <button type="button" onclick="setFluidNCDispatcherCat('Step0')" class="fnc-cat-btn px-2 py-1 rounded bg-slate-900 text-slate-400 hover:text-white">Guides</button>
-          <button type="button" onclick="setFluidNCDispatcherCat('Step1')" class="fnc-cat-btn px-2 py-1 rounded bg-slate-900 text-slate-400 hover:text-white">Drills</button>
-          <button type="button" onclick="setFluidNCDispatcherCat('Step3')" class="fnc-cat-btn px-2 py-1 rounded bg-slate-900 text-slate-400 hover:text-white">Top Cu</button>
-          <button type="button" onclick="setFluidNCDispatcherCat('Step4')" class="fnc-cat-btn px-2 py-1 rounded bg-slate-900 text-slate-400 hover:text-white">Bottom Cu</button>
-          <button type="button" onclick="setFluidNCDispatcherCat('Step5')" class="fnc-cat-btn px-2 py-1 rounded bg-slate-900 text-slate-400 hover:text-white">Mask</button>
-          <button type="button" onclick="setFluidNCDispatcherCat('Step7')" class="fnc-cat-btn px-2 py-1 rounded bg-slate-900 text-slate-400 hover:text-white">Cutout</button>
+          <button type="button" onclick="setFluidNCDispatcherCat('ALL')" class="fnc-cat-btn px-2 py-1 rounded bg-slate-800 text-blue-300 border border-blue-500/30 cursor-pointer">All</button>
+          <button type="button" onclick="setFluidNCDispatcherCat('Step0')" class="fnc-cat-btn px-2 py-1 rounded bg-slate-900 text-slate-400 hover:text-white cursor-pointer">Guides</button>
+          <button type="button" onclick="setFluidNCDispatcherCat('Step1')" class="fnc-cat-btn px-2 py-1 rounded bg-slate-900 text-slate-400 hover:text-white cursor-pointer">Drills</button>
+          <button type="button" onclick="setFluidNCDispatcherCat('Step3')" class="fnc-cat-btn px-2 py-1 rounded bg-slate-900 text-slate-400 hover:text-white cursor-pointer">Top Cu</button>
+          <button type="button" onclick="setFluidNCDispatcherCat('Step4')" class="fnc-cat-btn px-2 py-1 rounded bg-slate-900 text-slate-400 hover:text-white cursor-pointer">Bot Cu</button>
+          <button type="button" onclick="setFluidNCDispatcherCat('Step5')" class="fnc-cat-btn px-2 py-1 rounded bg-slate-900 text-slate-400 hover:text-white cursor-pointer">Mask</button>
+          <button type="button" onclick="setFluidNCDispatcherCat('Step7')" class="fnc-cat-btn px-2 py-1 rounded bg-slate-900 text-slate-400 hover:text-white cursor-pointer">Cut</button>
         </div>
       </div>
 
-      <!-- Live G-Code Dispatch Cards / Table -->
-      <div id="fluidnc-dispatcher-table" class="space-y-2 max-h-[520px] overflow-y-auto pr-1">
-        <!-- Rendered dynamically by renderFluidNCDispatcher() -->
-      </div>
+      <div id="fluidnc-dispatcher-table" class="space-y-1.5 max-h-[580px] overflow-y-auto pr-1"></div>
     </section>
 
-    <!-- SECTION 1: Step-by-Step Gerber Inspection View -->
-    <section id="section-gerber" class="glass-panel p-5 sm:p-6 rounded-2xl scroll-mt-20">
-      <div class="flex flex-col md:flex-row items-start md:items-center justify-between pb-4 mb-5 border-b border-slate-800/80 gap-4">
-        <div>
-          <h2 class="text-lg sm:text-xl font-bold text-slate-100 flex flex-wrap items-center gap-2">
-            <span>1. Step-by-Step Gerber Inspection View</span>
-            <span class="text-[11px] font-mono bg-sky-500/15 text-sky-300 border border-sky-500/30 px-2 py-0.5 rounded-md">Front &amp; Back Layers &bull; Optional Mirror</span>
-          </h2>
-          <p class="text-xs text-slate-400 mt-1">Inspect all CNC steps including multi-size drills, Front/Back Solder Mask, Front/Back Silkscreen, and toggleable Mirror View. Step 2 Via Plating displays process parameters (no image needed).</p>
-        </div>
-        <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Select PCB Project">
+    <!-- TAB 2: GERBER STEP-BY-STEP -->
+    <section id="section-gerber" class="dash-section glass-panel p-4 sm:p-5 rounded-2xl border border-slate-800/90" style="display:none;">
+      <div class="flex flex-wrap items-center justify-between pb-3 mb-4 border-b border-slate-800/80 gap-3">
+        <h2 class="text-base font-semibold text-slate-100">Gerber Layers</h2>
+        <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Select PCB Project">
           {"".join([f'''
           <button type="button" onclick="selectCircuitProject('{p.pcb_id}')" id="proj-btn-{p.pcb_id}" aria-pressed="{'true' if idx==0 else 'false'}"
-                  class="proj-btn px-3.5 py-1.5 text-xs font-semibold rounded-lg transition cursor-pointer {'bg-blue-600 text-white shadow-sm' if idx==0 else 'bg-slate-800/90 text-slate-300 hover:text-white border border-slate-700/70'}">
+                  class="proj-btn px-3 py-1 text-xs font-semibold rounded-lg transition cursor-pointer {'bg-blue-600 text-white' if idx==0 else 'bg-slate-800/90 text-slate-300 hover:text-white border border-slate-700/70'}">
             {svg_escape(p.project_name)} ({svg_escape(p.pcb_id)})
           </button>
           ''' for idx, p in enumerate(unique_projects)])}
         </div>
       </div>
 
-      <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 mb-4" role="tablist" aria-label="Gerber Fabrication Steps">
-        <button type="button" onclick="selectCircuitStep('Composite_Stackup')" id="step-btn-Composite_Stackup" aria-pressed="true" class="step-btn active p-2.5 rounded-xl border border-slate-800 bg-[#0b101b] text-left text-xs transition cursor-pointer">
-          <span class="block font-semibold">Overview</span>
-          <span class="text-[10px] text-slate-400">Full Stackup</span>
+      <div class="grid grid-cols-4 sm:grid-cols-8 gap-1.5 mb-4" role="tablist" aria-label="Gerber Steps">
+        <button type="button" onclick="selectCircuitStep('Composite_Stackup')" id="step-btn-Composite_Stackup" aria-pressed="true" class="step-btn active p-2 rounded-lg border border-slate-800 bg-[#0b101b] text-center text-xs transition cursor-pointer">
+          <span class="block font-semibold">All</span>
         </button>
-        <button type="button" onclick="selectCircuitStep('Step1_Drills')" id="step-btn-Step1_Drills" aria-pressed="false" class="step-btn p-2.5 rounded-xl border border-slate-800 bg-[#0b101b] text-left text-xs transition cursor-pointer">
-          <span class="block font-semibold">Step 1</span>
-          <span class="text-[10px] text-slate-400">CNC Drills</span>
+        <button type="button" onclick="selectCircuitStep('Step1_Drills')" id="step-btn-Step1_Drills" aria-pressed="false" class="step-btn p-2 rounded-lg border border-slate-800 bg-[#0b101b] text-center text-xs transition cursor-pointer">
+          <span class="block font-semibold">1. Drills</span>
         </button>
-        <button type="button" onclick="selectCircuitStep('Step2_Vias')" id="step-btn-Step2_Vias" aria-pressed="false" class="step-btn p-2.5 rounded-xl border border-slate-800 bg-[#0b101b] text-left text-xs transition cursor-pointer">
-          <span class="block font-semibold">Step 2</span>
-          <span class="text-[10px] text-slate-400">Via Coating</span>
+        <button type="button" onclick="selectCircuitStep('Step2_Vias')" id="step-btn-Step2_Vias" aria-pressed="false" class="step-btn p-2 rounded-lg border border-slate-800 bg-[#0b101b] text-center text-xs transition cursor-pointer">
+          <span class="block font-semibold">2. Vias</span>
         </button>
-        <button type="button" onclick="selectCircuitStep('Step3_Top_Copper')" id="step-btn-Step3_Top_Copper" aria-pressed="false" class="step-btn p-2.5 rounded-xl border border-slate-800 bg-[#0b101b] text-left text-xs transition cursor-pointer">
-          <span class="block font-semibold">Step 3</span>
-          <span class="text-[10px] text-slate-400">Top Copper</span>
+        <button type="button" onclick="selectCircuitStep('Step3_Top_Copper')" id="step-btn-Step3_Top_Copper" aria-pressed="false" class="step-btn p-2 rounded-lg border border-slate-800 bg-[#0b101b] text-center text-xs transition cursor-pointer">
+          <span class="block font-semibold">3. Top Cu</span>
         </button>
-        <button type="button" onclick="selectCircuitStep('Step4_Bottom_Copper')" id="step-btn-Step4_Bottom_Copper" aria-pressed="false" class="step-btn p-2.5 rounded-xl border border-slate-800 bg-[#0b101b] text-left text-xs transition cursor-pointer">
-          <span class="block font-semibold">Step 4</span>
-          <span class="text-[10px] text-slate-400">Bottom Copper</span>
+        <button type="button" onclick="selectCircuitStep('Step4_Bottom_Copper')" id="step-btn-Step4_Bottom_Copper" aria-pressed="false" class="step-btn p-2 rounded-lg border border-slate-800 bg-[#0b101b] text-center text-xs transition cursor-pointer">
+          <span class="block font-semibold">4. Bot Cu</span>
         </button>
-        <button type="button" onclick="selectCircuitStep('Step5_Solder_Mask')" id="step-btn-Step5_Solder_Mask" aria-pressed="false" class="step-btn p-2.5 rounded-xl border border-slate-800 bg-[#0b101b] text-left text-xs transition cursor-pointer">
-          <span class="block font-semibold">Step 5</span>
-          <span class="text-[10px] text-slate-400">Mask (F / B)</span>
+        <button type="button" onclick="selectCircuitStep('Step5_Solder_Mask')" id="step-btn-Step5_Solder_Mask" aria-pressed="false" class="step-btn p-2 rounded-lg border border-slate-800 bg-[#0b101b] text-center text-xs transition cursor-pointer">
+          <span class="block font-semibold">5. Mask</span>
         </button>
-        <button type="button" onclick="selectCircuitStep('Step6_Silkscreen')" id="step-btn-Step6_Silkscreen" aria-pressed="false" class="step-btn p-2.5 rounded-xl border border-slate-800 bg-[#0b101b] text-left text-xs transition cursor-pointer">
-          <span class="block font-semibold">Step 6</span>
-          <span class="text-[10px] text-slate-400">Silk (F / B)</span>
+        <button type="button" onclick="selectCircuitStep('Step6_Silkscreen')" id="step-btn-Step6_Silkscreen" aria-pressed="false" class="step-btn p-2 rounded-lg border border-slate-800 bg-[#0b101b] text-center text-xs transition cursor-pointer">
+          <span class="block font-semibold">6. Silk</span>
         </button>
-        <button type="button" onclick="selectCircuitStep('Step7_Cutout_SnapTab')" id="step-btn-Step7_Cutout_SnapTab" aria-pressed="false" class="step-btn p-2.5 rounded-xl border border-slate-800 bg-[#0b101b] text-left text-xs transition cursor-pointer">
-          <span class="block font-semibold">Step 7</span>
-          <span class="text-[10px] text-slate-400">Breakaway</span>
+        <button type="button" onclick="selectCircuitStep('Step7_Cutout_SnapTab')" id="step-btn-Step7_Cutout_SnapTab" aria-pressed="false" class="step-btn p-2 rounded-lg border border-slate-800 bg-[#0b101b] text-center text-xs transition cursor-pointer">
+          <span class="block font-semibold">7. Cut</span>
         </button>
       </div>
 
-      <!-- Layer Side & Optional Mirror View Controls -->
-      <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
-        <div id="circuit-side-controls" style="display: none;" class="inline-flex rounded-lg bg-[#0a0e17] p-1 border border-slate-800" role="group" aria-label="Layer Side Selector">
-          <button type="button" onclick="setCircuitSide('front')" id="circuit-side-front" aria-pressed="true" class="circuit-side-btn px-3 py-1 text-xs font-semibold rounded-md bg-blue-600 text-white cursor-pointer transition">Front Side</button>
-          <button type="button" onclick="setCircuitSide('back')" id="circuit-side-back" aria-pressed="false" class="circuit-side-btn px-3 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white cursor-pointer transition">Back Side</button>
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <div id="circuit-side-controls" style="display: none;" class="inline-flex rounded-lg bg-[#0a0e17] p-1 border border-slate-800" role="group">
+          <button type="button" onclick="setCircuitSide('front')" id="circuit-side-front" aria-pressed="true" class="circuit-side-btn px-3 py-1 text-xs font-semibold rounded-md bg-blue-600 text-white cursor-pointer transition">Front</button>
+          <button type="button" onclick="setCircuitSide('back')" id="circuit-side-back" aria-pressed="false" class="circuit-side-btn px-3 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white cursor-pointer transition">Back</button>
         </div>
         <div id="circuit-mirror-wrap" class="inline-flex items-center gap-2 ml-auto">
-          <button type="button" onclick="toggleCircuitMirror()" id="circuit-mirror-btn" aria-pressed="false" class="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700 cursor-pointer transition">
-            Mirror View: Disabled
+          <button type="button" onclick="toggleCircuitMirror()" id="circuit-mirror-btn" aria-pressed="false" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700 cursor-pointer transition">
+            Mirror: Off
           </button>
         </div>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
         <div class="lg:col-span-8 blueprint-stage p-4 rounded-xl border border-slate-800/90 flex justify-center items-center svg-container min-h-[380px]">
           <img id="circuit-svg-img" src="{img_prefix}Circuit_{first_proj_id}_Composite_Stackup.svg" alt="Circuit Gerber Step Preview" class="max-h-[520px] object-contain">
-          <div id="circuit-vias-spec-card" style="display: none;" class="w-full max-w-lg bg-[#0b101b] border border-cyan-500/40 rounded-2xl p-6 flex-col items-start gap-4 text-left shadow-lg">
-            <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-cyan-500/15 border border-cyan-400/40 flex items-center justify-center text-cyan-300 shrink-0" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M9 3h6"/><path d="M10 3v5l-4.5 9A2 2 0 0 0 7.3 20h9.4a2 2 0 0 0 1.8-3L14 8V3"/>
-                </svg>
-              </div>
-              <div>
-                <span class="text-[11px] font-mono uppercase tracking-wider text-cyan-400">Chemical Via Coating &bull; No Gerber Image Required</span>
-                <h3 class="text-base font-bold text-slate-100">Step 2: Electroless &amp; Electrolytic Via Barrel Plating</h3>
-              </div>
+          <div id="circuit-vias-spec-card" style="display: none;" class="w-full max-w-md bg-[#0b101b] border border-cyan-500/40 rounded-xl p-5 flex-col gap-3 text-left">
+            <h3 class="text-sm font-bold text-slate-100">Step 2: Chemical Via Plating</h3>
+            <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+              <div class="bg-[#0f1625] p-2.5 rounded-lg border border-slate-800"><span class="text-slate-400 block text-[10px]">PROJECT</span><strong id="via-spec-project" class="text-amber-300">-</strong></div>
+              <div class="bg-[#0f1625] p-2.5 rounded-lg border border-slate-800"><span class="text-slate-400 block text-[10px]">VIAS</span><strong id="via-spec-count" class="text-cyan-300">-</strong></div>
+              <div class="bg-[#0f1625] p-2.5 rounded-lg border border-slate-800"><span class="text-slate-400 block text-[10px]">CU BARREL</span><strong class="text-emerald-300">25 &mu;m</strong></div>
+              <div class="bg-[#0f1625] p-2.5 rounded-lg border border-slate-800"><span class="text-slate-400 block text-[10px]">BATH</span><strong class="text-slate-200">1.5 A/dm&sup2; &times; 45m</strong></div>
             </div>
-            <div class="grid grid-cols-2 gap-3 w-full text-xs font-mono">
-              <div class="bg-[#0f1625] p-3 rounded-lg border border-slate-800"><span class="text-slate-400 block text-[10px]">BOARD PROJECT</span><strong id="via-spec-project" class="text-amber-300">-</strong></div>
-              <div class="bg-[#0f1625] p-3 rounded-lg border border-slate-800"><span class="text-slate-400 block text-[10px]">TARGET VIAS</span><strong id="via-spec-count" class="text-cyan-300">-</strong></div>
-              <div class="bg-[#0f1625] p-3 rounded-lg border border-slate-800"><span class="text-slate-400 block text-[10px]">CU BARREL THICKNESS</span><strong class="text-emerald-300">25 &mu;m Nominal</strong></div>
-              <div class="bg-[#0f1625] p-3 rounded-lg border border-slate-800"><span class="text-slate-400 block text-[10px]">PLATING BATH</span><strong class="text-slate-200">1.5 A/dm&sup2; &times; 45 min</strong></div>
-            </div>
-            <ol class="text-xs text-slate-300 space-y-1.5 list-decimal list-inside leading-relaxed">
-              <li>Ultrasonic clean and chemical desmear after Step 1 drilling.</li>
-              <li>Palladium / carbon catalyst seeding inside drilled through-holes.</li>
-              <li>Acid copper electroplating bath (`CuSO4 + H2SO4`) followed by DI rinse &amp; bake dry.</li>
-            </ol>
           </div>
         </div>
 
-        <div class="lg:col-span-4 bg-[#0b101b] p-5 rounded-xl border border-slate-800 flex flex-col justify-between gap-4">
+        <div class="lg:col-span-4 bg-[#0b101b] p-4 rounded-xl border border-slate-800 flex flex-col justify-between gap-4">
           <div>
-            <h3 id="card-step-title" class="font-semibold text-base text-slate-100 mb-3">Composite Circuit Stackup Overview</h3>
-            <div class="space-y-2 mb-4 text-xs font-mono">
-              <div class="flex justify-between gap-2 py-1.5 border-b border-slate-800/80"><span class="text-slate-400">Tool:</span><span id="card-tool" class="text-slate-100 font-semibold text-right">-</span></div>
-              <div class="flex justify-between gap-2 py-1.5 border-b border-slate-800/80"><span class="text-slate-400">Depth:</span><span id="card-depth" class="text-amber-300">-</span></div>
-              <div class="flex justify-between gap-2 py-1.5 border-b border-slate-800/80"><span class="text-slate-400">Feed Rate:</span><span id="card-feed" class="text-sky-400">-</span></div>
-              <div class="flex justify-between gap-2 py-1.5 border-b border-slate-800/80"><span class="text-slate-400">Spindle RPM:</span><span id="card-rpm" class="text-emerald-400">-</span></div>
+            <h3 id="card-step-title" class="font-semibold text-sm text-slate-100 mb-3">Composite Stackup</h3>
+            <div class="space-y-1.5 mb-4 text-xs font-mono">
+              <div class="flex justify-between py-1 border-b border-slate-800/70"><span class="text-slate-400">Tool</span><span id="card-tool" class="text-slate-100 text-right">-</span></div>
+              <div class="flex justify-between py-1 border-b border-slate-800/70"><span class="text-slate-400">Depth</span><span id="card-depth" class="text-amber-300">-</span></div>
+              <div class="flex justify-between py-1 border-b border-slate-800/70"><span class="text-slate-400">Feed</span><span id="card-feed" class="text-sky-400">-</span></div>
+              <div class="flex justify-between py-1 border-b border-slate-800/70"><span class="text-slate-400">RPM</span><span id="card-rpm" class="text-emerald-400">-</span></div>
             </div>
 
             <div id="card-drill-breakdown" class="mb-4">
-              <div class="flex items-center justify-between text-[11px] uppercase tracking-wider text-slate-400 mb-2">
-                <span>Drill Bit Inventory</span>
+              <div class="flex items-center justify-between text-[11px] text-slate-400 mb-1.5">
+                <span>Drills</span>
                 <span id="card-drill-total" class="font-mono text-sky-400"></span>
               </div>
               <div id="card-drill-chips" class="flex flex-wrap gap-1.5"></div>
             </div>
 
-            <h4 class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Process Notes</h4>
-            <p id="card-instructions" class="text-xs text-slate-300 leading-relaxed bg-[#0f1523] p-3 rounded-lg border border-slate-800/90"></p>
-          </div>
-
-          <div class="pt-3 border-t border-slate-800/80 space-y-1.5 text-xs">
-            <div class="flex items-center justify-between">
-              <span class="text-slate-400">Stepping Tag:</span>
-              <span class="text-amber-300 font-mono font-semibold">5mm Shortest Edge</span>
-            </div>
-            <div class="flex items-center justify-between">
-              <span class="text-slate-400">Breakaway Mode:</span>
-              <span class="text-emerald-300 font-mono font-semibold">{svg_escape(breakaway_cfg.label)}</span>
-            </div>
+            <p id="card-instructions" class="text-xs text-slate-300 leading-relaxed bg-[#0f1523] p-2.5 rounded-lg border border-slate-800/80"></p>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- SECTION 2: Individual Manufactured Unit View (One-by-One + Sub-Menu) -->
-    <section id="section-units" class="glass-panel p-5 sm:p-6 rounded-2xl scroll-mt-20">
-      <div class="flex flex-col md:flex-row items-start md:items-center justify-between pb-4 mb-5 border-b border-slate-800/80 gap-4">
-        <div>
-          <h2 class="text-lg sm:text-xl font-bold text-slate-100 flex flex-wrap items-center gap-2">
-            <span>2. Individual Manufactured Unit View</span>
-            <span class="text-[11px] font-mono bg-amber-500/15 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-md">{total_units} Unique Instance Units</span>
-          </h2>
-          <p class="text-xs text-slate-400 mt-1">Select any manufactured unit from the sub-menu to inspect its unique instance ID, Front Side vs Back Side layout, and bed half placement one by one.</p>
+    <!-- TAB 3: UNITS -->
+    <section id="section-units" class="dash-section glass-panel p-4 sm:p-5 rounded-2xl border border-slate-800/90" style="display:none;">
+      <div class="flex flex-wrap items-center justify-between pb-3 mb-4 border-b border-slate-800/80 gap-3">
+        <div class="flex items-center gap-2">
+          <h2 class="text-base font-semibold text-slate-100">Units</h2>
+          <span class="text-[11px] font-mono bg-amber-500/15 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded">{total_units}</span>
         </div>
 
-        <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Unit Batch Filter">
-          <button type="button" onclick="filterUnitSubmenu('ALL')" id="unit-filter-ALL" aria-pressed="true" class="unit-filter-btn px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white shadow-sm cursor-pointer transition">
-            All Units ({total_units})
-          </button>
+        <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Unit Batch Filter">
+          <button type="button" onclick="filterUnitSubmenu('ALL')" id="unit-filter-ALL" aria-pressed="true" class="unit-filter-btn px-3 py-1 text-xs font-semibold rounded-lg bg-blue-600 text-white cursor-pointer transition">All</button>
           {"".join([f'''
-          <button type="button" onclick="filterUnitSubmenu('{p.pcb_id}')" id="unit-filter-{p.pcb_id}" aria-pressed="false" class="unit-filter-btn px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-800/90 text-slate-300 hover:text-white border border-slate-700/70 cursor-pointer transition">
+          <button type="button" onclick="filterUnitSubmenu('{p.pcb_id}')" id="unit-filter-{p.pcb_id}" aria-pressed="false" class="unit-filter-btn px-3 py-1 text-xs font-semibold rounded-lg bg-slate-800/90 text-slate-300 hover:text-white border border-slate-700/70 cursor-pointer transition">
             {svg_escape(p.pcb_id)} ({p.quantity})
           </button>
           ''' for p in unique_projects])}
@@ -6506,174 +6408,162 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        <!-- Unit Selector Sub-Menu -->
         <aside class="lg:col-span-4 bg-[#0b101b] rounded-xl border border-slate-800 p-3 flex flex-col">
-          <div class="flex items-center justify-between px-1 pb-2.5 mb-2 border-b border-slate-800/80">
-            <span class="text-xs font-semibold uppercase tracking-wider text-slate-300">Unit Sub-Menu (Unique IDs)</span>
+          <div class="flex items-center justify-between px-1 pb-2 mb-2 border-b border-slate-800/80">
+            <span class="text-xs font-semibold text-slate-300">Instances</span>
             <span id="unit-submenu-count" class="text-[11px] font-mono text-slate-400"></span>
           </div>
           <div id="unit-submenu-list" class="space-y-1.5 max-h-[520px] overflow-y-auto pr-1"></div>
         </aside>
 
-        <!-- Focused Single-Unit Viewport -->
-        <div class="lg:col-span-8 bg-[#0b101b] rounded-xl border border-slate-800 p-4 sm:p-5 flex flex-col justify-between">
-          <div class="flex flex-wrap items-center justify-between gap-3 pb-3 mb-4 border-b border-slate-800/80">
+        <div class="lg:col-span-8 bg-[#0b101b] rounded-xl border border-slate-800 p-4 flex flex-col justify-between">
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-800/80">
             <div class="flex flex-wrap items-center gap-2">
-              <span id="unit-stage-pcb" class="px-2 py-0.5 text-xs font-mono font-bold rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">-</span>
-              <h3 id="unit-stage-title" class="text-base font-bold font-mono text-slate-100">-</h3>
+              <span id="unit-stage-pcb" class="px-2 py-0.5 text-xs font-mono font-bold rounded bg-amber-500/20 text-amber-300">-</span>
+              <h3 id="unit-stage-title" class="text-sm font-bold font-mono text-slate-100">-</h3>
               <span id="unit-stage-project" class="text-xs text-slate-400">-</span>
-              <span id="unit-stage-side" class="px-2 py-0.5 text-[11px] font-mono rounded-md border">-</span>
-              <span id="unit-stage-half" class="px-2 py-0.5 text-[11px] font-mono rounded-md border">-</span>
+              <span id="unit-stage-side" class="px-2 py-0.5 text-[11px] font-mono rounded border">-</span>
+              <span id="unit-stage-half" class="px-2 py-0.5 text-[11px] font-mono rounded border">-</span>
             </div>
-            <div class="flex flex-wrap items-center gap-2">
-              <div class="inline-flex rounded-lg bg-[#0a0e17] p-1 border border-slate-800" role="group" aria-label="Unit Side Selector">
-                <button type="button" onclick="setUnitSide('front')" id="unit-side-front" aria-pressed="true" class="unit-side-btn px-3 py-1 text-xs font-semibold rounded-md bg-blue-600 text-white cursor-pointer transition">Front Side</button>
-                <button type="button" onclick="setUnitSide('back')" id="unit-side-back" aria-pressed="false" class="unit-side-btn px-3 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white cursor-pointer transition">Back Side</button>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <div class="inline-flex rounded-lg bg-[#0a0e17] p-1 border border-slate-800">
+                <button type="button" onclick="setUnitSide('front')" id="unit-side-front" aria-pressed="true" class="unit-side-btn px-2.5 py-1 text-xs font-semibold rounded-md bg-blue-600 text-white cursor-pointer">Front</button>
+                <button type="button" onclick="setUnitSide('back')" id="unit-side-back" aria-pressed="false" class="unit-side-btn px-2.5 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white cursor-pointer">Back</button>
               </div>
-              <button type="button" onclick="toggleUnitMirror()" id="unit-mirror-btn" aria-pressed="false" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 text-slate-300 border border-slate-700 hover:text-white cursor-pointer transition">Mirror: Disabled</button>
-              <span id="unit-stage-pos" class="text-xs font-mono text-slate-400">-</span>
-              <button type="button" onclick="stepUnit(-1)" class="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer transition">&larr; Prev</button>
-              <button type="button" onclick="stepUnit(1)" class="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-500 text-white cursor-pointer transition">Next &rarr;</button>
+              <button type="button" onclick="toggleUnitMirror()" id="unit-mirror-btn" aria-pressed="false" class="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 text-slate-300 border border-slate-700 cursor-pointer">Mirror: Off</button>
+              <span id="unit-stage-pos" class="text-xs font-mono text-slate-400 px-1">-</span>
+              <button type="button" onclick="stepUnit(-1)" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer" data-tip="Previous Unit" aria-label="Previous Unit">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+              </button>
+              <button type="button" onclick="stepUnit(1)" class="p-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white cursor-pointer" data-tip="Next Unit" aria-label="Next Unit">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
             </div>
           </div>
 
-          <div class="blueprint-stage rounded-xl border border-slate-800/90 p-4 flex justify-center items-center min-h-[360px]">
-            <img id="unit-stage-img" src="{img_prefix}Unit_{all_units[0].unit_id if all_units else ''}_FrontSide.svg" alt="Single Manufactured Unit Preview" class="max-h-[440px] w-auto object-contain rounded">
+          <div class="blueprint-stage rounded-xl border border-slate-800/90 p-4 flex justify-center items-center min-h-[340px]">
+            <img id="unit-stage-img" src="{img_prefix}Unit_{all_units[0].unit_id if all_units else ''}_FrontSide.svg" alt="Single Manufactured Unit Preview" class="max-h-[420px] w-auto object-contain rounded">
           </div>
 
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-slate-800/80 text-xs">
-            <div class="bg-[#0f1523] p-2.5 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Dimensions</span><strong id="unit-spec-size" class="font-mono text-slate-100">-</strong></div>
-            <div class="bg-[#0f1523] p-2.5 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Sheet / Bed Half</span><strong id="unit-spec-sheet" class="font-mono text-slate-100">-</strong></div>
-            <div class="bg-[#0f1523] p-2.5 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Orientation</span><strong id="unit-spec-rot" class="font-mono text-sky-400">-</strong></div>
-            <div class="bg-[#0f1523] p-2.5 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Panel Origin</span><strong id="unit-spec-origin" class="font-mono text-slate-200">-</strong></div>
-            <div class="bg-[#0f1523] p-2.5 rounded-lg border border-slate-800/80 col-span-2"><span class="text-slate-400 block text-[10px] uppercase">Shortest-Edge Tag</span><strong id="unit-spec-tag" class="font-mono text-amber-300">-</strong></div>
-            <div class="bg-[#0f1523] p-2.5 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Seam Retention</span><strong id="unit-spec-seam" class="font-mono text-emerald-400">-</strong></div>
-            <div class="bg-[#0f1523] p-2.5 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Through Drills</span><strong id="unit-spec-drills" class="font-mono text-cyan-400">-</strong></div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-4 text-xs">
+            <div class="bg-[#0f1523] p-2 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Size</span><strong id="unit-spec-size" class="font-mono text-slate-100">-</strong></div>
+            <div class="bg-[#0f1523] p-2 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Sheet / Half</span><strong id="unit-spec-sheet" class="font-mono text-slate-100">-</strong></div>
+            <div class="bg-[#0f1523] p-2 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Rotation</span><strong id="unit-spec-rot" class="font-mono text-sky-400">-</strong></div>
+            <div class="bg-[#0f1523] p-2 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Origin</span><strong id="unit-spec-origin" class="font-mono text-slate-200">-</strong></div>
+            <div class="bg-[#0f1523] p-2 rounded-lg border border-slate-800/80 col-span-2"><span class="text-slate-400 block text-[10px] uppercase">Tag</span><strong id="unit-spec-tag" class="font-mono text-amber-300">-</strong></div>
+            <div class="bg-[#0f1523] p-2 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Tabs</span><strong id="unit-spec-seam" class="font-mono text-emerald-400">-</strong></div>
+            <div class="bg-[#0f1523] p-2 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Drills</span><strong id="unit-spec-drills" class="font-mono text-cyan-400">-</strong></div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- SECTION 3: Dedicated Sheet-Wise Inspection View -->
-    <section id="section-sheets" class="glass-panel p-5 sm:p-6 rounded-2xl scroll-mt-20">
-      <div class="flex flex-col md:flex-row items-start md:items-center justify-between pb-4 mb-5 border-b border-slate-800/80 gap-4">
-        <div>
-          <h2 class="text-lg sm:text-xl font-bold text-slate-100 flex flex-wrap items-center gap-2">
-            <span>3. Sheet-Wise Inspection View</span>
-            <span class="text-[11px] font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-md">{len(sheets)} A4 Sheet(s)</span>
-          </h2>
-          <p class="text-xs text-slate-400 mt-1">Inspect full A4 copper laminate sheets ({sheet_w:.0f}&times;{sheet_h:.0f} mm) with upright left-to-right text on Mirrored Back Side and common single-half bed M4 washer clamps.</p>
+    <!-- TAB 4: SHEETS -->
+    <section id="section-sheets" class="dash-section glass-panel p-4 sm:p-5 rounded-2xl border border-slate-800/90" style="display:none;">
+      <div class="flex flex-wrap items-center justify-between pb-3 mb-4 border-b border-slate-800/80 gap-3">
+        <div class="flex items-center gap-2">
+          <h2 class="text-base font-semibold text-slate-100">A4 Sheets</h2>
+          <span class="text-[11px] font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded">{sheet_w:.0f}&times;{sheet_h:.0f}mm</span>
         </div>
 
-        <div class="inline-flex items-center gap-1 rounded-lg bg-[#0a0e17] p-1 border border-slate-800" role="group" aria-label="Sheet Blueprint Zoom">
-          <span class="text-[11px] text-slate-400 px-2">Zoom:</span>
-          <button type="button" onclick="setSheetZoom('fit')" id="sheet-zoom-fit" aria-pressed="true" class="sheet-zoom-btn px-3 py-1 text-xs font-semibold rounded-md bg-blue-600 text-white cursor-pointer transition">Fit</button>
-          <button type="button" onclick="setSheetZoom('full')" id="sheet-zoom-full" aria-pressed="false" class="sheet-zoom-btn px-3 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white cursor-pointer transition">100%</button>
-          <button type="button" onclick="setSheetZoom('zoom')" id="sheet-zoom-zoom" aria-pressed="false" class="sheet-zoom-btn px-3 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white cursor-pointer transition">145%</button>
+        <div class="inline-flex items-center gap-1 rounded-lg bg-[#0a0e17] p-1 border border-slate-800">
+          <button type="button" onclick="setSheetZoom('fit')" id="sheet-zoom-fit" aria-pressed="true" class="sheet-zoom-btn px-2.5 py-1 text-xs font-semibold rounded-md bg-blue-600 text-white cursor-pointer">Fit</button>
+          <button type="button" onclick="setSheetZoom('full')" id="sheet-zoom-full" aria-pressed="false" class="sheet-zoom-btn px-2.5 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white cursor-pointer">100%</button>
+          <button type="button" onclick="setSheetZoom('zoom')" id="sheet-zoom-zoom" aria-pressed="false" class="sheet-zoom-btn px-2.5 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white cursor-pointer">145%</button>
         </div>
       </div>
 
-      <div class="flex flex-wrap gap-2 mb-5" role="tablist" aria-label="Select Manufacturing Sheet">
+      <div class="flex flex-wrap gap-2 mb-4" role="tablist">
         {"".join(sheet_tabs_html)}
       </div>
 
       {"".join(sheet_panels_html)}
 
-      <div class="mt-5 pt-4 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
-        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded bg-emerald-950 border border-emerald-500"></span><span class="text-slate-300">PCB Substrate</span></div>
-        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded bg-amber-500/40 border border-amber-500"></span><span class="text-slate-300">5mm Tag (Unique Unit ID)</span></div>
-        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-red-500/40 border-2 border-red-400"></span><span class="text-slate-300">Common Bed Washer (No Drill)</span></div>
-        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded bg-emerald-500/60 border border-emerald-400"></span><span class="text-slate-300">2mm Retention Tabs</span></div>
-        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded bg-sky-500/30 border border-sky-400"></span><span class="text-slate-300">Guides &amp; V-Score</span></div>
+      <div class="mt-4 pt-3 border-t border-slate-800/80 flex flex-wrap gap-4 text-[11px] text-slate-400">
+        <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded bg-emerald-950 border border-emerald-500"></span>PCB</span>
+        <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded bg-amber-500/40 border border-amber-500"></span>5mm Tag</span>
+        <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-red-500/40 border border-red-400"></span>Clamp Keep-Out</span>
+        <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded bg-emerald-500/60 border border-emerald-400"></span>Tabs</span>
+        <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded bg-sky-500/30 border border-sky-400"></span>Guides</span>
       </div>
     </section>
 
-    <!-- SECTION 4: CNC Bed & Dual-Sided Milling View -->
-    <section id="section-cncbed" class="glass-panel p-5 sm:p-6 rounded-2xl scroll-mt-20">
-      <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between pb-4 mb-5 border-b border-slate-800/80 gap-4">
-        <div>
-          <h2 class="text-lg sm:text-xl font-bold text-slate-100 flex flex-wrap items-center gap-2">
-            <span>4. CNC Bed &amp; Dual-Sided Milling View</span>
-            <span class="text-[11px] font-mono bg-violet-500/20 text-violet-300 border border-violet-500/40 px-2 py-0.5 rounded-md">Bed {bed_x:.0f}&times;{bed_y:.0f} mm &bull; Dowel Lock: {'ON' if enable_dowel_pin_lock else 'DISABLED'}</span>
-          </h2>
-          <p class="text-xs text-slate-400 mt-1">Inspect each step-by-step tool setup on the CNC bed: fixed single-half M4 bed washer clamps, Z-Zero Limit Switch Danger Zone (X={z_switch_x:.3f}, Y={z_switch_y:.3f} mm), Y-axis shifts, and mirrored Back Side views.</p>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-2">
-          <div class="flex items-center gap-1.5" role="group" aria-label="Bed Sheet Selector">
-            {"".join([f'''
-            <button type="button" onclick="selectBedSheet({i + 1})" id="bed-sheet-{i + 1}" aria-pressed="{'true' if i==0 else 'false'}"
-                    class="bed-sheet-btn px-3 py-1.5 text-xs font-semibold rounded-lg cursor-pointer transition {'bg-blue-600 text-white' if i==0 else 'bg-slate-800/90 text-slate-300'}">
-              Sheet {i + 1:02d}
-            </button>
-            ''' for i in range(len(sheets))])}
-          </div>
+    <!-- TAB 5: CNC BED -->
+    <section id="section-cncbed" class="dash-section glass-panel p-4 sm:p-5 rounded-2xl border border-slate-800/90" style="display:none;">
+      <div class="flex flex-wrap items-center justify-between pb-3 mb-4 border-b border-slate-800/80 gap-3">
+        <h2 class="text-base font-semibold text-slate-100">CNC Bed Operations</h2>
+        <div class="flex items-center gap-1.5">
+          {"".join([f'''
+          <button type="button" onclick="selectBedSheet({i + 1})" id="bed-sheet-{i + 1}" aria-pressed="{'true' if i==0 else 'false'}"
+                  class="bed-sheet-btn px-2.5 py-1 text-xs font-semibold rounded-lg cursor-pointer transition {'bg-blue-600 text-white' if i==0 else 'bg-slate-800/90 text-slate-300'}">
+            S{i + 1:02d}
+          </button>
+          ''' for i in range(len(sheets))])}
         </div>
       </div>
 
-      <!-- Filter Strip: Side (Front vs Back Mirrored) + Half (Front Bed Half vs Back Bed Half) -->
-      <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
         <div class="flex flex-wrap items-center gap-2">
-          <div class="inline-flex rounded-lg bg-[#0a0e17] p-1 border border-slate-800" role="group" aria-label="Board Side Filter">
-            <button type="button" onclick="setBedSideFilter('ALL')" id="bed-side-ALL" aria-pressed="true" class="bed-side-btn px-3 py-1 text-xs font-semibold rounded-md bg-blue-600 text-white cursor-pointer transition">All Sides</button>
-            <button type="button" onclick="setBedSideFilter('top')" id="bed-side-top" aria-pressed="false" class="bed-side-btn px-3 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white cursor-pointer transition">Front Side</button>
-            <button type="button" onclick="setBedSideFilter('bottom')" id="bed-side-bottom" aria-pressed="false" class="bed-side-btn px-3 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white cursor-pointer transition">Back Side (Mirrored)</button>
+          <div class="inline-flex rounded-lg bg-[#0a0e17] p-1 border border-slate-800">
+            <button type="button" onclick="setBedSideFilter('ALL')" id="bed-side-ALL" aria-pressed="true" class="bed-side-btn px-2.5 py-1 text-xs font-semibold rounded-md bg-blue-600 text-white cursor-pointer">All</button>
+            <button type="button" onclick="setBedSideFilter('top')" id="bed-side-top" aria-pressed="false" class="bed-side-btn px-2.5 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white cursor-pointer">Front</button>
+            <button type="button" onclick="setBedSideFilter('bottom')" id="bed-side-bottom" aria-pressed="false" class="bed-side-btn px-2.5 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white cursor-pointer">Back (Flip)</button>
           </div>
-
-          <div class="inline-flex rounded-lg bg-[#0a0e17] p-1 border border-slate-800" role="group" aria-label="Sheet Half Filter">
-            <button type="button" onclick="setBedHalfFilter('ALL')" id="bed-half-ALL" aria-pressed="true" class="bed-half-btn px-3 py-1 text-xs font-semibold rounded-md bg-emerald-600 text-white cursor-pointer transition">All Bed Halves</button>
-            <button type="button" onclick="setBedHalfFilter('front')" id="bed-half-front" aria-pressed="false" class="bed-half-btn px-3 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white cursor-pointer transition">Front Bed Half</button>
-            <button type="button" onclick="setBedHalfFilter('back')" id="bed-half-back" aria-pressed="false" class="bed-half-btn px-3 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white cursor-pointer transition">Back Bed Half (Y-Shifted)</button>
+          <div class="inline-flex rounded-lg bg-[#0a0e17] p-1 border border-slate-800">
+            <button type="button" onclick="setBedHalfFilter('ALL')" id="bed-half-ALL" aria-pressed="true" class="bed-half-btn px-2.5 py-1 text-xs font-semibold rounded-md bg-emerald-600 text-white cursor-pointer">All Halves</button>
+            <button type="button" onclick="setBedHalfFilter('front')" id="bed-half-front" aria-pressed="false" class="bed-half-btn px-2.5 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white cursor-pointer">Front Half</button>
+            <button type="button" onclick="setBedHalfFilter('back')" id="bed-half-back" aria-pressed="false" class="bed-half-btn px-2.5 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white cursor-pointer">Back Half</button>
           </div>
         </div>
 
-        <div class="flex items-center gap-2">
-          <span id="bed-op-counter" class="text-xs font-mono text-slate-400">-</span>
-          <button type="button" onclick="stepBedOp(-1)" class="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer transition">&larr; Prev Op</button>
-          <button type="button" onclick="stepBedOp(1)" class="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-500 text-white cursor-pointer transition">Next Op &rarr;</button>
+        <div class="flex items-center gap-1.5">
+          <span id="bed-op-counter" class="text-xs font-mono text-slate-400 px-1">-</span>
+          <button type="button" onclick="stepBedOp(-1)" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer" data-tip="Previous Op" aria-label="Previous Operation">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <button type="button" onclick="stepBedOp(1)" class="p-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white cursor-pointer" data-tip="Next Op" aria-label="Next Operation">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
         </div>
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        <!-- Chronological Tool Operation Sub-Menu -->
         <aside class="lg:col-span-4 bg-[#0b101b] rounded-xl border border-slate-800 p-3 flex flex-col">
-          <div class="flex items-center justify-between px-1 pb-2.5 mb-2 border-b border-slate-800/80">
-            <span class="text-xs font-semibold uppercase tracking-wider text-slate-300">CNC Operation Timeline</span>
+          <div class="flex items-center justify-between px-1 pb-2 mb-2 border-b border-slate-800/80">
+            <span class="text-xs font-semibold text-slate-300">Timeline</span>
             <span id="bed-ops-count" class="text-[11px] font-mono text-slate-400"></span>
           </div>
-          <div id="bed-ops-submenu" class="space-y-1.5 max-h-[560px] overflow-y-auto pr-1"></div>
+          <div id="bed-ops-submenu" class="space-y-1.5 max-h-[540px] overflow-y-auto pr-1"></div>
         </aside>
 
-        <!-- Bed Toolpath Simulation Stage -->
-        <div class="lg:col-span-8 bg-[#0b101b] rounded-xl border border-slate-800 p-4 sm:p-5 flex flex-col justify-between gap-4">
-          <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800/80">
+        <div class="lg:col-span-8 bg-[#0b101b] rounded-xl border border-slate-800 p-4 flex flex-col justify-between gap-4">
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-800/80">
             <div>
-              <h3 id="bed-op-title" class="text-sm sm:text-base font-bold text-slate-100">-</h3>
+              <h3 id="bed-op-title" class="text-sm font-bold text-slate-100">-</h3>
               <p id="bed-op-action" class="text-xs font-mono text-amber-300 mt-0.5">-</p>
             </div>
-            <span id="bed-mirror-pill" class="px-2.5 py-1 text-[11px] font-mono rounded-md">-</span>
+            <span id="bed-mirror-pill" class="px-2 py-0.5 text-[11px] font-mono rounded">-</span>
           </div>
 
-          <div class="blueprint-stage rounded-xl border border-slate-800/90 p-3 flex justify-center items-center min-h-[380px]">
-            <img id="bed-op-img" src="" alt="CNC Bed Operation Toolpath View" class="max-h-[520px] w-full object-contain rounded">
+          <div class="blueprint-stage rounded-xl border border-slate-800/90 p-3 flex justify-center items-center min-h-[360px]">
+            <img id="bed-op-img" src="" alt="CNC Bed Operation Toolpath View" class="max-h-[500px] w-full object-contain rounded">
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-            <div class="bg-[#0f1523] p-2.5 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Tool Bit</span><strong id="bed-spec-tool" class="font-mono text-slate-100">-</strong></div>
-            <div class="bg-[#0f1523] p-2.5 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Cut Parameters</span><strong id="bed-spec-depth" class="font-mono text-amber-300">-</strong></div>
-            <div class="bg-[#0f1523] p-2.5 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Bed Y-Shift Datum</span><strong id="bed-spec-yshift" class="font-mono text-emerald-400">-</strong></div>
-            <div class="bg-[#0f1523] p-2.5 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Bed Bounds (&le;{bed_x:.0f}&times;{bed_y:.0f}mm)</span><strong id="bed-spec-bounds" class="font-mono text-sky-400">-</strong></div>
-            <div class="bg-[#0f1523] p-2.5 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Operation Load</span><strong id="bed-spec-stats" class="font-mono text-slate-200">-</strong></div>
-            <div class="bg-[#0f1523] p-2.5 rounded-lg border border-slate-800/80 flex items-center justify-between">
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+            <div class="bg-[#0f1523] p-2 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Tool</span><strong id="bed-spec-tool" class="font-mono text-slate-100">-</strong></div>
+            <div class="bg-[#0f1523] p-2 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Cut</span><strong id="bed-spec-depth" class="font-mono text-amber-300">-</strong></div>
+            <div class="bg-[#0f1523] p-2 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Y-Shift</span><strong id="bed-spec-yshift" class="font-mono text-emerald-400">-</strong></div>
+            <div class="bg-[#0f1523] p-2 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Bounds</span><strong id="bed-spec-bounds" class="font-mono text-sky-400">-</strong></div>
+            <div class="bg-[#0f1523] p-2 rounded-lg border border-slate-800/80"><span class="text-slate-400 block text-[10px] uppercase">Load</span><strong id="bed-spec-stats" class="font-mono text-slate-200">-</strong></div>
+            <div class="bg-[#0f1523] p-2 rounded-lg border border-slate-800/80 flex items-center justify-between gap-2">
               <div class="overflow-hidden">
-                <span class="text-slate-400 block text-[10px] uppercase">G-Code File</span>
+                <span class="text-slate-400 block text-[10px] uppercase">File</span>
                 <strong id="bed-spec-gcode" class="font-mono text-slate-200 truncate block">-</strong>
               </div>
               <button type="button" onclick="sendExistingGCode(document.getElementById('bed-spec-gcode').innerText)"
-                      title="Upload this G-code file directly to FluidNC"
-                      class="ml-2 px-2 py-1 rounded-md bg-blue-600/90 hover:bg-blue-500 text-white font-medium text-[10px] flex items-center gap-1 shrink-0 cursor-pointer shadow-sm transition">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                <span>To CNC</span>
+                      data-tip="Upload to FluidNC" aria-label="Upload to FluidNC"
+                      class="p-1.5 rounded-md bg-blue-600 hover:bg-blue-500 text-white shrink-0 cursor-pointer transition">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
               </button>
             </div>
           </div>
@@ -6681,38 +6571,32 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       </div>
     </section>
 
-    <!-- SECTION 5: Interactive Fabrication Setup Checklist -->
-    <section id="section-checklist" class="glass-panel p-5 sm:p-6 rounded-2xl scroll-mt-20">
-      <div class="flex flex-wrap items-center justify-between pb-4 mb-4 border-b border-slate-800/80 gap-3">
-        <div>
-          <h2 class="text-lg sm:text-xl font-bold text-slate-100">5. Fabrication Setup Checklist</h2>
-          <p class="text-xs text-slate-400 mt-0.5">Sequential shop-floor checklist: V-Bit sheet data &amp; reference spots &rarr; step-by-step drill tool changes with Limit Switch Z-Zero (X={z_switch_x:.3f}, Y={z_switch_y:.3f} mm Danger Zone) &rarr; Steps 2..7.</p>
+    <!-- TAB 6: CHECKLIST -->
+    <section id="section-checklist" class="dash-section glass-panel p-4 sm:p-5 rounded-2xl border border-slate-800/90" style="display:none;">
+      <div class="flex flex-wrap items-center justify-between pb-3 mb-4 border-b border-slate-800/80 gap-3">
+        <div class="flex items-center gap-3">
+          <h2 class="text-base font-semibold text-slate-100">Setup Checklist</h2>
+          <span id="chk-progress-text" class="text-xs text-sky-400 font-mono font-semibold">0 / {len(chk_items)} (0%)</span>
         </div>
-        <button type="button" onclick="resetChecklist()" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 cursor-pointer transition">
-          Reset Ticks
+        <button type="button" onclick="resetChecklist()" class="px-2.5 py-1 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 cursor-pointer transition" data-tip="Clear all ticks">
+          Reset
         </button>
       </div>
 
-      <div class="flex flex-wrap gap-1.5 mb-4" role="group" aria-label="Checklist Categories">
+      <div class="flex flex-wrap gap-1.5 mb-3" role="group">
         {"".join([f'''
         <button type="button" data-cat="{svg_escape(c)}" onclick="filterChecklistCat('{svg_escape(c)}')" aria-pressed="{'true' if idx==0 else 'false'}"
-                class="chk-cat-btn px-3 py-1 text-xs font-semibold rounded-lg cursor-pointer transition {'bg-blue-600 text-white' if idx==0 else 'bg-slate-800/90 text-slate-300 hover:text-white border border-slate-700/70'}">
-          {'All Categories' if c == 'ALL' else svg_escape(c)}
+                class="chk-cat-btn px-2.5 py-1 text-xs font-medium rounded-lg cursor-pointer transition {'bg-blue-600 text-white' if idx==0 else 'bg-slate-800/90 text-slate-300 hover:text-white border border-slate-700/70'}">
+          {'All' if c == 'ALL' else svg_escape(c)}
         </button>
         ''' for idx, c in enumerate(chk_categories)])}
       </div>
 
-      <div class="mb-4">
-        <div class="flex justify-between text-xs text-slate-400 mb-1.5">
-          <span>Setup Progress</span>
-          <span id="chk-progress-text" class="text-sky-400 font-mono font-semibold">0 / {len(chk_items)} Completed (0%)</span>
-        </div>
-        <div class="w-full bg-slate-800/90 h-2.5 rounded-full overflow-hidden">
-          <div id="chk-progress-bar" class="bg-gradient-to-r from-blue-500 to-emerald-400 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
-        </div>
+      <div class="w-full bg-slate-800/90 h-1.5 rounded-full overflow-hidden mb-4">
+        <div id="chk-progress-bar" class="bg-gradient-to-r from-blue-500 to-emerald-400 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[560px] overflow-y-auto pr-1">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-[560px] overflow-y-auto pr-1">
         {"".join(chk_rows_html)}
       </div>
     </section>
@@ -6721,78 +6605,68 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
   <!-- Interactive G-Code Toolpath Viewer Modal -->
   <div id="gcode-viewer-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6">
     <div class="bg-[#0d111a] border border-slate-700/80 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden">
-      <!-- Modal Header -->
-      <div class="px-4 py-3 bg-slate-900/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+      <div class="px-4 py-2.5 bg-slate-900/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
         <div class="min-w-0">
-          <div class="flex items-center gap-2">
-            <span class="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-mono text-[10px] font-bold">G-CODE VIEWER</span>
-            <h3 id="gv-filename" class="font-mono text-sm font-bold text-slate-100 truncate">file.gcode</h3>
-          </div>
-          <div id="gv-filepath" class="text-[11px] font-mono text-slate-400 truncate mt-0.5"></div>
+          <h3 id="gv-filename" class="font-mono text-sm font-bold text-slate-100 truncate">file.gcode</h3>
+          <div id="gv-filepath" class="text-[11px] font-mono text-slate-400 truncate"></div>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
+        <div class="flex flex-wrap items-center gap-1.5">
           <div class="inline-flex rounded-lg border border-slate-700 overflow-hidden">
-            <button type="button" id="gv-mode-2d" onclick="setGCodeViewMode('2d')" class="px-2.5 py-1 bg-cyan-600 text-white font-semibold text-xs cursor-pointer">2D View</button>
-            <button type="button" id="gv-mode-3d" onclick="setGCodeViewMode('3d')" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:text-white font-semibold text-xs cursor-pointer">3D View</button>
+            <button type="button" id="gv-mode-2d" onclick="setGCodeViewMode('2d')" class="px-2.5 py-1 bg-cyan-600 text-white font-semibold text-xs cursor-pointer">2D</button>
+            <button type="button" id="gv-mode-3d" onclick="setGCodeViewMode('3d')" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:text-white font-semibold text-xs cursor-pointer">3D</button>
           </div>
           <div id="gv-3d-presets" class="hidden inline-flex items-center gap-1">
             <button type="button" onclick="setGCode3DPreset('iso')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] cursor-pointer">Iso</button>
             <button type="button" onclick="setGCode3DPreset('front')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] cursor-pointer">Front</button>
             <button type="button" onclick="setGCode3DPreset('side')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] cursor-pointer">Side</button>
           </div>
-          <button type="button" onclick="copyGCodePath(gcodeViewerState.filename, this)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium cursor-pointer">📋 Copy Path</button>
-          <button type="button" onclick="fitGCodeView()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium cursor-pointer">⛶ Fit Bed</button>
-          <button type="button" onclick="closeGCodeViewer()" class="px-2.5 py-1 rounded-lg bg-red-600/80 hover:bg-red-500 text-white text-xs font-semibold cursor-pointer">✕ Close</button>
+          <button type="button" onclick="copyGCodePath(gcodeViewerState.filename, this)" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer" data-tip="Copy Path" aria-label="Copy Path">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+          <button type="button" onclick="fitGCodeView()" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer" data-tip="Fit Bed" aria-label="Fit Bed">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+          </button>
+          <button type="button" onclick="closeGCodeViewer()" class="p-1.5 rounded-lg bg-red-600/80 hover:bg-red-500 text-white cursor-pointer" data-tip="Close" aria-label="Close Viewer">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
         </div>
       </div>
 
-      <!-- Fallback Banner if opened via file:// CORS -->
-      <div id="gv-file-fallback" class="hidden px-4 py-2.5 bg-amber-950/60 border-b border-amber-500/40 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-200">
-        <span>Browser <code class="font-mono">file://</code> security blocked auto-loading. Run <code class="font-mono bg-black/40 px-1.5 py-0.5 rounded">python3 gcode_paralel_manufacture.py --serve</code> for 1-click loading, or select the file directly:</span>
-        <label class="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold cursor-pointer">
-          📂 Load Local .gcode File
+      <div id="gv-file-fallback" class="hidden px-4 py-2 bg-amber-950/60 border-b border-amber-500/40 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-200">
+        <span>Run <code class="font-mono">--serve</code> for auto-loading or select file:</span>
+        <label class="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold cursor-pointer">
+          Load .gcode
           <input type="file" accept=".gcode,.nc,.g,.ngc,.tap,.cnc" class="hidden" onchange="handleLocalGCodeFileSelect(this)">
         </label>
       </div>
 
-      <!-- Stats & Simulation Speed Bar -->
       <div class="px-4 py-2 bg-slate-900/60 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
         <div id="gv-stats" class="flex flex-wrap items-center gap-1.5 font-mono text-[11px]"></div>
         <div class="flex flex-wrap items-center gap-2.5 text-slate-300">
-          <label class="inline-flex items-center gap-1 cursor-pointer">
-            <input type="checkbox" checked onchange="toggleGCodeBed(this)" class="accent-indigo-400">
-            <span class="text-indigo-300">Bed</span>
-          </label>
-          <label class="inline-flex items-center gap-1 cursor-pointer">
-            <input type="checkbox" checked onchange="toggleGCodeRapids(this)" class="accent-sky-400">
-            <span class="text-sky-300">Rapids</span>
-          </label>
-          <label class="inline-flex items-center gap-1 cursor-pointer">
-            <input type="checkbox" checked onchange="toggleGCodeDrills(this)" class="accent-amber-400">
-            <span class="text-amber-300">Plunges</span>
-          </label>
+          <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" checked onchange="toggleGCodeBed(this)" class="accent-indigo-400"><span class="text-indigo-300">Bed</span></label>
+          <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" checked onchange="toggleGCodeRapids(this)" class="accent-sky-400"><span class="text-sky-300">Rapids</span></label>
+          <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" checked onchange="toggleGCodeDrills(this)" class="accent-amber-400"><span class="text-amber-300">Plunges</span></label>
           <div class="flex items-center gap-1 border-l border-slate-700 pl-2.5">
-            <span class="text-[11px] text-slate-400 mr-0.5">Speed:</span>
-            <button type="button" data-pct="25" onclick="setGCodeSpeedPct(25)" class="gv-speed-btn px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[11px] cursor-pointer">25%</button>
-            <button type="button" data-pct="50" onclick="setGCodeSpeedPct(50)" class="gv-speed-btn px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[11px] cursor-pointer">50%</button>
-            <button type="button" data-pct="100" onclick="setGCodeSpeedPct(100)" class="gv-speed-btn px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-bold text-[11px] cursor-pointer">100%</button>
-            <button type="button" data-pct="200" onclick="setGCodeSpeedPct(200)" class="gv-speed-btn px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[11px] cursor-pointer">200%</button>
-            <button type="button" data-pct="500" onclick="setGCodeSpeedPct(500)" class="gv-speed-btn px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[11px] cursor-pointer">500%</button>
-            <button type="button" data-pct="1000" onclick="setGCodeSpeedPct(1000)" class="gv-speed-btn px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[11px] cursor-pointer">1000%</button>
-            <button type="button" data-pct="2500" onclick="setGCodeSpeedPct(2500)" class="gv-speed-btn px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[11px] cursor-pointer">2500%</button>
+            <button type="button" data-pct="25" onclick="setGCodeSpeedPct(25)" class="gv-speed-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[11px] cursor-pointer">25%</button>
+            <button type="button" data-pct="50" onclick="setGCodeSpeedPct(50)" class="gv-speed-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[11px] cursor-pointer">50%</button>
+            <button type="button" data-pct="100" onclick="setGCodeSpeedPct(100)" class="gv-speed-btn px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-bold text-[11px] cursor-pointer">100%</button>
+            <button type="button" data-pct="200" onclick="setGCodeSpeedPct(200)" class="gv-speed-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[11px] cursor-pointer">200%</button>
+            <button type="button" data-pct="500" onclick="setGCodeSpeedPct(500)" class="gv-speed-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[11px] cursor-pointer">500%</button>
+            <button type="button" data-pct="1000" onclick="setGCodeSpeedPct(1000)" class="gv-speed-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[11px] cursor-pointer">1000%</button>
+            <button type="button" data-pct="2500" onclick="setGCodeSpeedPct(2500)" class="gv-speed-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[11px] cursor-pointer">2500%</button>
           </div>
-          <button type="button" id="gv-play-btn" onclick="toggleGCodePlayback()" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold cursor-pointer">▶ Simulate</button>
-          <button type="button" onclick="resetGCodeSimulation()" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium cursor-pointer" title="Reset Simulation to Start">⏹ Reset</button>
+          <button type="button" id="gv-play-btn" onclick="toggleGCodePlayback()" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold cursor-pointer">Simulate</button>
+          <button type="button" onclick="resetGCodeSimulation()" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer" data-tip="Reset Simulation" aria-label="Reset Simulation">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+          </button>
         </div>
       </div>
 
-      <!-- Main Viewer Area -->
       <div class="flex-1 grid grid-cols-1 lg:grid-cols-3 min-h-[380px] overflow-hidden">
         <div class="lg:col-span-2 relative bg-[#070a10] flex flex-col">
           <div id="gv-sim-hud" class="px-3 py-1 bg-slate-900/90 border-b border-slate-800/80 flex flex-wrap items-center gap-3 font-mono text-[11px] text-slate-300"></div>
           <canvas id="gv-canvas" class="w-full h-full min-h-[350px] cursor-grab active:cursor-grabbing"></canvas>
           <div class="px-4 py-2 bg-slate-900/80 border-t border-slate-800 flex items-center gap-3">
-            <span class="text-[11px] font-mono text-slate-400 shrink-0">Scrub:</span>
             <input type="range" id="gv-progress-slider" min="0" max="100" value="100" oninput="scrubGCodeProgress(this.value)" class="w-full accent-cyan-400 cursor-pointer">
           </div>
         </div>
@@ -6800,10 +6674,6 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       </div>
     </div>
   </div>
-
-  <footer class="max-w-7xl mx-auto px-6 py-8 border-t border-slate-800/70 text-center text-xs text-slate-500">
-    <p>A4 Copper Board CNC Panelization &amp; Dual-Sided CAM Pipeline &bull; FluidNC Integration</p>
-  </footer>
 </body>
 </html>
 """
