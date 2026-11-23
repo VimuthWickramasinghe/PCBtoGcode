@@ -15,6 +15,7 @@
     "enabled": true,
     "x_mm": 272.001,
     "y_mm": 135.002,
+    "height_above_bed_mm": 5.5,
     "width_mm": 7.0,
     "length_mm": 20.0,
     "danger_margin_mm": 6.0,
@@ -50,8 +51,8 @@
       "description": "Common bed locking screw with M4 washer clamping over PCB margin (no through-PCB anchor hole)"
     },
     {
-      "id": "lock_bed_rear_left",
-      "name": "Rear-Left Common Edge Washer Clamp",
+      "id": "lock_bed_rear_right",
+      "name": "Rear-right Common Edge Washer Clamp",
       "shape": "circle",
       "x": 205.0,
       "y": 160.0,
@@ -64,10 +65,10 @@
       "description": "Common bed locking screw with M4 washer clamping over PCB margin (no through-PCB anchor hole)"
     },
     {
-      "id": "lock_bed_rear_right",
-      "name": "Rear-Right Common Edge Washer Clamp",
+      "id": "lock_bed_rear_left",
+      "name": "Rear-left Common Edge Washer Clamp",
       "shape": "circle",
-      "x": -5,
+      "x": -3,
       "y": 160.0,
       "diameter": 30.0,
       "holder_gap": 3.0,

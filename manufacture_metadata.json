@@ -29,6 +29,7 @@
       "length_mm": 20.0,
       "danger_margin_mm": 6.0,
       "label": "Z-ZERO LIMIT SWITCH (DANGER ZONE)",
+      "height_above_bed_mm": 5.5,
       "description": "Fixed bed tool-length / Z-zero limit switch danger zone"
     },
     "zero_gap_tight_packing": true,
@@ -193,9 +194,9 @@
           "depth_mm": -0.04,
           "feed_mm_min": 250.0,
           "spindle_rpm": 10000,
-          "stats_label": "42 strokes, 2 pins",
+          "stats_label": "43 strokes, 2 pins",
           "bounds_x": [
-            13.5,
+            14.18,
             186.5
           ],
           "bounds_y": [
@@ -643,14 +644,14 @@
           "depth_mm": -0.04,
           "feed_mm_min": 300.0,
           "spindle_rpm": 10000,
-          "stats_label": "291 toolpaths",
+          "stats_label": "309 toolpaths",
           "bounds_x": [
-            19.0,
-            179.35
+            18.0,
+            179.75
           ],
           "bounds_y": [
-            9.5,
-            141.56
+            8.5,
+            145.45
           ]
         },
         {
@@ -673,14 +674,14 @@
           "depth_mm": -0.04,
           "feed_mm_min": 300.0,
           "spindle_rpm": 10000,
-          "stats_label": "180 toolpaths",
+          "stats_label": "198 toolpaths",
           "bounds_x": [
-            20.65,
-            175.6
+            20.25,
+            182.0
           ],
           "bounds_y": [
-            9.9,
-            142.48
+            8.5,
+            145.45
           ]
         },
         {
@@ -703,14 +704,14 @@
           "depth_mm": -0.06,
           "feed_mm_min": 300.0,
           "spindle_rpm": 10000,
-          "stats_label": "165 toolpaths",
+          "stats_label": "183 toolpaths",
           "bounds_x": [
-            27.04,
-            173.99
+            18.0,
+            179.75
           ],
           "bounds_y": [
-            15.4,
-            140.22
+            8.5,
+            145.45
           ]
         },
         {
@@ -733,14 +734,14 @@
           "depth_mm": -0.06,
           "feed_mm_min": 300.0,
           "spindle_rpm": 10000,
-          "stats_label": "161 toolpaths",
+          "stats_label": "179 toolpaths",
           "bounds_x": [
-            26.01,
-            172.96
+            20.25,
+            182.0
           ],
           "bounds_y": [
-            15.4,
-            140.22
+            8.5,
+            145.45
           ]
         },
         {

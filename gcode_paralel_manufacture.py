@@ -2554,13 +2554,17 @@ class BedSvgBuilder:
 
 class GcodeBuilder:
     """Standardizes CNC G-code formatting with FluidNC compatibility."""
-    def __init__(self, title, feed=300.0, plunge=100.0, cut_z=-0.04, safe_z=5.0, spindle_rpm=10000):
+    def __init__(self, title, feed=300.0, plunge=100.0, cut_z=-0.04, safe_z=5.0, spindle_rpm=10000,
+                 park_x=275.0, park_y=0.0, machine_safe_z=10.0):
         self.title = title
         self.feed = feed
         self.plunge = plunge
         self.cut_z = cut_z
         self.safe_z = safe_z
         self.spindle_rpm = spindle_rpm
+        self.park_x = float(park_x)
+        self.park_y = float(park_y)
+        self.machine_safe_z = max(10.0, float(machine_safe_z))
         self.lines = []
 
     def header(self, comments=None):
@@ -2571,7 +2575,7 @@ class GcodeBuilder:
                 self.lines.append(f"; {c}")
         self.lines.append("G21 ; Millimeter units")
         self.lines.append("G90 ; Absolute coordinates")
-        self.lines.append(f"G0 Z{self.safe_z:.3f} ; Move to safe Z height")
+        self.lines.append(f"G53 G0 Z{self.machine_safe_z:.3f} ; Pull Z to machine top safe Z (10mm) before moving")
 
     def verify_origin_and_prompt(self, verify_x: float = 20.0, verify_y: float = 20.0,
                                  verify_z: float = 2.0, enabled: bool = True):
@@ -2580,14 +2584,14 @@ class GcodeBuilder:
             return
         self.lines.append("; --- Startup Datum Verification & Continue/Abort Prompt ---")
         self.lines.append("M5 ; Ensure spindle is off during verification")
-        self.lines.append(f"G0 Z{self.safe_z:.3f} ; Safe Z before verification move")
+        self.lines.append(f"G53 G0 Z{self.machine_safe_z:.3f} ; Pull Z to machine top safe Z (10mm) before verification move")
         self.lines.append(f"G0 X{verify_x:.3f} Y{verify_y:.3f} ; Move to known verification point")
         self.lines.append(f"G0 Z{verify_z:.3f} ; Lower to verification check height")
         self.lines.append(
             f"(MSG, Confirm spindle is off and tool is at verify point X{verify_x:.3f} Y{verify_y:.3f} Z{verify_z:.3f} - Continue or Abort)"
         )
         self.lines.append(f"M0 (Confirm spindle is off and tool is at verify point X{verify_x:.3f} Y{verify_y:.3f} Z{verify_z:.3f})")
-        self.lines.append(f"G0 Z{self.safe_z:.3f} ; Retract to safe Z before spindle start")
+        self.lines.append(f"G53 G0 Z{self.machine_safe_z:.3f} ; Pull Z to machine top safe Z (10mm) before spindle start")
 
     def spindle_start(self):
         self.lines.append(f"M3 S{self.spindle_rpm} ; Start spindle clockwise")
@@ -2614,9 +2618,10 @@ class GcodeBuilder:
         self.lines.append(f"G0 Z{self.safe_z:.3f}")
 
     def footer(self):
-        self.lines.append(f"G0 Z{self.safe_z:.3f}")
+        self.lines.append(f"G53 G0 Z{self.machine_safe_z:.3f} ; Pull Z to machine top safe Z (10mm) before parking")
         self.lines.append("M5 ; Stop spindle")
-        self.lines.append("G0 X0.000 Y0.000 ; Return to datum")
+        self.lines.append("S0 ; Zero spindle RPM")
+        self.lines.append(f"G53 G0 X{self.park_x:.3f} Y{self.park_y:.3f} ; Park at X max, Y0 tool change position")
         self.lines.append("M2 ; End program")
 
     def get_text(self):
@@ -2682,6 +2687,94 @@ def _split_polyline_by_y(poly: List[Tuple[float, float]], y_split: float) -> Tup
     return front_segs, back_segs
 
 
+def _merge_1d_intervals(intervals: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+    """Merge overlapping/adjacent 1D intervals for single-pass deduplicated perimeter cutting."""
+    sorted_iv = sorted((min(a, b), max(a, b)) for (a, b) in intervals if abs(b - a) > 0.1)
+    merged: List[Tuple[float, float]] = []
+    for a, b in sorted_iv:
+        if not merged or a > merged[-1][1] + 0.05:
+            merged.append((a, b))
+        else:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+    return merged
+
+
+def _collect_unit_perimeter_axes(
+    units: List[PlacedUnit], include_seams: bool = False
+) -> Tuple[Dict[float, List[Tuple[float, float]]], Dict[float, List[Tuple[float, float]]]]:
+    """Collect deduplicatable horizontal and vertical edge segments across unit PCB & tag boxes."""
+    horiz_edges: Dict[float, List[Tuple[float, float]]] = {}
+    vert_edges: Dict[float, List[Tuple[float, float]]] = {}
+
+    def add_h(y_val: float, x0: float, x1: float):
+        a, b = min(x0, x1), max(x0, x1)
+        if b - a > 0.1:
+            horiz_edges.setdefault(round(y_val, 3), []).append((a, b))
+
+    def add_v(x_val: float, y0: float, y1: float):
+        a, b = min(y0, y1), max(y0, y1)
+        if b - a > 0.1:
+            vert_edges.setdefault(round(x_val, 3), []).append((a, b))
+
+    for u in units:
+        px0, py0, px1, py1 = u.pcb_box.bounds
+        tx0, ty0, tx1, ty1 = u.tab_box.bounds
+        if u.attach_side == "bottom":
+            add_h(py1, px0, px1)
+            add_v(px0, py0, py1)
+            add_v(px1, py0, py1)
+            if include_seams:
+                add_h(py0, px0, px1)
+            add_h(ty0, tx0, tx1)
+            add_v(tx0, ty0, ty1)
+            add_v(tx1, ty0, ty1)
+        else:
+            add_h(py0, px0, px1)
+            add_h(py1, px0, px1)
+            add_v(px1, py0, py1)
+            if include_seams:
+                add_v(px0, py0, py1)
+            add_v(tx0, ty0, ty1)
+            add_h(ty0, tx0, tx1)
+            add_h(ty1, tx0, tx1)
+    return horiz_edges, vert_edges
+
+
+def _collect_pcb_cut_lines(units: List[PlacedUnit], layer_cache: Optional[LayerGeometryCache] = None) -> List[List[Tuple[float, float]]]:
+    """
+    Collect continuous PCB perimeter/seam cut lines (plus any internal outline cutouts)
+    in sheet coordinates for shallow isolation/clearing during Copper & Solder Mask passes.
+    """
+    if not units:
+        return []
+    horiz_edges, vert_edges = _collect_unit_perimeter_axes(units, include_seams=True)
+    segs: List[List[Tuple[float, float]]] = []
+    for yk, ivs in sorted(horiz_edges.items()):
+        for a, b in _merge_1d_intervals(ivs):
+            segs.append([(a, yk), (b, yk)])
+    for xk, ivs in sorted(vert_edges.items()):
+        for a, b in _merge_1d_intervals(ivs):
+            segs.append([(xk, a), (xk, b)])
+
+    if layer_cache is not None:
+        for u in units:
+            outline = layer_cache.get_project_layers(u.project).get("outline")
+            if outline is None or outline.is_empty:
+                continue
+            geoms = list(outline.geoms) if hasattr(outline, "geoms") else [outline]
+            for g in geoms:
+                if g.geom_type == "Polygon":
+                    for interior in g.interiors:
+                        pts = [u.to_sheet_coords(px, py) for (px, py) in interior.coords]
+                        if len(pts) >= 2:
+                            segs.append(pts)
+                elif g.geom_type == "LineString":
+                    pts = [u.to_sheet_coords(px, py) for (px, py) in g.coords]
+                    if len(pts) >= 2:
+                        segs.append(pts)
+    return segs
+
+
 def _deduplicate_and_tab_perimeter_edges(half_units: List[PlacedUnit], y_off: float, bridge_tab_len: float = 3.0) -> List[List[Tuple[float, float]]]:
     """
     Collect all non-seam perimeter edges of unit PCB boxes (plus outer tag outer edges),
@@ -2691,58 +2784,12 @@ def _deduplicate_and_tab_perimeter_edges(half_units: List[PlacedUnit], y_off: fl
     if not half_units:
         return []
 
-    horiz_edges: Dict[float, List[Tuple[float, float, bool]]] = {}
-    vert_edges: Dict[float, List[Tuple[float, float, bool]]] = {}
-
-    def add_h(y_val: float, x0: float, x1: float):
-        yk = round(y_val, 3)
-        a, b = (min(x0, x1), max(x0, x1))
-        if b - a > 0.1:
-            horiz_edges.setdefault(yk, []).append((a, b, False))
-
-    def add_v(x_val: float, y0: float, y1: float):
-        xk = round(x_val, 3)
-        a, b = (min(y0, y1), max(y0, y1))
-        if b - a > 0.1:
-            vert_edges.setdefault(xk, []).append((a, b, False))
-
-    for u in half_units:
-        px0, py0, px1, py1 = u.pcb_box.bounds
-        tx0, ty0, tx1, ty1 = u.tab_box.bounds
-        if u.attach_side == "bottom":
-            # Bottom of pcb_box is the stepping-tag seam; add top, left, right of pcb_box
-            add_h(py1, px0, px1)
-            add_v(px0, py0, py1)
-            add_v(px1, py0, py1)
-            # Outer edges of stepping tag (bottom, left, right)
-            add_h(ty0, tx0, tx1)
-            add_v(tx0, ty0, ty1)
-            add_v(tx1, ty0, ty1)
-        else:
-            # Left of pcb_box is the stepping-tag seam; add top, bottom, right of pcb_box
-            add_h(py0, px0, px1)
-            add_h(py1, px0, px1)
-            add_v(px1, py0, py1)
-            # Outer edges of stepping tag (left, top, bottom)
-            add_v(tx0, ty0, ty1)
-            add_h(ty0, tx0, tx1)
-            add_h(ty1, tx0, tx1)
-
-    def merge_intervals(intervals: List[Tuple[float, float, bool]]) -> List[Tuple[float, float]]:
-        sorted_iv = sorted((a, b) for (a, b, _) in intervals)
-        merged: List[Tuple[float, float]] = []
-        for a, b in sorted_iv:
-            if not merged or a > merged[-1][1] + 0.05:
-                merged.append((a, b))
-            else:
-                merged[-1] = (merged[-1][0], max(merged[-1][1], b))
-        return merged
-
+    horiz_edges, vert_edges = _collect_unit_perimeter_axes(half_units, include_seams=False)
     cut_segs: List[List[Tuple[float, float]]] = []
 
     for yk, ivs in sorted(horiz_edges.items()):
         ym = yk - y_off
-        for (a, b) in merge_intervals(ivs):
+        for (a, b) in _merge_1d_intervals(ivs):
             if (b - a) > bridge_tab_len * 4.0:
                 mid = 0.5 * (a + b)
                 cut_segs.append([(a, ym), (mid - bridge_tab_len / 2.0, ym)])
@@ -2751,7 +2798,7 @@ def _deduplicate_and_tab_perimeter_edges(half_units: List[PlacedUnit], y_off: fl
                 cut_segs.append([(a, ym), (b, ym)])
 
     for xk, ivs in sorted(vert_edges.items()):
-        for (a, b) in merge_intervals(ivs):
+        for (a, b) in _merge_1d_intervals(ivs):
             am, bm = a - y_off, b - y_off
             if (bm - am) > bridge_tab_len * 4.0:
                 mid = 0.5 * (am + bm)
@@ -3438,6 +3485,9 @@ class ManufacturingPipeline:
         front_polylines: List[List[Tuple[float, float]]] = []
         back_polylines: List[List[Tuple[float, float]]] = []
 
+        cut_lines = _collect_pcb_cut_lines(units, self.layer_cache)
+        self._route_polylines_by_half(cut_lines, front_polylines, back_polylines)
+
         for u in units:
             self._route_polylines_by_half(u.arrow_lines + u.id_text_lines, front_polylines, back_polylines)
             iso_paths = self.layer_cache.get_toolpaths(u.project, "copper_top", tool_dia=0.2, passes=1)
@@ -3469,6 +3519,10 @@ class ManufacturingPipeline:
     def _generate_step4_bottom_isolation(self, sheet_num, units):
         front_polylines: List[List[Tuple[float, float]]] = []
         back_polylines: List[List[Tuple[float, float]]] = []
+
+        cut_lines = _collect_pcb_cut_lines(units, self.layer_cache)
+        mirrored_cut_lines = [[(self.sheet_w - pt[0], pt[1]) for pt in seg] for seg in cut_lines]
+        self._route_polylines_by_half(mirrored_cut_lines, front_polylines, back_polylines)
 
         for u in units:
             if u.engrave_both_sides:
@@ -3509,6 +3563,11 @@ class ManufacturingPipeline:
         back_top_pads: List[List[Tuple[float, float]]] = []
         front_bot_pads: List[List[Tuple[float, float]]] = []
         back_bot_pads: List[List[Tuple[float, float]]] = []
+
+        cut_lines = _collect_pcb_cut_lines(units, self.layer_cache)
+        mirrored_cut_lines = [[(self.sheet_w - pt[0], pt[1]) for pt in seg] for seg in cut_lines]
+        self._route_polylines_by_half(cut_lines, front_top_pads, back_top_pads)
+        self._route_polylines_by_half(mirrored_cut_lines, front_bot_pads, back_bot_pads)
 
         for u in units:
             t_paths = self.layer_cache.get_toolpaths(u.project, "mask_top", tool_dia=0.2, passes=1)
@@ -5010,6 +5069,39 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
     let activeStreamWs = null;
     let streamAborted = false;
     let bridgeEventSource = null;
+    let m0ShownKey = '';
+    let m0DismissedKey = '';
+    let liveStreamState = {{
+      active: false,
+      state: 'idle',
+      filename: '',
+      isMacro: false,
+      via: 'none',
+      sent: 0,
+      total: 0,
+      current_cmd: '',
+      started_at: 0,
+      message: '',
+      prompt: '',
+      jobFilename: '',
+      jobState: 'idle',
+      jobSent: 0,
+      jobTotal: 0,
+      jobCurrentCmd: '',
+      loadedFilename: '',
+      rawLines: [],
+      execToRawLine: [],
+      segments: [],
+      drills: [],
+      bounds: {{ minX: 0, maxX: 200, minY: 0, maxY: 165 }},
+      lastCompletedFile: '',
+      dismissed: false
+    }};
+
+    function isMacroFilename(fname) {{
+      if (!fname) return false;
+      return Array.isArray(macrosCatalog) && macrosCatalog.some(m => m.file === fname);
+    }}
 
     function applyFluidNCStatusPayload(data) {{
       if (!data) return;
@@ -5029,6 +5121,14 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         : via === 'ws' ? 'WS Proxy'
         : via === 'http' ? 'HTTP/Telnet'
         : 'Offline';
+
+      const wposEl = document.getElementById('live-pos-wpos');
+      const mposEl = document.getElementById('live-pos-mpos');
+      if (wposEl && data.wpos) wposEl.innerText = `X:${{data.wpos[0].toFixed(2)}} Y:${{data.wpos[1].toFixed(2)}} Z:${{data.wpos[2].toFixed(2)}}`;
+      if (mposEl && data.mpos) mposEl.innerText = `X:${{data.mpos[0].toFixed(2)}} Y:${{data.mpos[1].toFixed(2)}} Z:${{data.mpos[2].toFixed(2)}}`;
+      if (liveStreamState && (liveStreamState.active || !document.getElementById('dispatch-live-stream-panel')?.classList.contains('hidden'))) {{
+        if (typeof drawLiveStreamCanvas === 'function') drawLiveStreamCanvas();
+      }}
 
       if (data.online) {{
         fluidncMachineState = data.state || 'Online';
@@ -5101,8 +5201,9 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       bridgeEventSource.addEventListener('stream', (evt) => {{
         try {{
           const s = JSON.parse(evt.data);
-          const stText = document.getElementById('fluidnc-status-text');
-          if (stText && s.total && s.active) stText.innerText = `${{s.state}} (${{s.sent}}/${{s.total}})`;
+          updateLiveStreamTracking(s);
+          if (s.state === 'waiting_confirm') showM0ConfirmModal(s.prompt, s.filename, s.sent, s.total);
+          else if (!s.active) hideM0ConfirmModal();
         }} catch (e) {{}}
       }});
     }}
@@ -5329,6 +5430,20 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         }});
         const data = await res.json();
         if (data.success) {{
+          m0ShownKey = '';
+          m0DismissedKey = '';
+          liveStreamState.dismissed = false;
+          updateLiveStreamTracking({{
+            active: true,
+            state: 'running',
+            filename: filename,
+            is_macro: Boolean(data.is_macro || isMacroFilename(filename)),
+            via: data.via || '',
+            sent: 0,
+            total: data.total || 0,
+            started_at: Date.now() / 1000,
+            message: `Streaming ${{filename}}...`
+          }});
           startStreamStatusPolling(buttonEl);
         }} else {{
           alert('Stream failed: ' + (data.error || data.message));
@@ -5340,15 +5455,366 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       }}
     }}
 
+    function hideLiveStreamPanel() {{
+      liveStreamState.dismissed = true;
+      document.getElementById('dispatch-live-stream-panel')?.classList.add('hidden');
+    }}
+
+    async function loadLivePreviewFile(filename) {{
+      if (!filename || liveStreamState.loadedFilename === filename) return;
+      liveStreamState.loadedFilename = filename;
+      let txt = '';
+      try {{
+        txt = await fetchGCodeText(filename);
+      }} catch (e) {{
+        try {{
+          const res = await fetch(`${{getApiBase()}}/api/macros_file?file=${{encodeURIComponent(filename)}}`, {{ cache: 'no-store' }});
+          if (res.ok) {{
+            const d = await res.json();
+            txt = d.content || '';
+          }}
+        }} catch (e2) {{}}
+      }}
+      if (!txt) {{
+        liveStreamState.rawLines = [];
+        liveStreamState.execToRawLine = [];
+        liveStreamState.segments = [];
+        liveStreamState.drills = [];
+        drawLiveStreamCanvas();
+        return;
+      }}
+      const parsed = parseGCodeToolpath(txt);
+      const execMap = [];
+      parsed.lines.forEach((raw, idx) => {{
+        const code = raw.split(';')[0].trim();
+        if (!code) return;
+        if (code.startsWith('(') && code.endsWith(')')) return;
+        execMap.push(idx);
+      }});
+      liveStreamState.rawLines = parsed.lines;
+      liveStreamState.execToRawLine = execMap;
+      liveStreamState.segments = parsed.segments;
+      liveStreamState.drills = parsed.drills;
+      liveStreamState.bounds = parsed.bounds;
+      drawLiveStreamCanvas();
+      renderLiveExecutionWindow();
+    }}
+
+    function renderLiveExecutionWindow() {{
+      const winEl = document.getElementById('live-stream-lines');
+      if (!winEl) return;
+      const lines = liveStreamState.rawLines;
+      if (!lines || !lines.length) {{
+        winEl.innerHTML = `<div class="text-slate-500 italic">${{liveStreamState.current_cmd || 'Waiting for toolpath...'}}</div>`;
+        return;
+      }}
+      const trackSent = liveStreamState.jobFilename ? (liveStreamState.jobSent || 1) : (liveStreamState.sent || 1);
+      const execIdx = Math.max(0, Math.min(liveStreamState.execToRawLine.length - 1, trackSent - 1));
+      const curRawIdx = liveStreamState.execToRawLine[execIdx] ?? 0;
+      const start = Math.max(0, curRawIdx - 3);
+      const end = Math.min(lines.length, start + 8);
+      let rows = '';
+      for (let i = start; i < end; i++) {{
+        const safeLine = String(lines[i] || '').replace(/</g, '&lt;');
+        const cls = (i < curRawIdx)
+          ? 'text-emerald-400/75'
+          : (i === curRawIdx ? 'bg-cyan-500/20 text-cyan-200 font-bold border-l-2 border-cyan-400 pl-1.5 rounded-r' : 'text-slate-500');
+        rows += `<div class="flex gap-2 truncate ${{cls}}"><span class="text-slate-600 w-7 text-right shrink-0">${{i + 1}}</span><span class="truncate">${{safeLine}}</span></div>`;
+      }}
+      winEl.innerHTML = rows;
+    }}
+
+    function drawLiveStreamCanvas() {{
+      const canvas = document.getElementById('dispatch-live-canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width = canvas.clientWidth || 640;
+      const H = canvas.height = canvas.clientHeight || 260;
+      ctx.fillStyle = '#04060b';
+      ctx.fillRect(0, 0, W, H);
+
+      const segs = liveStreamState.segments || [];
+      const b = liveStreamState.bounds || {{ minX: 0, maxX: cncBedTravelX, minY: 0, maxY: cncBedTravelY }};
+      const minX = Math.min(0, b.minX ?? 0);
+      const maxX = Math.max(cncBedTravelX, b.maxX ?? cncBedTravelX);
+      const minY = Math.min(0, b.minY ?? 0);
+      const maxY = Math.max(cncBedTravelY, b.maxY ?? cncBedTravelY);
+      const pad = 18;
+      const spanX = Math.max(20, maxX - minX);
+      const spanY = Math.max(20, maxY - minY);
+      const sc = Math.min((W - 2 * pad) / spanX, (H - 2 * pad) / spanY);
+      const ox = (W - spanX * sc) / 2 - minX * sc;
+      const oy = H - (H - spanY * sc) / 2 + minY * sc;
+      const tx = (x) => ox + x * sc;
+      const ty = (y) => oy - y * sc;
+
+      // Bed outline & Milling zone
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(tx(0), ty(cncBedTravelY), cncBedTravelX * sc, cncBedTravelY * sc);
+      ctx.setLineDash([4, 3]);
+      ctx.strokeStyle = 'rgba(2, 132, 199, 0.45)';
+      ctx.strokeRect(tx(0), ty(cncBedTravelY), cncBedMillingX * sc, cncBedTravelY * sc);
+      ctx.setLineDash([]);
+
+      // Clamps & Z-Switch keep-outs
+      (bedHoldersList || []).forEach(h => {{
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.16)';
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
+        if ((h.shape || '').toLowerCase() === 'circle') {{
+          const r = ((h.diameter || 12) / 2 + (h.holder_gap || 3)) * sc;
+          ctx.beginPath(); ctx.arc(tx(h.x), ty(h.y), r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        }}
+      }});
+      if (bedZSwitch && bedZSwitch.enabled !== false) {{
+        const sx = bedZSwitch.x_mm || 272.001, sy = bedZSwitch.y_mm || 135.002;
+        const sw = (bedZSwitch.width_mm || 7) / 2 + (bedZSwitch.danger_margin_mm || 6);
+        const sl = (bedZSwitch.length_mm || 20) / 2 + (bedZSwitch.danger_margin_mm || 6);
+        ctx.fillStyle = 'rgba(220, 38, 38, 0.25)';
+        ctx.fillRect(tx(sx - sw), ty(sy + sl), sw * 2 * sc, sl * 2 * sc);
+      }}
+
+      // Determine current raw line index from stream progress (preserve PCB job progress while macros run)
+      const sent = liveStreamState.jobFilename ? (liveStreamState.jobSent || 0) : (liveStreamState.sent || 0);
+      const execIdx = Math.max(-1, Math.min(liveStreamState.execToRawLine.length - 1, sent - 1));
+      const curRawLine = execIdx >= 0 ? (liveStreamState.execToRawLine[execIdx] ?? -1) : -1;
+
+      let targetPt = null;
+      if (segs.length) {{
+        // 1. Future segments (dimmed)
+        ctx.lineWidth = 1.0;
+        for (const sg of segs) {{
+          if (sg.lineIdx <= curRawLine) continue;
+          ctx.strokeStyle = sg.rapid ? 'rgba(56, 189, 248, 0.22)' : 'rgba(148, 163, 184, 0.32)';
+          ctx.beginPath(); ctx.moveTo(tx(sg.x1), ty(sg.y1)); ctx.lineTo(tx(sg.x2), ty(sg.y2)); ctx.stroke();
+        }}
+
+        // 2. Completed segments (bright emerald / cyan for current)
+        for (const sg of segs) {{
+          if (sg.lineIdx > curRawLine) continue;
+          const isCur = (sg.lineIdx === curRawLine);
+          ctx.strokeStyle = isCur ? '#22d3ee' : (sg.rapid ? 'rgba(56, 189, 248, 0.55)' : '#10b981');
+          ctx.lineWidth = isCur ? 2.4 : (sg.rapid ? 1.0 : 1.7);
+          ctx.beginPath(); ctx.moveTo(tx(sg.x1), ty(sg.y1)); ctx.lineTo(tx(sg.x2), ty(sg.y2)); ctx.stroke();
+          targetPt = {{ x: sg.x2, y: sg.y2, z: sg.z2 }};
+        }}
+
+        // 3. Drills
+        for (const dr of (liveStreamState.drills || [])) {{
+          ctx.fillStyle = (dr.lineIdx <= curRawLine) ? '#f59e0b' : 'rgba(245, 158, 11, 0.25)';
+          ctx.beginPath(); ctx.arc(tx(dr.x), ty(dr.y), dr.lineIdx <= curRawLine ? 2.6 : 1.6, 0, Math.PI * 2); ctx.fill();
+        }}
+      }}
+
+      // Target command crosshair
+      if (targetPt) {{
+        const px = tx(targetPt.x), py = ty(targetPt.y);
+        ctx.strokeStyle = '#22d3ee';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI * 2); ctx.stroke();
+      }}
+
+      // Live reported CNC head position (WPos or MPos)
+      const p = lastLiveToolPos && (lastLiveToolPos.wpos || lastLiveToolPos.mpos);
+      if (p) {{
+        const mx = tx(p[0]), my = ty(p[1]);
+        ctx.fillStyle = '#e879f9';
+        ctx.beginPath(); ctx.arc(mx, my, 4.5, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(232, 121, 249, 0.55)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(mx, my, 10, 0, Math.PI * 2);
+        ctx.moveTo(mx - 14, my); ctx.lineTo(mx + 14, my);
+        ctx.moveTo(mx, my - 14); ctx.lineTo(mx, my + 14);
+        ctx.stroke();
+      }}
+    }}
+
+    function updateLiveStreamTracking(s) {{
+      if (!s) return;
+      const prevActive = liveStreamState.active;
+      const prevFile = liveStreamState.filename;
+      const prevState = liveStreamState.state;
+      const prevLastCompleted = liveStreamState.lastCompletedFile;
+
+      const fname = s.filename || liveStreamState.filename || '';
+      const isMacro = Boolean(s.is_macro || isMacroFilename(fname));
+
+      liveStreamState.active = !!s.active;
+      liveStreamState.state = s.state || 'idle';
+      liveStreamState.isMacro = isMacro;
+      if (s.filename) liveStreamState.filename = s.filename;
+      if (s.via) liveStreamState.via = s.via;
+      liveStreamState.sent = Number(s.sent || 0);
+      liveStreamState.total = Number(s.total || 0);
+      liveStreamState.current_cmd = s.current_cmd || '';
+      liveStreamState.started_at = Number(s.started_at || liveStreamState.started_at || 0);
+      liveStreamState.message = s.message || '';
+      liveStreamState.prompt = s.prompt || '';
+
+      if (!isMacro && fname) {{
+        liveStreamState.jobFilename = fname;
+        liveStreamState.jobState = liveStreamState.state;
+        liveStreamState.jobSent = liveStreamState.sent;
+        liveStreamState.jobTotal = liveStreamState.total;
+        liveStreamState.jobCurrentCmd = liveStreamState.current_cmd;
+        if (!s.active && liveStreamState.state === 'done') {{
+          liveStreamState.lastCompletedFile = fname;
+        }}
+      }}
+
+      if (s.active) liveStreamState.dismissed = false;
+
+      const previewFile = liveStreamState.jobFilename || liveStreamState.filename;
+      const panel = document.getElementById('dispatch-live-stream-panel');
+      if (panel && !liveStreamState.dismissed && (s.active || (previewFile && liveStreamState.state !== 'idle'))) {{
+        panel.classList.remove('hidden');
+      }}
+
+      if (previewFile) loadLivePreviewFile(previewFile);
+
+      const dispSent = (!isMacro || !liveStreamState.jobFilename) ? liveStreamState.sent : liveStreamState.jobSent;
+      const dispTotal = (!isMacro || !liveStreamState.jobFilename) ? liveStreamState.total : liveStreamState.jobTotal;
+      const pct = dispTotal ? Math.min(100, Math.round((dispSent / dispTotal) * 100)) : 0;
+      const setTxt = (id, v) => {{ const el = document.getElementById(id); if (el) el.innerText = v; }};
+      setTxt('live-stream-filename', previewFile || '-');
+      setTxt('live-stream-via', (liveStreamState.via || '-').toUpperCase());
+      setTxt('live-stream-counter', `${{dispSent}} / ${{dispTotal}} (${{pct}}%)`);
+      setTxt('live-stream-pct', `${{pct}}%`);
+      setTxt('live-stream-cmd', liveStreamState.current_cmd || liveStreamState.jobCurrentCmd || '-');
+      const statusMsg = (isMacro && liveStreamState.jobFilename)
+        ? `Macro [${{fname}} ${{(s.active || liveStreamState.state === 'waiting_confirm') ? `${{liveStreamState.sent}}/${{liveStreamState.total}}` : liveStreamState.state}}] • Job preview preserved`
+        : (liveStreamState.message || liveStreamState.state);
+      setTxt('live-stream-message', statusMsg);
+
+      if (liveStreamState.started_at > 0) {{
+        const sec = Math.max(0, Math.floor((Date.now() / 1000) - liveStreamState.started_at));
+        const mm = String(Math.floor(sec / 60)).padStart(2, '0');
+        const ss = String(sec % 60).padStart(2, '0');
+        setTxt('live-stream-elapsed', `${{mm}}:${{ss}}`);
+      }}
+
+      const bar = document.getElementById('live-stream-progress-bar');
+      if (bar) bar.style.width = `${{pct}}%`;
+
+      const displayState = (isMacro && liveStreamState.jobFilename && !s.active && liveStreamState.state === 'done')
+        ? liveStreamState.jobState
+        : liveStreamState.state;
+      const badge = document.getElementById('live-stream-badge');
+      if (badge) {{
+        const map = {{
+          running: ['bg-cyan-500/20 text-cyan-300 border-cyan-500/40', `<span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span><span>${{isMacro ? 'MACRO' : 'STREAMING'}}</span>`],
+          waiting_confirm: ['bg-amber-500/20 text-amber-300 border-amber-500/40', '<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span><span>M0 PAUSED</span>'],
+          done: ['bg-amber-500/20 text-amber-300 border-amber-400/50', '<span>COMPLETED</span>'],
+          aborted: ['bg-rose-500/20 text-rose-300 border-rose-500/40', '<span>STOPPED</span>'],
+          error: ['bg-red-500/20 text-red-300 border-red-500/40', '<span>ERROR</span>']
+        }};
+        const [cls, inner] = map[displayState] || ['bg-slate-800 text-slate-300 border-slate-700', `<span>${{displayState.toUpperCase()}}</span>`];
+        badge.className = `inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border font-mono text-[11px] font-bold ${{cls}}`;
+        badge.innerHTML = inner;
+      }}
+
+      if (panel) {{
+        panel.classList.toggle('border-cyan-500/40', !!s.active);
+        panel.classList.toggle('border-amber-400/60', !s.active && displayState === 'done');
+      }}
+
+      syncLiveDoneButton();
+
+      // Toggle Dispatch Stop Stream button
+      const stopBtn = document.getElementById('btn-dispatch-stop-stream');
+      if (stopBtn) {{
+        stopBtn.disabled = !s.active;
+        stopBtn.className = s.active
+          ? 'inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white border border-rose-400/50 font-semibold text-xs transition cursor-pointer animate-pulse shadow-sm shadow-rose-950/50'
+          : 'inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800/70 text-slate-500 border border-slate-700/60 font-semibold text-xs transition cursor-not-allowed opacity-50';
+      }}
+      const liveStopBtn = document.getElementById('btn-live-stop');
+      if (liveStopBtn) liveStopBtn.classList.toggle('hidden', !s.active);
+
+      const stText = document.getElementById('fluidnc-status-text');
+      if (stText && s.total && s.active) stText.innerText = `${{s.state}} (${{s.sent}}/${{s.total}})`;
+      const rowBadge = document.getElementById('active-row-stream-badge');
+      if (rowBadge && liveStreamState.active && !isMacro) {{
+        rowBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-cyan-300"></span>${{liveStreamState.state === 'waiting_confirm' ? 'M0 PAUSED' : 'STREAMING'}} ${{liveStreamState.sent}}/${{liveStreamState.total}}`;
+      }}
+
+      drawLiveStreamCanvas();
+      renderLiveExecutionWindow();
+
+      if (prevActive !== liveStreamState.active || prevFile !== liveStreamState.filename || prevState !== liveStreamState.state || prevLastCompleted !== liveStreamState.lastCompletedFile) {{
+        renderFluidNCDispatcher();
+        renderDispatchMacrosBar();
+      }}
+    }}
+
+    function syncLiveDoneButton() {{
+      const doneBtn = document.getElementById('btn-live-mark-done');
+      if (!doneBtn) return;
+      const targetFile = liveStreamState.lastCompletedFile || (!liveStreamState.isMacro ? liveStreamState.filename : '');
+      const show = !!targetFile && !(liveStreamState.active && !liveStreamState.isMacro) && (liveStreamState.jobState === 'done' || liveStreamState.lastCompletedFile === targetFile);
+      doneBtn.classList.toggle('hidden', !show);
+      if (!show) return;
+      const checked = dispatchDoneSet.has(targetFile);
+      doneBtn.className = checked
+        ? 'px-2.5 py-1 rounded-lg bg-emerald-900/60 hover:bg-emerald-800/70 text-emerald-300 border border-emerald-500/50 font-semibold cursor-pointer inline-flex items-center gap-1'
+        : 'px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold cursor-pointer inline-flex items-center gap-1 shadow-sm';
+      doneBtn.innerHTML = checked
+        ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg><span>Checked</span>'
+        : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg><span>Check File</span>';
+    }}
+
+    function toggleLiveStreamDone() {{
+      const targetFile = liveStreamState.lastCompletedFile || liveStreamState.jobFilename || liveStreamState.filename;
+      if (!targetFile) return;
+      const nextState = !dispatchDoneSet.has(targetFile);
+      toggleDispatchDone(targetFile, nextState);
+      syncLiveDoneButton();
+    }}
+
+    async function stopOngoingStream() {{
+      try {{
+        appendBridgeConsoleLine('stop', 'Stopping active G-code stream (! + 0x18 + M5)...', '');
+        await fetch(`${{getApiBase()}}/api/fluidnc_stream_action`, {{
+          method: 'POST',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ action: 'abort', ip: fluidncTargetIp }})
+        }});
+        hideM0ConfirmModal();
+        setTimeout(() => testFluidNCConnection(), 300);
+      }} catch (e) {{
+        alert('Stop stream failed: ' + e);
+      }}
+    }}
+
+    async function triggerVirtualEStop() {{
+      const btn = document.getElementById('btn-virtual-estop');
+      if (btn) {{
+        btn.classList.add('ring-4', 'ring-red-400');
+        setTimeout(() => btn.classList.remove('ring-4', 'ring-red-400'), 700);
+      }}
+      try {{
+        appendBridgeConsoleLine('estop', 'VIRTUAL E-STOP: Sending ! + Soft Reset (0x18) + M5!', '');
+        await fetch(`${{getApiBase()}}/api/fluidnc_stream_action`, {{
+          method: 'POST',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ action: 'estop', ip: fluidncTargetIp }})
+        }});
+        hideM0ConfirmModal();
+        setTimeout(() => testFluidNCConnection(), 300);
+      }} catch (e) {{
+        alert('E-Stop command failed: ' + e);
+      }}
+    }}
+
     function startStreamStatusPolling(buttonEl) {{
       if (streamPollTimer) clearInterval(streamPollTimer);
       streamPollTimer = setInterval(async () => {{
         try {{
           const sRes = await fetch(`${{getApiBase()}}/api/fluidnc_stream_status`, {{ cache: 'no-store' }});
           const s = await sRes.json();
-          const stText = document.getElementById('fluidnc-status-text');
+          updateLiveStreamTracking(s);
           const mSt = document.getElementById('macros-status');
-          if (stText && s.total) stText.innerText = `${{s.state}} (${{s.sent}}/${{s.total}})`;
           if (mSt && s.active) mSt.innerText = s.message || s.state;
 
           if (s.state === 'waiting_confirm') {{
@@ -5367,39 +5833,62 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
             }}
             testFluidNCConnection();
             if (s.state === 'error') alert(s.message);
+          }} else {{
+            hideM0ConfirmModal();
           }}
         }} catch (e) {{}}
-      }}, 450);
+      }}, 350);
     }}
 
     async function showM0ConfirmModal(promptText, fname, sent, total) {{
       const modal = document.getElementById('m0-confirm-modal');
       if (!modal) return;
+      const key = `${{fname || ''}}:${{sent || 0}}`;
+      if (m0DismissedKey === key) return;
+      if (m0ShownKey === key && !modal.classList.contains('hidden')) return;
+      m0ShownKey = key;
+
       document.getElementById('m0-prompt-text').innerText = promptText || 'Operator pause (M0). Verify tool position & clamps before continuing.';
       document.getElementById('m0-file-meta').innerText = `${{fname || 'CNC Job'}} — Line ${{sent || 0}} / ${{total || 0}}`;
+      const cachedPos = lastLiveToolPos && (lastLiveToolPos.wpos || lastLiveToolPos.mpos);
+      if (cachedPos && document.getElementById('m0-live-pos')) {{
+        document.getElementById('m0-live-pos').innerText = `X:${{cachedPos[0].toFixed(3)}}  Y:${{cachedPos[1].toFixed(3)}}  Z:${{cachedPos[2].toFixed(3)}} mm`;
+      }}
+      modal.classList.remove('hidden');
+
       try {{
         const stRes = await fetch(`${{getApiBase()}}/api/fluidnc_status?ip=${{encodeURIComponent(fluidncTargetIp)}}`, {{ cache: 'no-store' }});
         const stData = await stRes.json();
         const pos = stData.wpos || stData.mpos;
-        if (pos && document.getElementById('m0-live-pos')) {{
+        if (pos && m0ShownKey === key && !modal.classList.contains('hidden') && document.getElementById('m0-live-pos')) {{
           document.getElementById('m0-live-pos').innerText = `X:${{pos[0].toFixed(3)}}  Y:${{pos[1].toFixed(3)}}  Z:${{pos[2].toFixed(3)}} mm`;
         }}
       }} catch (e) {{}}
-      modal.classList.remove('hidden');
     }}
 
     function hideM0ConfirmModal() {{
+      m0ShownKey = '';
       document.getElementById('m0-confirm-modal')?.classList.add('hidden');
     }}
 
     async function sendM0Action(action) {{
+      if (m0ShownKey) m0DismissedKey = m0ShownKey;
+      hideM0ConfirmModal();
+      updateLiveStreamTracking({{
+        ...liveStreamState,
+        active: action !== 'abort',
+        state: action === 'abort' ? 'aborted' : 'running',
+        prompt: '',
+        message: action === 'abort' ? 'Stopping...' : `Resuming ${{liveStreamState.filename || 'G-code'}}...`
+      }});
       try {{
-        await fetch(`${{getApiBase()}}/api/fluidnc_stream_action`, {{
+        const res = await fetch(`${{getApiBase()}}/api/fluidnc_stream_action`, {{
           method: 'POST',
           headers: {{ 'Content-Type': 'application/json' }},
           body: JSON.stringify({{ action: action, ip: fluidncTargetIp }})
         }});
-        hideM0ConfirmModal();
+        const d = await res.json();
+        if (d && d.stream) updateLiveStreamTracking(d.stream);
       }} catch (e) {{
         alert('Action failed: ' + e);
       }}
@@ -6530,6 +7019,8 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         const rowNum = String(idx + 1).padStart(2, '0');
         const isSent = fluidncSentFiles.has(op.gcode_file);
         const isDone = dispatchDoneSet.has(op.gcode_file);
+        const isStreamingThis = !!(liveStreamState && liveStreamState.active && liveStreamState.filename === op.gcode_file);
+        const isJustFinishedThis = !isStreamingThis && !!(liveStreamState && liveStreamState.lastCompletedFile === op.gcode_file);
         const btnClass = isSent
           ? 'p-1.5 rounded-lg bg-emerald-600 text-white shadow-sm transition cursor-pointer'
           : 'p-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white shadow-sm transition cursor-pointer';
@@ -6543,12 +7034,24 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
           ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-violet-500/20 text-violet-300 border border-violet-500/30" data-tip="Horizontally mirrored for Bottom Side">Flip</span>'
           : '';
 
+        const streamingBadge = isStreamingThis
+          ? `<span id="active-row-stream-badge" class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono font-bold rounded bg-cyan-500/25 text-cyan-200 border border-cyan-400/50 animate-pulse"><span class="w-1.5 h-1.5 rounded-full bg-cyan-300"></span>${{liveStreamState.state === 'waiting_confirm' ? 'M0 PAUSED' : 'STREAMING'}} ${{liveStreamState.sent}}/${{liveStreamState.total}}</span>`
+          : (isJustFinishedThis
+            ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono font-bold rounded bg-amber-500/25 text-amber-200 border border-amber-400/60" data-tip="Most recently completed stream">JUST FINISHED</span>`
+            : '');
+
+        const rowStyle = isStreamingThis
+          ? 'border-cyan-400 bg-cyan-950/35 ring-2 ring-cyan-500/40 shadow-lg shadow-cyan-950/40'
+          : (isJustFinishedThis
+            ? 'border-amber-400 bg-amber-950/30 ring-2 ring-amber-500/40 shadow-md shadow-amber-950/30'
+            : (isDone ? 'border-emerald-500/30 bg-emerald-950/15 opacity-70' : 'border-slate-800/90 bg-[#0b101b]/90'));
+
         html += `
-          <div class="p-2.5 rounded-xl border ${{isDone ? 'border-emerald-500/30 bg-emerald-950/15 opacity-70' : 'border-slate-800/90 bg-[#0b101b]/90'}} hover:border-slate-700 transition flex items-center justify-between gap-3 text-xs">
+          <div class="p-2.5 rounded-xl border ${{rowStyle}} hover:border-slate-700 transition flex items-center justify-between gap-3 text-xs">
             <div class="flex items-center gap-2.5 min-w-0">
-              <span class="text-xs font-mono font-bold ${{isDone ? 'text-emerald-400/70' : 'text-cyan-400'}} w-6 text-right shrink-0 select-none" data-tip="File #${{idx + 1}} (Op #${{String(op.seq).padStart(2, '0')}})">${{rowNum}}.</span>
+              <span class="text-xs font-mono font-bold ${{isStreamingThis ? 'text-cyan-300' : (isJustFinishedThis ? 'text-amber-300' : (isDone ? 'text-emerald-400/70' : 'text-cyan-400'))}} w-6 text-right shrink-0 select-none" data-tip="File #${{idx + 1}} (Op #${{String(op.seq).padStart(2, '0')}})">${{rowNum}}.</span>
               <input type="checkbox" ${{isDone ? 'checked' : ''}}
-                     onchange="toggleDispatchDone('${{op.gcode_file}}', this.checked)"
+                     onchange="toggleDispatchDone('${{op.gcode_file}}', this.checked); syncLiveDoneButton();"
                      class="w-4 h-4 rounded accent-emerald-500 bg-slate-900 border-slate-600 cursor-pointer shrink-0"
                      data-tip="Mark step done">
               <div draggable="true"
@@ -6561,10 +7064,11 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
               <div class="min-w-0">
                 <div class="flex items-center gap-2 flex-wrap">
                   <button type="button" onclick="openGCodeViewer('${{op.gcode_file}}')"
-                          class="font-mono font-semibold ${{isDone ? 'line-through text-slate-400' : 'text-slate-100'}} hover:text-cyan-300 transition truncate max-w-xs sm:max-w-md text-left cursor-pointer"
+                          class="font-mono font-semibold ${{isStreamingThis ? 'text-cyan-200' : (isJustFinishedThis ? 'text-amber-200' : (isDone ? 'line-through text-slate-400' : 'text-slate-100'))}} hover:text-cyan-300 transition truncate max-w-xs sm:max-w-md text-left cursor-pointer"
                           data-tip="Inspect toolpath in 2D/3D Viewer">
                     ${{op.gcode_file}}
                   </button>
+                  ${{streamingBadge}}
                   <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-400">S${{op.sheet_num}} #${{String(op.seq).padStart(2, '0')}}</span>
                   ${{halfBadge}} ${{mirrorBadge}}
                 </div>
@@ -6579,6 +7083,14 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
             </div>
 
             <div class="flex items-center gap-1.5 shrink-0">
+              ${{isStreamingThis ? `
+              <button type="button" onclick="stopOngoingStream()"
+                      class="px-2 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold shadow-sm transition cursor-pointer inline-flex items-center gap-1 text-[11px]"
+                      data-tip="Stop this ongoing stream" aria-label="Stop Stream">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+                <span>Stop</span>
+              </button>
+              ` : ''}}
               ${{op.step_code.startsWith('Step6') ? `
               <button type="button" onclick="printSilkscreenViaSTM32('${{op.gcode_file}}', this)"
                       class="p-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white shadow-sm transition cursor-pointer"
@@ -6772,32 +7284,544 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
     }}
 
     async function runMacroOnCNC(fname, btn) {{
+      if (liveStreamState.active && !liveStreamState.isMacro) {{
+        if (!confirm(`PCB job "${{liveStreamState.jobFilename || liveStreamState.filename}}" is currently streaming. Stop it and run macro "${{fname}}"?`)) return;
+      }}
       return _executeStreamStart(fname, btn);
     }}
 
     let jogStepMm = 1.0;
+    const figJogState = {{
+      mode: localStorage.getItem('figjog.mode') || 'step', // 'step' | 'continuous' | 'compact'
+      fine: localStorage.getItem('figjog.fine') === '1',
+      keyboard: false,
+      xyFeed: Number(localStorage.getItem('figjog.xyFeed') || 1000),
+      zFeed: Number(localStorage.getItem('figjog.zFeed') || 200),
+      hoverId: null,
+      hoverAxis: null,
+      hoverStep: null,
+      isJogging: false,
+      contTimer: null,
+      contLastTs: 0,
+      contDirs: [],
+      pressedKeys: new Set()
+    }};
+
+    const FIG_RADII = [22, 40, 56, 74, 94];
+    const FIG_RING_OPACITIES = [0.15, 0.25, 0.37, 0.52];
+    const FIG_DIRS = [
+      {{ axis: 'Y',  sx:  0, sy:  1, dir: 0, label: '+Y', title: '+Y',    dirs: ['Y+'],       color: '#22c55e', diag: false }},
+      {{ axis: 'XY', sx:  1, sy:  1, dir: 1, label: '↗',  title: '+X +Y', dirs: ['X+', 'Y+'], color: '#f59e0b', diag: true }},
+      {{ axis: 'X',  sx:  1, sy:  0, dir: 2, label: '+X', title: '+X',    dirs: ['X+'],       color: '#ef4444', diag: false }},
+      {{ axis: 'XY', sx:  1, sy: -1, dir: 3, label: '↘',  title: '+X −Y', dirs: ['X+', 'Y-'], color: '#f59e0b', diag: true }},
+      {{ axis: 'Y',  sx:  0, sy: -1, dir: 4, label: '−Y', title: '−Y',    dirs: ['Y-'],       color: '#22c55e', diag: false }},
+      {{ axis: 'XY', sx: -1, sy: -1, dir: 5, label: '↙',  title: '−X −Y', dirs: ['X-', 'Y-'], color: '#f59e0b', diag: true }},
+      {{ axis: 'X',  sx: -1, sy:  0, dir: 6, label: '−X', title: '−X',    dirs: ['X-'],       color: '#ef4444', diag: false }},
+      {{ axis: 'XY', sx: -1, sy:  1, dir: 7, label: '↖',  title: '−X +Y', dirs: ['X-', 'Y+'], color: '#f59e0b', diag: true }}
+    ];
+
+    function figArcPath(innerR, outerR, dir, sectorCount = 8) {{
+      const slice = (2 * Math.PI) / sectorCount;
+      const s = (dir - 0.5) * slice;
+      const e = (dir + 0.5) * slice;
+      const ix1 = innerR * Math.sin(s), iy1 = -innerR * Math.cos(s);
+      const ix2 = innerR * Math.sin(e), iy2 = -innerR * Math.cos(e);
+      const ox1 = outerR * Math.sin(s), oy1 = -outerR * Math.cos(s);
+      const ox2 = outerR * Math.sin(e), oy2 = -outerR * Math.cos(e);
+      return `M${{ix1.toFixed(2)}},${{iy1.toFixed(2)}} L${{ox1.toFixed(2)}},${{oy1.toFixed(2)}} A${{outerR}},${{outerR}} 0 0,1 ${{ox2.toFixed(2)}},${{oy2.toFixed(2)}} L${{ix2.toFixed(2)}},${{iy2.toFixed(2)}} A${{innerR}},${{innerR}} 0 0,0 ${{ix1.toFixed(2)}},${{iy1.toFixed(2)}} Z`;
+    }}
+
+    function figRingSteps() {{
+      return figJogState.fine ? [0.01, 1, 10, 100] : [0.1, 1, 10, 100];
+    }}
+
+    function figZSteps() {{
+      return figJogState.fine ? [10, 1, 0.01] : [10, 1, 0.1];
+    }}
+
+    function setFigJogMode(mode) {{
+      stopFigContJog(false);
+      figJogState.mode = mode;
+      localStorage.setItem('figjog.mode', mode);
+      if (mode !== 'continuous') figJogState.keyboard = false;
+      renderFigUIJogPad();
+    }}
+
+    function toggleFigFineJog() {{
+      figJogState.fine = !figJogState.fine;
+      localStorage.setItem('figjog.fine', figJogState.fine ? '1' : '0');
+      renderFigUIJogPad();
+    }}
+
+    function toggleFigKeyboardJog() {{
+      figJogState.keyboard = !figJogState.keyboard;
+      if (!figJogState.keyboard) {{
+        figJogState.pressedKeys.clear();
+        stopFigContJog(true);
+      }}
+      renderFigUIJogPad();
+    }}
+
+    function setFigJogFeed(which, val) {{
+      const n = Math.max(10, Number(val) || (which === 'z' ? 200 : 1000));
+      if (which === 'z') {{
+        figJogState.zFeed = n;
+        localStorage.setItem('figjog.zFeed', String(n));
+      }} else {{
+        figJogState.xyFeed = n;
+        localStorage.setItem('figjog.xyFeed', String(n));
+      }}
+    }}
+
     function setJogStep(step) {{
       jogStepMm = step;
       document.querySelectorAll('.jog-step-btn').forEach(b => {{
         const active = (Number(b.dataset.step) === step);
         b.className = active
-          ? 'jog-step-btn px-2 py-1 rounded bg-blue-600 text-white font-mono text-[11px] font-semibold cursor-pointer'
-          : 'jog-step-btn px-2 py-1 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer';
+          ? 'jog-step-btn px-1.5 py-0.5 rounded bg-blue-600 text-white font-mono text-[11px] font-semibold cursor-pointer'
+          : 'jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer';
+      }});
+    }}
+
+    async function sendJogMoves(axesDeltas, feed) {{
+      const words = Object.entries(axesDeltas || {{}})
+        .filter(([, d]) => Number.isFinite(Number(d)) && Number(d) !== 0)
+        .map(([ax, d]) => `${{ax}}${{Number(d).toFixed(3)}}`);
+      if (!words.length) return;
+      figJogState.isJogging = true;
+      updateFigCenterReadout();
+      await sendFluidNCRealtime(`$J=G91 G21 ${{words.join(' ')}} F${{Math.round(feed)}}`);
+      setTimeout(() => {{
+        figJogState.isJogging = false;
+        updateFigCenterReadout();
+        refreshLiveBedTool();
+      }}, 300);
+    }}
+
+    async function sendStepJog(axis, delta, feed) {{
+      return sendJogMoves({{ [axis]: delta }}, feed);
+    }}
+
+    function startFigContJog(dirs, feed) {{
+      stopFigContJog(false);
+      if (!dirs || !dirs.length) return;
+      figJogState.contDirs = dirs;
+      figJogState.isJogging = true;
+      updateFigCenterReadout();
+      const mmPerMs = feed / 60000 / Math.sqrt(dirs.length);
+      const sendSeg = (ms) => {{
+        const dist = mmPerMs * ms;
+        const words = dirs.map(d => `${{d[0]}}${{(d[1] === '+' ? dist : -dist).toFixed(3)}}`).join(' ');
+        sendFluidNCRealtime(`$J=G91 G21 F${{Math.round(feed)}} ${{words}}`);
+      }};
+      figJogState.contLastTs = Date.now();
+      sendSeg(260);
+      figJogState.contTimer = setInterval(() => {{
+        const now = Date.now();
+        const elapsed = Math.min(now - figJogState.contLastTs, 260);
+        figJogState.contLastTs = now;
+        if (elapsed > 0) sendSeg(elapsed);
+      }}, 110);
+    }}
+
+    function stopFigContJog(sendCancel = true) {{
+      const wasActive = !!(figJogState.contTimer || figJogState.isJogging);
+      if (figJogState.contTimer) {{
+        clearInterval(figJogState.contTimer);
+        figJogState.contTimer = null;
+      }}
+      figJogState.contDirs = [];
+      figJogState.isJogging = false;
+      if (sendCancel && wasActive) {{
+        sendFluidNCRealtime('JOG_CANCEL');
+        setTimeout(refreshLiveBedTool, 300);
+      }}
+      updateFigCenterReadout();
+    }}
+
+    function cancelFigJogNow() {{
+      stopFigContJog(false);
+      sendFluidNCRealtime('JOG_CANCEL');
+      setTimeout(refreshLiveBedTool, 300);
+    }}
+
+    function updateFigCenterReadout() {{
+      const g = document.getElementById('fig-center-content');
+      const bg = document.getElementById('fig-center-disc');
+      if (!g || !bg) return;
+      if (figJogState.isJogging) {{
+        bg.setAttribute('fill', 'rgba(239,68,68,0.28)');
+        bg.setAttribute('stroke', '#ef4444');
+        g.innerHTML = `<rect x="-6" y="-6" width="12" height="12" rx="1.5" fill="#ef4444"/><title>Click to Cancel Jog (0x85)</title>`;
+        return;
+      }}
+      bg.setAttribute('fill', '#131a27');
+      bg.setAttribute('stroke', '#334155');
+      const figAxColor = (ax) => ax === 'X' ? '#ef4444' : (ax === 'Y' ? '#22c55e' : (ax === 'XY' ? '#f59e0b' : '#38bdf8'));
+      if (figJogState.hoverStep != null && figJogState.hoverAxis) {{
+        const c = figAxColor(figJogState.hoverAxis);
+        const dirTag = figJogState.hoverDirLabel ? `${{figJogState.hoverDirLabel}} ` : '';
+        g.innerHTML = `<text x="0" y="-2" text-anchor="middle" dominant-baseline="middle" fill="${{c}}" font-size="11.5" font-weight="700" font-family="ui-monospace, monospace">${{dirTag}}${{figJogState.hoverStep}}</text><text x="0" y="11" text-anchor="middle" fill="#94a3b8" font-size="7" font-family="ui-monospace, monospace">${{figJogState.hoverAxis === 'XY' ? 'XY mm' : 'mm'}}</text>`;
+      }} else if (figJogState.mode === 'continuous' && (figJogState.hoverAxis || figJogState.pressedKeys.size > 0)) {{
+        const ax = figJogState.hoverAxis || (figJogState.pressedKeys.size > 1 ? 'XY' : [...figJogState.pressedKeys][0][0]);
+        const c = figAxColor(ax);
+        const dirTag = figJogState.hoverDirLabel || (ax === 'XY' ? 'XY' : ax);
+        g.innerHTML = `<text x="0" y="-2" text-anchor="middle" dominant-baseline="middle" fill="${{c}}" font-size="8.5" font-weight="700" font-family="ui-monospace, monospace">HOLD</text><text x="0" y="9" text-anchor="middle" fill="${{c}}" font-size="7.5" font-weight="700" font-family="ui-monospace, monospace">${{dirTag}}</text>`;
+      }} else {{
+        g.innerHTML = `<g opacity="0.5"><line x1="-8" y1="0" x2="8" y2="0" stroke="#94a3b8" stroke-width="1.4" stroke-linecap="round"/><line x1="0" y1="-8" x2="0" y2="8" stroke="#94a3b8" stroke-width="1.4" stroke-linecap="round"/><circle cx="0" cy="0" r="3" fill="none" stroke="#94a3b8" stroke-width="1"/></g>`;
+      }}
+    }}
+
+    function renderFigUIJogPad() {{
+      const isCont = figJogState.mode === 'continuous';
+      const isCompact = figJogState.mode === 'compact';
+      ['step', 'continuous', 'compact'].forEach(m => {{
+        const b = document.getElementById(`fig-mode-${{m}}`);
+        if (!b) return;
+        const on = figJogState.mode === m;
+        b.className = on
+          ? 'px-2 py-0.5 text-[11px] font-semibold bg-blue-600/25 text-cyan-300 transition-colors cursor-pointer'
+          : 'px-2 py-0.5 text-[11px] font-semibold text-slate-400 hover:text-slate-100 transition-colors cursor-pointer';
+      }});
+
+      const roseWrap = document.getElementById('fig-jog-rose-wrap');
+      const compactWrap = document.getElementById('fig-jog-compact-wrap');
+      if (roseWrap) roseWrap.style.display = isCompact ? 'none' : '';
+      if (compactWrap) compactWrap.style.display = isCompact ? '' : 'none';
+
+      const fineBtn = document.getElementById('fig-fine-btn');
+      const kbdBtn = document.getElementById('fig-kbd-btn');
+      const hintLbl = document.getElementById('fig-jog-mode-hint');
+      if (fineBtn) {{
+        fineBtn.style.display = isCont ? 'none' : '';
+        fineBtn.className = figJogState.fine
+          ? 'h-7 px-2 rounded border border-cyan-500/60 bg-cyan-500/20 text-cyan-300 font-mono text-[11px] font-bold cursor-pointer'
+          : 'h-7 px-2 rounded border border-slate-700 bg-slate-900/90 text-slate-400 hover:text-slate-100 font-mono text-[11px] font-semibold cursor-pointer';
+      }}
+      if (kbdBtn) {{
+        kbdBtn.style.display = isCont ? '' : 'none';
+        kbdBtn.className = figJogState.keyboard
+          ? 'h-7 px-2 rounded border border-emerald-500/60 bg-emerald-500/20 text-emerald-300 font-mono text-[11px] font-bold cursor-pointer flex items-center gap-1'
+          : 'h-7 px-2 rounded border border-slate-700 bg-slate-900/90 text-slate-400 hover:text-slate-100 font-mono text-[11px] font-semibold cursor-pointer flex items-center gap-1';
+      }}
+      if (hintLbl) {{
+        hintLbl.textContent = isCont
+          ? (figJogState.keyboard ? 'Hold octant or Arrows (hold 2 for XY) / +- (Z) · Release cancels' : 'Hold any of 8 XY sectors (incl. diagonals) or Z bar · Release cancels')
+          : (figJogState.fine ? '8-Way Step mode (Fine 0.01 mm) · Diagonals move X & Y together' : '8-Way Step mode · Diagonals (↗↘↙↖) move X & Y simultaneously');
+      }}
+
+      const xySel = document.getElementById('fig-xy-feed');
+      const zSel = document.getElementById('fig-z-feed');
+      if (xySel) xySel.value = String(figJogState.xyFeed);
+      if (zSel) zSel.value = String(figJogState.zFeed);
+
+      if (isCompact) return;
+
+      // Render FigUI JogRose SVG + Mainsail Corner Homing Ears (viewBox -108 -108 216 216)
+      const roseSvg = document.getElementById('fig-jog-rose');
+      if (roseSvg) {{
+        const steps = figRingSteps();
+        const outerR = FIG_RADII[FIG_RADII.length - 1];
+        const centerR = FIG_RADII[0];
+        const showHome = !!(uiConfigState && uiConfigState.enable_homing_btn !== false);
+        // Material Home house path (24x24 viewBox) scaled neatly to 14x14 at ear center
+        const homeGlyph = 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z';
+        const mainsailEars = [
+          {{ id: 'X', cmd: '$HX', tip: 'Home X ($HX)', sx: -1, sy: -1, fill: '#1e293b', hover: '#b91c1c', stroke: '#475569', txt: '#fca5a5', label: 'X' }},
+          {{ id: 'Y', cmd: '$HY', tip: 'Home Y ($HY)', sx:  1, sy: -1, fill: '#1e293b', hover: '#15803d', stroke: '#475569', txt: '#86efac', label: 'Y' }},
+          {{ id: 'Z', cmd: '$HZ', tip: 'Home Z ($HZ)', sx:  1, sy:  1, fill: '#1e293b', hover: '#0369a1', stroke: '#475569', txt: '#7dd3fc', label: 'Z' }},
+          {{ id: 'ALL', cmd: '$H', tip: 'Home All ($H)', sx: -1, sy:  1, fill: '#0c4a6e', hover: '#0284c7', stroke: '#0284c7', txt: '#e0f2fe', label: 'ALL' }}
+        ];
+        let parts = [];
+        if (showHome) {{
+          parts.push('<g id="fig-home-ears">');
+          mainsailEars.forEach(e => {{
+            const x54 = e.sx * 54, x95 = e.sx * 95, x105 = e.sx * 105, x91 = e.sx * 91, x37 = e.sx * 37;
+            const y105 = e.sy * 105, y95 = e.sy * 95, y54 = e.sy * 54, y37 = e.sy * 37, y91 = e.sy * 91;
+            // Arc direction: from (x91, y37) back to (x37, y91) hugging r=98
+            const sweep = (e.sx * e.sy < 0) ? 0 : 1;
+            const dEar = `M ${{x54}},${{y105}} L ${{x95}},${{y105}} Q ${{x105}},${{y105}} ${{x105}},${{y95}} L ${{x105}},${{y54}} L ${{x91}},${{y37}} A 98,98 0 0,${{sweep}} ${{x37}},${{y91}} Z`;
+            const cx = e.sx * 82, cy = e.sy * 82;
+            const labelSize = e.label === 'ALL' ? 8.5 : 10;
+            const iconShiftX = e.label === 'ALL' ? cx - 10 : cx - 8;
+            const txtShiftX = e.label === 'ALL' ? cx + 8 : cx + 6;
+            parts.push(
+              `<g class="mainsail-home-ear cursor-pointer" data-home-cmd="${{e.cmd}}" data-home-fill="${{e.fill}}" data-home-hover="${{e.hover}}">` +
+              `<title>${{e.tip}}</title>` +
+              `<path d="${{dEar}}" fill="${{e.fill}}" stroke="${{e.stroke}}" stroke-width="1.2"/>` +
+              `<g transform="translate(${{iconShiftX - 6}}, ${{cy - 7}}) scale(0.54)" pointer-events="none"><path d="${{homeGlyph}}" fill="${{e.txt}}"/></g>` +
+              `<text x="${{txtShiftX}}" y="${{cy + 1}}" text-anchor="middle" dominant-baseline="middle" fill="${{e.txt}}" font-size="${{labelSize}}" font-weight="800" font-family="ui-monospace, monospace" pointer-events="none">${{e.label}}</text>` +
+              `</g>`
+            );
+          }});
+          parts.push('</g>');
+        }}
+        parts.push(`<circle cx="0" cy="0" r="${{outerR + 2}}" fill="#0b101b" stroke="#334155" stroke-width="1.5" pointer-events="none"/>`);
+        if (isCont) {{
+          FIG_DIRS.forEach(d => {{
+            const dirsJson = d.dirs.join(',');
+            const dPath = figArcPath(centerR, outerR, d.dir, 8);
+            const baseOp = d.diag ? '0.22' : '0.30';
+            parts.push(`<path data-fig-cont="${{dirsJson}}" data-fig-axis="${{d.axis}}" data-fig-label="${{d.label}}" data-fig-op="${{baseOp}}" d="${{dPath}}" fill="${{d.color}}" fill-opacity="${{baseOp}}" stroke="#0b101b" stroke-width="1.4" class="cursor-pointer transition-opacity"><title>Hold to Jog ${{d.title}}</title></path>`);
+          }});
+        }} else {{
+          for (let ri = steps.length - 1; ri >= 0; ri--) {{
+            const stepVal = steps[ri];
+            const rIn = FIG_RADII[ri], rOut = FIG_RADII[ri + 1];
+            const baseOp = (FIG_RING_OPACITIES[ri] * (1.0)).toFixed(2);
+            FIG_DIRS.forEach(d => {{
+              const dPath = figArcPath(rIn, rOut, d.dir, 8);
+              const dx = d.sx * stepVal, dy = d.sy * stepVal;
+              const secOp = d.diag ? (FIG_RING_OPACITIES[ri] * 0.78).toFixed(2) : baseOp;
+              parts.push(`<path data-fig-dx="${{dx}}" data-fig-dy="${{dy}}" data-fig-abs="${{stepVal}}" data-fig-axis="${{d.axis}}" data-fig-label="${{d.label}}" data-fig-color="${{d.color}}" data-fig-op="${{secOp}}" d="${{dPath}}" fill="${{d.color}}" fill-opacity="${{secOp}}" stroke="#0b101b" stroke-width="1.3" class="cursor-pointer"><title>Jog ${{d.title}} by ${{stepVal}} mm</title></path>`);
+            }});
+          }}
+          // Step labels along the 22.5 deg & 202.5 deg octant boundary seams (cleanly between labels)
+          steps.forEach((step, i) => {{
+            const midR = (FIG_RADII[i] + FIG_RADII[i + 1]) / 2;
+            const a1 = Math.PI / 8, a2 = (9 * Math.PI) / 8;
+            const x1 = midR * Math.sin(a1), y1 = -midR * Math.cos(a1);
+            const x2 = midR * Math.sin(a2), y2 = -midR * Math.cos(a2);
+            const fs = i === 0 ? 6.8 : 8.5;
+            parts.push(`<g pointer-events="none"><text x="${{x1.toFixed(1)}}" y="${{y1.toFixed(1)}}" text-anchor="middle" dominant-baseline="middle" fill="#e2e8f0" stroke="#0b101b" stroke-width="2.4" paint-order="stroke" font-size="${{fs}}" font-weight="700" font-family="ui-monospace, monospace" opacity="0.92">${{step}}</text><text x="${{x2.toFixed(1)}}" y="${{y2.toFixed(1)}}" text-anchor="middle" dominant-baseline="middle" fill="#e2e8f0" stroke="#0b101b" stroke-width="2.4" paint-order="stroke" font-size="${{fs}}" font-weight="700" font-family="ui-monospace, monospace" opacity="0.88">${{step}}</text></g>`);
+          }});
+        }}
+        // Directional edge labels (+Y, ↗, +X, ↘, −Y, ↙, −X, ↖)
+        FIG_DIRS.forEach(d => {{
+          const a = d.dir * (Math.PI / 4);
+          const r = outerR - (FIG_RADII[FIG_RADII.length - 1] - FIG_RADII[FIG_RADII.length - 2]) / 2;
+          const fs = d.diag ? 11.5 : 10;
+          const fillCol = d.diag ? '#fde68a' : '#ffffff';
+          parts.push(`<text x="${{(r * Math.sin(a)).toFixed(1)}}" y="${{(-r * Math.cos(a)).toFixed(1)}}" text-anchor="middle" dominant-baseline="middle" fill="${{fillCol}}" font-size="${{fs}}" font-weight="800" font-family="ui-monospace, monospace" pointer-events="none">${{d.label}}</text>`);
+        }});
+        // Center Stop/Cancel/Reticle Disc
+        parts.push(`<circle id="fig-center-disc" cx="0" cy="0" r="${{centerR}}" fill="#131a27" stroke="#334155" stroke-width="1.5" class="cursor-pointer"><title>Go to Work XY0 (or Cancel Jog when moving)</title></circle><circle cx="0" cy="0" r="${{centerR - 3}}" fill="#0f172a" stroke="#1e293b" stroke-width="0.6" pointer-events="none"/><g id="fig-center-content" pointer-events="none"></g>`);
+        roseSvg.innerHTML = parts.join('');
+        bindFigRoseEvents(roseSvg);
+      }}
+
+      // Render FigUI Z AxisBar SVG (viewBox 0 0 44 220)
+      const zSvg = document.getElementById('fig-jog-z-bar');
+      if (zSvg) {{
+        const zSteps = figZSteps();
+        const zoneFills = ['#1e293b', '#263549', '#334863'];
+        let zParts = [
+          `<rect x="2" y="0" width="40" height="24" rx="3" fill="#38bdf8" fill-opacity="0.18"/>`,
+          `<text x="22" y="16" text-anchor="middle" fill="#38bdf8" font-size="12" font-weight="700" font-family="ui-monospace, monospace" pointer-events="none">+Z</text>`
+        ];
+        if (isCont) {{
+          zParts.push(`<rect data-fig-z-cont="Z+" x="2" y="26" width="40" height="82" rx="3" fill="#263549" stroke="#0b101b" stroke-width="1.5" class="cursor-pointer"/>`);
+          zParts.push(`<rect x="2" y="110" width="40" height="4" rx="1" fill="#334155"/>`);
+          zParts.push(`<rect data-fig-z-cont="Z-" x="2" y="116" width="40" height="82" rx="3" fill="#263549" stroke="#0b101b" stroke-width="1.5" class="cursor-pointer"/>`);
+        }} else {{
+          zSteps.forEach((step, i) => {{
+            const y = 26 + i * 28;
+            const fill = zoneFills[zSteps.length - 1 - i];
+            zParts.push(`<g data-fig-z-step="${{step}}" data-fig-fill="${{fill}}" class="cursor-pointer"><rect x="2" y="${{y}}" width="40" height="26" rx="2.5" fill="${{fill}}" stroke="#0b101b" stroke-width="1.5"/><text x="22" y="${{y + 16.5}}" text-anchor="middle" fill="#e2e8f0" font-size="11.5" font-weight="700" font-family="ui-monospace, monospace" pointer-events="none">${{step}}</text></g>`);
+          }});
+          zParts.push(`<rect x="2" y="110" width="40" height="4" rx="1" fill="#334155"/>`);
+          [...zSteps].reverse().forEach((step, i) => {{
+            const y = 116 + i * 28;
+            const fill = zoneFills[i];
+            zParts.push(`<g data-fig-z-step="${{-step}}" data-fig-fill="${{fill}}" class="cursor-pointer"><rect x="2" y="${{y}}" width="40" height="26" rx="2.5" fill="${{fill}}" stroke="#0b101b" stroke-width="1.5"/><text x="22" y="${{y + 16.5}}" text-anchor="middle" fill="#e2e8f0" font-size="11.5" font-weight="700" font-family="ui-monospace, monospace" pointer-events="none">${{step}}</text></g>`);
+          }});
+        }}
+        zParts.push(`<rect x="2" y="200" width="40" height="20" rx="3" fill="#38bdf8" fill-opacity="0.18"/>`);
+        zParts.push(`<text x="22" y="214" text-anchor="middle" fill="#38bdf8" font-size="12" font-weight="700" font-family="ui-monospace, monospace" pointer-events="none">−Z</text>`);
+        zSvg.innerHTML = zParts.join('');
+        bindFigZBarEvents(zSvg);
+      }}
+      updateFigCenterReadout();
+    }}
+
+    function bindFigRoseEvents(svg) {{
+      svg.querySelectorAll('.mainsail-home-ear').forEach(el => {{
+        const path = el.querySelector('path');
+        const cmd = el.getAttribute('data-home-cmd');
+        const baseFill = el.getAttribute('data-home-fill');
+        const hoverFill = el.getAttribute('data-home-hover');
+        el.addEventListener('pointerenter', () => {{
+          if (path) path.setAttribute('fill', hoverFill);
+        }});
+        el.addEventListener('pointerleave', () => {{
+          if (path) path.setAttribute('fill', baseFill);
+        }});
+        el.addEventListener('click', () => sendFluidNCRealtime(cmd));
+      }});
+      const center = svg.querySelector('#fig-center-disc');
+      if (center) {{
+        center.addEventListener('click', () => {{
+          if (figJogState.isJogging) cancelFigJogNow();
+          else goToWorkZero('XY');
+        }});
+      }}
+      svg.querySelectorAll('[data-fig-abs]').forEach(el => {{
+        const op = el.getAttribute('data-fig-op');
+        const ax = el.getAttribute('data-fig-axis');
+        const absVal = el.getAttribute('data-fig-abs');
+        const dirLbl = el.getAttribute('data-fig-label');
+        const dx = Number(el.getAttribute('data-fig-dx') || 0);
+        const dy = Number(el.getAttribute('data-fig-dy') || 0);
+        el.addEventListener('pointerenter', () => {{
+          el.setAttribute('fill-opacity', '0.88');
+          figJogState.hoverAxis = ax;
+          figJogState.hoverStep = absVal;
+          figJogState.hoverDirLabel = dirLbl;
+          updateFigCenterReadout();
+        }});
+        el.addEventListener('pointerleave', () => {{
+          el.setAttribute('fill-opacity', op);
+          figJogState.hoverAxis = null;
+          figJogState.hoverStep = null;
+          figJogState.hoverDirLabel = null;
+          updateFigCenterReadout();
+        }});
+        el.addEventListener('click', () => sendJogMoves({{ X: dx, Y: dy }}, figJogState.xyFeed));
+      }});
+      svg.querySelectorAll('[data-fig-cont]').forEach(el => {{
+        const dirs = String(el.getAttribute('data-fig-cont') || '').split(',').filter(Boolean);
+        const ax = el.getAttribute('data-fig-axis');
+        const dirLbl = el.getAttribute('data-fig-label');
+        const baseOp = el.getAttribute('data-fig-op') || '0.28';
+        el.addEventListener('pointerenter', () => {{
+          el.setAttribute('fill-opacity', '0.85');
+          figJogState.hoverAxis = ax;
+          figJogState.hoverDirLabel = dirLbl;
+          updateFigCenterReadout();
+        }});
+        el.addEventListener('pointerleave', () => {{
+          el.setAttribute('fill-opacity', baseOp);
+          figJogState.hoverAxis = null;
+          figJogState.hoverDirLabel = null;
+          stopFigContJog(true);
+        }});
+        el.addEventListener('pointerdown', (e) => {{
+          try {{ el.setPointerCapture(e.pointerId); }} catch (_) {{}}
+          el.setAttribute('fill-opacity', '0.94');
+          figJogState.hoverAxis = ax;
+          figJogState.hoverDirLabel = dirLbl;
+          const vecFeed = Math.round(figJogState.xyFeed * Math.sqrt(Math.max(1, dirs.length)));
+          startFigContJog(dirs, vecFeed);
+        }});
+        el.addEventListener('pointerup', () => {{ el.setAttribute('fill-opacity', baseOp); stopFigContJog(true); }});
+        el.addEventListener('pointercancel', () => {{ el.setAttribute('fill-opacity', baseOp); stopFigContJog(true); }});
+      }});
+    }}
+
+    function bindFigZBarEvents(svg) {{
+      svg.querySelectorAll('[data-fig-z-step]').forEach(el => {{
+        const rect = el.querySelector('rect');
+        const baseFill = el.getAttribute('data-fig-fill');
+        const delta = Number(el.getAttribute('data-fig-z-step'));
+        el.addEventListener('pointerenter', () => {{
+          if (rect) rect.setAttribute('fill', '#0284c7');
+          figJogState.hoverAxis = 'Z';
+          figJogState.hoverStep = String(Math.abs(delta));
+          updateFigCenterReadout();
+        }});
+        el.addEventListener('pointerleave', () => {{
+          if (rect) rect.setAttribute('fill', baseFill);
+          figJogState.hoverAxis = null;
+          figJogState.hoverStep = null;
+          updateFigCenterReadout();
+        }});
+        el.addEventListener('click', () => sendStepJog('Z', delta, figJogState.zFeed));
+      }});
+      svg.querySelectorAll('[data-fig-z-cont]').forEach(el => {{
+        const dirCode = el.getAttribute('data-fig-z-cont');
+        el.addEventListener('pointerenter', () => {{
+          el.setAttribute('fill', '#0284c7');
+          figJogState.hoverAxis = 'Z';
+          updateFigCenterReadout();
+        }});
+        el.addEventListener('pointerleave', () => {{
+          el.setAttribute('fill', '#263549');
+          figJogState.hoverAxis = null;
+          stopFigContJog(true);
+        }});
+        el.addEventListener('pointerdown', (e) => {{
+          try {{ el.setPointerCapture(e.pointerId); }} catch (_) {{}}
+          el.setAttribute('fill', '#0ea5e9');
+          figJogState.hoverAxis = 'Z';
+          startFigContJog([dirCode], figJogState.zFeed);
+        }});
+        el.addEventListener('pointerup', () => {{ el.setAttribute('fill', '#263549'); stopFigContJog(true); }});
+        el.addEventListener('pointercancel', () => {{ el.setAttribute('fill', '#263549'); stopFigContJog(true); }});
+      }});
+    }}
+
+    function initFigUIJogPad() {{
+      renderFigUIJogPad();
+      window.addEventListener('keydown', (e) => {{
+        if (figJogState.mode !== 'continuous' || !figJogState.keyboard) return;
+        if (e.ctrlKey || e.altKey || e.metaKey) return;
+        const tag = (e.target && e.target.tagName) || '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        const sec = document.getElementById('section-macros');
+        if (!sec || sec.style.display === 'none') return;
+        const map = {{ ArrowRight: 'X+', ArrowLeft: 'X-', ArrowUp: 'Y+', ArrowDown: 'Y-', '+': 'Z+', '=': 'Z+', '-': 'Z-' }};
+        const dir = map[e.key];
+        if (!dir) return;
+        e.preventDefault();
+        if (e.repeat || figJogState.pressedKeys.has(dir)) return;
+        const opp = dir[0] + (dir[1] === '+' ? '-' : '+');
+        figJogState.pressedKeys.delete(opp);
+        figJogState.pressedKeys.add(dir);
+        const dirs = [...figJogState.pressedKeys];
+        const hasXY = dirs.some(d => d[0] === 'X' || d[0] === 'Y');
+        const feed = Math.round((hasXY ? figJogState.xyFeed : figJogState.zFeed) * Math.sqrt(dirs.length));
+        startFigContJog(dirs, feed);
+      }});
+      window.addEventListener('keyup', (e) => {{
+        if (figJogState.mode !== 'continuous' || !figJogState.keyboard) return;
+        const axMap = {{ ArrowRight: 'X', ArrowLeft: 'X', ArrowUp: 'Y', ArrowDown: 'Y', '+': 'Z', '=': 'Z', '-': 'Z' }};
+        const ax = axMap[e.key];
+        if (!ax) return;
+        figJogState.pressedKeys.delete(ax + '+');
+        figJogState.pressedKeys.delete(ax + '-');
+        const dirs = [...figJogState.pressedKeys];
+        if (dirs.length > 0) {{
+          const hasXY = dirs.some(d => d[0] === 'X' || d[0] === 'Y');
+          const feed = Math.round((hasXY ? figJogState.xyFeed : figJogState.zFeed) * Math.sqrt(dirs.length));
+          startFigContJog(dirs, feed);
+        }} else {{
+          stopFigContJog(true);
+        }}
+      }});
+      window.addEventListener('blur', () => {{
+        if (figJogState.pressedKeys.size > 0 || figJogState.contTimer) {{
+          figJogState.pressedKeys.clear();
+          stopFigContJog(true);
+        }}
       }});
     }}
 
     async function sendJog(axis, dir) {{
-      const dist = (jogStepMm * dir).toFixed(3);
-      const xyFeed = Number(document.getElementById('jog-feed-select')?.value || 1200);
-      const feed = (axis === 'Z') ? Math.min(400, xyFeed) : xyFeed;
-      await sendFluidNCRealtime(`$J=G91 G21 ${{axis}}${{dist}} F${{feed}}`);
-      setTimeout(refreshLiveBedTool, 350);
+      const feed = (axis === 'Z') ? figJogState.zFeed : figJogState.xyFeed;
+      return sendJogMoves({{ [axis]: jogStepMm * dir }}, feed);
     }}
 
     async function sendJogDiag(dx, dy) {{
-      const xyFeed = Number(document.getElementById('jog-feed-select')?.value || 1200);
-      await sendFluidNCRealtime(`$J=G91 G21 X${{(jogStepMm * dx).toFixed(3)}} Y${{(jogStepMm * dy).toFixed(3)}} F${{xyFeed}}`);
-      setTimeout(refreshLiveBedTool, 350);
+      return sendJogMoves({{ X: jogStepMm * dx, Y: jogStepMm * dy }}, figJogState.xyFeed);
+    }}
+
+    async function goToWorkZero(axes) {{
+      const mode = String(axes || '').toUpperCase();
+      if (mode === 'Z') {{
+        if (!confirm('Move Z to Work Z=0 (G90 G1 Z0 F300)? Ensure tool is clear and Z0 is calibrated.')) return;
+        await sendFluidNCRealtime('G90 G1 Z0 F300');
+      }} else if (mode === 'XYZ') {{
+        if (!confirm('Move to Work X0 Y0 first, then move Z to Work Z=0 (F300)? Ensure path is clear.')) return;
+        await sendFluidNCRealtime('G90 G0 X0 Y0');
+        await sendFluidNCRealtime('G90 G1 Z0 F300');
+      }} else if (mode === 'X') {{
+        await sendFluidNCRealtime('G90 G0 X0');
+      }} else if (mode === 'Y') {{
+        await sendFluidNCRealtime('G90 G0 Y0');
+      }} else if (mode === 'XY') {{
+        await sendFluidNCRealtime('G90 G0 X0 Y0');
+      }}
+      setTimeout(refreshLiveBedTool, 450);
     }}
 
     let uiConfigState = {{
@@ -6807,7 +7831,8 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       enable_unlock_btn: true,
       enable_zero_work_btn: true,
       enable_pcb_z_offset: true,
-      pcb_thickness_mm: 1.6
+      pcb_thickness_mm: 1.6,
+      z_switch_above_bed_mm: 5.5
     }};
 
     async function loadUIConfig() {{
@@ -6845,15 +7870,18 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       setChk('cfg-enable-hmap', u.enable_heightmap_leveling);
       const tIn = document.getElementById('cfg-pcb-thickness');
       if (tIn) tIn.value = Number(u.pcb_thickness_mm ?? 1.6).toFixed(2);
+      const swIn = document.getElementById('cfg-z-switch-offset');
+      if (swIn) swIn.value = Number(u.z_switch_above_bed_mm ?? 5.5).toFixed(2);
 
       // Toggle Homing / Unlock / Zero buttons in Dispatch & Macros
       const toggleVis = (ids, show) => ids.forEach(id => {{
         const el = document.getElementById(id);
         if (el) el.style.display = show ? '' : 'none';
       }});
-      toggleVis(['btn-dispatch-home', 'btn-macro-home'], u.enable_homing_btn);
+      toggleVis(['btn-dispatch-home', 'btn-macro-home', 'fig-compact-home-block'], u.enable_homing_btn);
       toggleVis(['btn-dispatch-unlock', 'btn-macro-unlock'], u.enable_unlock_btn);
       toggleVis(['btn-dispatch-zero', 'btn-macro-zero-xy', 'btn-macro-zero-z'], u.enable_zero_work_btn);
+      renderFigUIJogPad();
 
       // Gate Touch-Probe buttons when touch_probe_enabled is false
       ['btn-hm-scan', 'btn-align-probe'].forEach(id => {{
@@ -6884,20 +7912,36 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
     function renderDispatchMacrosBar() {{
       const list = document.getElementById('dispatch-macros-list');
       if (!list) return;
-      list.innerHTML = (macrosCatalog || []).map(m => `
+      list.innerHTML = (macrosCatalog || []).map(m => {{
+        const isAct = !!(liveStreamState && liveStreamState.active && liveStreamState.filename === m.file);
+        const isJustDone = !isAct && !!(liveStreamState && liveStreamState.lastCompletedFile === m.file);
+        const cls = isAct
+          ? 'px-2.5 py-1 rounded-lg bg-cyan-600/30 text-cyan-200 border border-cyan-400 ring-1 ring-cyan-400/50 text-[11px] font-bold transition cursor-pointer flex items-center gap-1.5 animate-pulse'
+          : (isJustDone
+            ? 'px-2.5 py-1 rounded-lg bg-amber-600/25 text-amber-200 border border-amber-400/70 ring-1 ring-amber-400/40 text-[11px] font-bold transition cursor-pointer flex items-center gap-1.5'
+            : 'px-2.5 py-1 rounded-lg bg-slate-800/90 hover:bg-blue-600 text-slate-200 hover:text-white border border-slate-700/80 text-[11px] font-medium transition cursor-pointer flex items-center gap-1.5');
+        return `
         <button type="button" onclick="runMacroOnCNC('${{m.file}}', this)"
-                class="px-2.5 py-1 rounded-lg bg-slate-800/90 hover:bg-blue-600 text-slate-200 hover:text-white border border-slate-700/80 text-[11px] font-medium transition cursor-pointer flex items-center gap-1.5"
+                class="${{cls}}"
                 data-tip="${{m.description || m.file}}">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-          <span>${{m.name}}</span>
-        </button>
-      `).join('');
+          <span>${{m.name}}${{isAct ? ' (Live)' : (isJustDone ? ' (Finished)' : '')}}</span>
+        </button>`;
+      }}).join('');
     }}
 
     async function applyPcbThicknessZero() {{
       const t = Number(document.getElementById('cfg-pcb-thickness')?.value || 1.6);
-      await saveUIConfigPartial({{ pcb_thickness_mm: t }});
+      const sw = Number(document.getElementById('cfg-z-switch-offset')?.value ?? 5.5);
+      await saveUIConfigPartial({{ pcb_thickness_mm: t, z_switch_above_bed_mm: sw }});
       await runMacroOnCNC('pcb_z_zero_thickness.gcode', null);
+    }}
+
+    async function applyPcbSwitchZero() {{
+      const t = Number(document.getElementById('cfg-pcb-thickness')?.value || 1.6);
+      const sw = Number(document.getElementById('cfg-z-switch-offset')?.value ?? 5.5);
+      await saveUIConfigPartial({{ pcb_thickness_mm: t, z_switch_above_bed_mm: sw }});
+      await runMacroOnCNC('pcb_z_zero_switch.gcode', null);
     }}
 
     let liveBedTimer = null;
@@ -7243,6 +8287,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       loadUIConfig();
       loadMacrosAndHeightMap();
       loadBoardAlignment();
+      initFigUIJogPad();
       startLiveBedPolling();
     }});
   </script>
@@ -7305,6 +8350,12 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
 
       <!-- Compact Status & Safety Indicators -->
       <div class="flex items-center gap-2 text-xs">
+        <button type="button" id="btn-virtual-estop" onclick="triggerVirtualEStop()"
+                class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 active:scale-95 text-white font-bold border border-red-400/60 shadow-lg shadow-red-950/60 transition cursor-pointer"
+                data-tip="VIRTUAL E-STOP: Immediate Feed Hold (!) + Soft Reset (0x18) + Spindle OFF (M5)" aria-label="Virtual Emergency Stop">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>E-STOP</span>
+        </button>
         <span class="p-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 cursor-help"
               data-tip="Z-Switch Keep-Out: X{z_switch_x:.1f} Y{z_switch_y:.1f}mm">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -7340,6 +8391,12 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
 
         <!-- Compact Icon Action Bar -->
         <div class="flex flex-wrap items-center gap-1.5">
+          <button type="button" id="btn-dispatch-stop-stream" onclick="stopOngoingStream()" disabled
+                  class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800/70 text-slate-500 border border-slate-700/60 font-semibold text-xs transition cursor-not-allowed opacity-50"
+                  data-tip="Stop ongoing G-code stream immediately (! + Ctrl-X + M5)" aria-label="Stop Stream">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+            <span>Stop</span>
+          </button>
           <button type="button" onclick="testFluidNCConnection()" class="p-2 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700/80 transition cursor-pointer" data-tip="Ping FluidNC" aria-label="Ping FluidNC">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
           </button>
@@ -7515,6 +8572,81 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
           </div>
         </div>
         <iframe id="fluidnc-iframe" src="about:blank" title="FluidNC WebUI" class="w-full h-[520px] border-0 bg-[#121620]"></iframe>
+      </div>
+
+      <!-- Live Stream Preview & Tracking View (auto-opens when streaming starts) -->
+      <div id="dispatch-live-stream-panel" class="hidden mb-4 p-3.5 rounded-xl bg-[#070b14] border border-cyan-500/40 shadow-lg shadow-cyan-950/30 space-y-3 text-xs">
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-800/90">
+          <div class="flex flex-wrap items-center gap-2 min-w-0">
+            <span id="live-stream-badge" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-mono text-[11px] font-bold">
+              <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+              <span>STREAMING</span>
+            </span>
+            <strong id="live-stream-filename" class="font-mono text-slate-100 truncate max-w-xs sm:max-w-md">-</strong>
+            <span id="live-stream-via" class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] uppercase">-</span>
+            <span id="live-stream-counter" class="font-mono text-cyan-300 font-semibold">0 / 0 (0%)</span>
+            <span id="live-stream-elapsed" class="font-mono text-slate-400 text-[11px]">00:00</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <button type="button" onclick="sendFluidNCRealtime('!')" class="px-2 py-1 rounded-lg bg-amber-600/25 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/35 font-semibold cursor-pointer" data-tip="Feed Hold (!)">Pause</button>
+            <button type="button" onclick="sendFluidNCRealtime('~')" class="px-2 py-1 rounded-lg bg-emerald-600/25 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/35 font-semibold cursor-pointer" data-tip="Cycle Start / Resume (~)">Resume</button>
+            <button type="button" id="btn-live-mark-done" onclick="toggleLiveStreamDone()" class="hidden px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold cursor-pointer inline-flex items-center gap-1 shadow-sm" data-tip="Check off this finished file in Dispatch">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              <span>Check File</span>
+            </button>
+            <button type="button" id="btn-live-stop" onclick="stopOngoingStream()" class="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold cursor-pointer inline-flex items-center gap-1" data-tip="Stop ongoing G-code stream">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+              <span>Stop Stream</span>
+            </button>
+            <button type="button" onclick="triggerVirtualEStop()" class="px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold border border-red-400/50 cursor-pointer" data-tip="Immediate Emergency Stop (! + Ctrl-X + M5)">E-STOP</button>
+            <button type="button" onclick="if (liveStreamState.jobFilename || liveStreamState.filename) openGCodeViewer(liveStreamState.jobFilename || liveStreamState.filename)" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer" data-tip="Open in Full 2D/3D Viewer">3D View</button>
+            <button type="button" onclick="hideLiveStreamPanel()" class="px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 cursor-pointer" data-tip="Dismiss Preview">&times;</button>
+          </div>
+        </div>
+
+        <div class="space-y-1">
+          <div class="flex items-center justify-between gap-2 text-[11px] font-mono">
+            <span id="live-stream-message" class="text-slate-300 truncate">Ready</span>
+            <span id="live-stream-cmd" class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-cyan-300 truncate max-w-md">-</span>
+          </div>
+          <div class="w-full h-2 rounded-full bg-slate-900 overflow-hidden border border-slate-800">
+            <div id="live-stream-progress-bar" class="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-200 rounded-full" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
+          <div class="lg:col-span-8 bg-[#05070d] rounded-xl border border-slate-800/90 p-2 flex flex-col">
+            <div class="flex items-center justify-between text-[10px] font-mono text-slate-400 px-1 pb-1">
+              <span>Live Toolpath Preview &amp; CNC Tracking (Preview Mode)</span>
+              <div class="flex items-center gap-3">
+                <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-400"></span>Done</span>
+                <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-cyan-400"></span>Current</span>
+                <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-fuchsia-400"></span>CNC Head</span>
+              </div>
+            </div>
+            <canvas id="dispatch-live-canvas" class="w-full h-[260px] rounded-lg bg-[#04060b]"></canvas>
+          </div>
+
+          <div class="lg:col-span-4 flex flex-col gap-2">
+            <div class="grid grid-cols-2 gap-2 font-mono text-[11px]">
+              <div class="p-2 rounded-lg bg-slate-900/90 border border-slate-800">
+                <span class="block text-[9px] uppercase text-slate-400">Work Pos (WPos)</span>
+                <strong id="live-pos-wpos" class="text-cyan-300">X:-- Y:-- Z:--</strong>
+              </div>
+              <div class="p-2 rounded-lg bg-slate-900/90 border border-slate-800">
+                <span class="block text-[9px] uppercase text-slate-400">Machine (MPos)</span>
+                <strong id="live-pos-mpos" class="text-slate-200">X:-- Y:-- Z:--</strong>
+              </div>
+            </div>
+            <div class="flex-1 p-2 rounded-lg bg-slate-950 border border-slate-800/90 flex flex-col">
+              <div class="text-[10px] font-mono uppercase text-slate-400 pb-1 mb-1 border-b border-slate-800/80 flex justify-between">
+                <span>Execution Window</span>
+                <span id="live-stream-pct" class="text-emerald-400 font-bold">0%</span>
+              </div>
+              <div id="live-stream-lines" class="font-mono text-[11px] space-y-0.5 overflow-hidden flex-1"></div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Sheet & Step Filter Row -->
@@ -7853,52 +8985,121 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
     <!-- TAB 7: CUSTOM MACROS, JOG, UI CONFIG & BED HEIGHT MAP -->
     <section id="section-macros" class="dash-section space-y-4" style="display:none;">
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <!-- BOX 1: FigUI Jog Pad + Live Tool on Bed -->
+        <!-- BOX 1: FluidNC FigUI Jog Pad + Live Tool on Bed -->
         <div class="lg:col-span-4 glass-panel p-4 rounded-2xl border border-slate-800/90 flex flex-col gap-3">
           <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800/80">
-            <h2 class="text-sm font-semibold text-slate-100">Navigation &amp; Jog</h2>
-            <div class="flex items-center gap-1">
-              <button type="button" onclick="setJogStep(0.1)" data-step="0.1" class="jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer">0.1</button>
-              <button type="button" onclick="setJogStep(1)" data-step="1" class="jog-step-btn px-1.5 py-0.5 rounded bg-blue-600 text-white font-mono text-[11px] font-semibold cursor-pointer">1</button>
-              <button type="button" onclick="setJogStep(5)" data-step="5" class="jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer">5</button>
-              <button type="button" onclick="setJogStep(10)" data-step="10" class="jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer">10</button>
-              <button type="button" onclick="setJogStep(50)" data-step="50" class="jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer">50</button>
+            <div class="flex items-center gap-2">
+              <h2 class="text-sm font-semibold text-slate-100">Navigation &amp; Jog</h2>
+              <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800/90 text-cyan-300 border border-slate-700">FigUI</span>
+            </div>
+            <div class="inline-flex rounded-lg border border-slate-700 overflow-hidden bg-slate-950/80">
+              <button type="button" id="fig-mode-step" onclick="setFigJogMode('step')">Step</button>
+              <button type="button" id="fig-mode-continuous" onclick="setFigJogMode('continuous')" class="border-l border-slate-700">Continuous</button>
+              <button type="button" id="fig-mode-compact" onclick="setFigJogMode('compact')" class="border-l border-slate-700">Compact</button>
             </div>
           </div>
 
-          <!-- FigUI 3x3 XY Compass + Z Column -->
-          <div class="grid grid-cols-4 gap-1.5 text-xs font-mono">
-            <button type="button" onclick="sendJogDiag(-1, 1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X- Y+">&#8598;</button>
-            <button type="button" onclick="sendJog('Y', 1)" class="p-2 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-100 border border-slate-700 font-semibold cursor-pointer" data-tip="Jog Y+">Y+</button>
-            <button type="button" onclick="sendJogDiag(1, 1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X+ Y+">&#8599;</button>
-            <button type="button" onclick="sendJog('Z', 1)" class="p-2 rounded-lg bg-cyan-950/50 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-500/30 font-semibold cursor-pointer" data-tip="Jog Z+">Z+</button>
-
-            <button type="button" onclick="sendJog('X', -1)" class="p-2 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-100 border border-slate-700 font-semibold cursor-pointer" data-tip="Jog X-">X-</button>
-            <button type="button" onclick="sendFluidNCRealtime('G90 G0 X0 Y0')" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 cursor-pointer" data-tip="Go to Work X0 Y0">XY0</button>
-            <button type="button" onclick="sendJog('X', 1)" class="p-2 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-100 border border-slate-700 font-semibold cursor-pointer" data-tip="Jog X+">X+</button>
-            <button type="button" id="btn-macro-zero-z" onclick="sendFluidNCRealtime('G10 L20 P1 Z0')" class="p-2 rounded-lg bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 cursor-pointer" data-tip="Zero Z">0 Z</button>
-
-            <button type="button" onclick="sendJogDiag(-1, -1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X- Y-">&#8601;</button>
-            <button type="button" onclick="sendJog('Y', -1)" class="p-2 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-100 border border-slate-700 font-semibold cursor-pointer" data-tip="Jog Y-">Y-</button>
-            <button type="button" onclick="sendJogDiag(1, -1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X+ Y-">&#8600;</button>
-            <button type="button" onclick="sendJog('Z', -1)" class="p-2 rounded-lg bg-cyan-950/50 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-500/30 font-semibold cursor-pointer" data-tip="Jog Z-">Z-</button>
+          <!-- FigUI JogRose (Concentric SVG Rings / Continuous Wedges) + Mainsail Corner Homing + Z AxisBar -->
+          <div id="fig-jog-rose-wrap" class="relative flex flex-col gap-1.5" oncontextmenu="return false">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-1.5">
+                <button type="button" id="fig-fine-btn" onclick="toggleFigFineJog()" class="h-6 px-2 rounded border border-slate-700 text-[11px] font-mono" data-tip="Fine jog: swap 0.1 mm ring/bar for 0.01 mm">0.01 Fine</button>
+                <button type="button" id="fig-kbd-btn" onclick="toggleFigKeyboardJog()" style="display:none;" class="h-6 px-2 rounded border border-slate-700 text-[11px] font-mono" data-tip="Enable keyboard jogging (Arrows XY, +/- Z)">Kbd</button>
+              </div>
+              <span class="text-[10px] font-mono text-slate-400">Mainsail Homing Corners (X / Y / Z / ALL)</span>
+            </div>
+            <div class="relative flex items-center justify-center gap-2.5 py-0.5">
+              <svg id="fig-jog-rose" viewBox="-108 -108 216 216" style="touch-action:none;" class="w-full max-w-[248px] select-none"></svg>
+              <svg id="fig-jog-z-bar" viewBox="0 0 44 220" style="touch-action:none;" class="w-[46px] h-[230px] select-none shrink-0"></svg>
+            </div>
+            <div id="fig-jog-mode-hint" class="text-[10px] text-center font-mono text-slate-400">Step mode · Click concentric ring sector to jog</div>
           </div>
 
-          <!-- Quick Machine Actions + Feedrate -->
+          <!-- Compact Grid Fallback (FigUI Compact + Mainsail 2x2 Homing Block) -->
+          <div id="fig-jog-compact-wrap" style="display:none;" class="space-y-2">
+            <div class="flex items-center justify-between gap-1">
+              <span class="text-[10px] font-mono text-slate-400">Step (mm):</span>
+              <div class="flex items-center gap-1">
+                <button type="button" onclick="setJogStep(0.1)" data-step="0.1" class="jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer">0.1</button>
+                <button type="button" onclick="setJogStep(1)" data-step="1" class="jog-step-btn px-1.5 py-0.5 rounded bg-blue-600 text-white font-mono text-[11px] font-semibold cursor-pointer">1</button>
+                <button type="button" onclick="setJogStep(5)" data-step="5" class="jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer">5</button>
+                <button type="button" onclick="setJogStep(10)" data-step="10" class="jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer">10</button>
+                <button type="button" onclick="setJogStep(50)" data-step="50" class="jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer">50</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-4 gap-1.5 text-xs font-mono">
+              <button type="button" onclick="sendJogDiag(-1, 1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X- Y+">&#8598;</button>
+              <button type="button" onclick="sendJog('Y', 1)" class="p-2 rounded-lg bg-slate-800 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-slate-700 font-semibold cursor-pointer" data-tip="Jog Y+">Y+</button>
+              <button type="button" onclick="sendJogDiag(1, 1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X+ Y+">&#8599;</button>
+              <button type="button" onclick="sendJog('Z', 1)" class="p-2 rounded-lg bg-cyan-950/50 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-500/30 font-semibold cursor-pointer" data-tip="Jog Z+">Z+</button>
+
+              <button type="button" onclick="sendJog('X', -1)" class="p-2 rounded-lg bg-slate-800 hover:bg-red-600 text-red-300 hover:text-white border border-slate-700 font-semibold cursor-pointer" data-tip="Jog X-">X-</button>
+              <button type="button" onclick="goToWorkZero('XY')" class="p-2 rounded-lg bg-slate-800 hover:bg-amber-600/30 text-amber-300 border border-slate-700 cursor-pointer" data-tip="Go to Work X0 Y0">XY0</button>
+              <button type="button" onclick="sendJog('X', 1)" class="p-2 rounded-lg bg-slate-800 hover:bg-red-600 text-red-300 hover:text-white border border-slate-700 font-semibold cursor-pointer" data-tip="Jog X+">X+</button>
+              <button type="button" onclick="cancelFigJogNow()" class="p-2 rounded-lg bg-red-950/50 hover:bg-red-600 text-red-300 hover:text-white border border-red-500/30 cursor-pointer" data-tip="Cancel Jog (0x85)">Stop</button>
+
+              <button type="button" onclick="sendJogDiag(-1, -1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X- Y-">&#8601;</button>
+              <button type="button" onclick="sendJog('Y', -1)" class="p-2 rounded-lg bg-slate-800 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-slate-700 font-semibold cursor-pointer" data-tip="Jog Y-">Y-</button>
+              <button type="button" onclick="sendJogDiag(1, -1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X+ Y-">&#8600;</button>
+              <button type="button" onclick="sendJog('Z', -1)" class="p-2 rounded-lg bg-cyan-950/50 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-500/30 font-semibold cursor-pointer" data-tip="Jog Z-">Z-</button>
+            </div>
+            <!-- Mainsail-style 2x2 Homing Block -->
+            <div id="fig-compact-home-block" class="grid grid-cols-2 gap-1 rounded-lg overflow-hidden border border-slate-700 text-[11px] font-mono">
+              <button type="button" onclick="sendFluidNCRealtime('$H')" class="py-1.5 px-2 bg-sky-700/80 hover:bg-sky-600 text-white font-semibold flex items-center justify-center gap-1 cursor-pointer" data-tip="Home All ($H)">&#8962; ALL</button>
+              <button type="button" onclick="sendFluidNCRealtime('$HZ')" class="py-1.5 px-2 bg-slate-800 hover:bg-sky-700 text-sky-300 hover:text-white font-semibold flex items-center justify-center gap-1 cursor-pointer" data-tip="Home Z ($HZ)">&#8962; Z</button>
+              <button type="button" onclick="sendFluidNCRealtime('$HX')" class="py-1.5 px-2 bg-slate-800 hover:bg-red-700 text-red-300 hover:text-white font-semibold flex items-center justify-center gap-1 cursor-pointer" data-tip="Home X ($HX)">&#8962; X</button>
+              <button type="button" onclick="sendFluidNCRealtime('$HY')" class="py-1.5 px-2 bg-slate-800 hover:bg-emerald-700 text-emerald-300 hover:text-white font-semibold flex items-center justify-center gap-1 cursor-pointer" data-tip="Home Y ($HY)">&#8962; Y</button>
+            </div>
+          </div>
+
+          <!-- FigUI Separate XY & Z Feedrates -->
+          <div class="flex items-center justify-between gap-2 text-[11px] font-mono">
+            <label class="flex items-center gap-1.5 text-slate-300">
+              <span class="text-slate-400">XY</span>
+              <select id="fig-xy-feed" onchange="setFigJogFeed('xy', this.value)" class="bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-slate-200 font-mono text-[11px]">
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+                <option value="500">500</option>
+                <option value="1000" selected>1000</option>
+                <option value="2000">2000</option>
+                <option value="3000">3000</option>
+              </select>
+            </label>
+            <label class="flex items-center gap-1.5 text-slate-300">
+              <span class="text-slate-400">Z</span>
+              <select id="fig-z-feed" onchange="setFigJogFeed('z', this.value)" class="bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-slate-200 font-mono text-[11px]">
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="200" selected>200</option>
+                <option value="400">400</option>
+                <option value="800">800</option>
+              </select>
+            </label>
+            <span class="text-[10px] text-slate-500">mm/min</span>
+          </div>
+
+          <!-- Go to Work Zero Row -->
+          <div class="flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
+            <span class="text-slate-400 mr-0.5">Go 0:</span>
+            <button type="button" onclick="goToWorkZero('X')" class="px-2 py-1 rounded bg-amber-500/15 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/30 cursor-pointer" data-tip="Go to Work X0 (G90 G0 X0)">Go X0</button>
+            <button type="button" onclick="goToWorkZero('Y')" class="px-2 py-1 rounded bg-amber-500/15 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/30 cursor-pointer" data-tip="Go to Work Y0 (G90 G0 Y0)">Go Y0</button>
+            <button type="button" onclick="goToWorkZero('XY')" class="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-600 text-amber-200 hover:text-white border border-amber-500/40 font-semibold cursor-pointer" data-tip="Go to Work X0 Y0 (G90 G0 X0 Y0)">Go XY0</button>
+            <button type="button" onclick="goToWorkZero('Z')" class="px-2 py-1 rounded bg-orange-500/15 hover:bg-orange-600 text-orange-300 hover:text-white border border-orange-500/30 cursor-pointer" data-tip="Move Z to Work Z0 at F300 (confirms first)">Go Z0</button>
+            <button type="button" onclick="goToWorkZero('XYZ')" class="px-2 py-1 rounded bg-rose-500/15 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 font-semibold cursor-pointer" data-tip="Move to X0 Y0 then Z0 at F300 (confirms first)">Go XYZ0</button>
+          </div>
+
+          <!-- Quick Machine & Zero Actions -->
           <div class="flex flex-wrap items-center justify-between gap-1.5 text-[11px] font-mono">
-            <div class="flex items-center gap-1">
+            <div class="flex flex-wrap items-center gap-1">
               <button type="button" id="btn-macro-home" onclick="sendFluidNCRealtime('$H')" class="px-2 py-1 rounded bg-sky-600/20 hover:bg-sky-600 text-sky-300 hover:text-white border border-sky-500/30 cursor-pointer" data-tip="Home ($H)">$H</button>
               <button type="button" id="btn-macro-unlock" onclick="sendFluidNCRealtime('$X')" class="px-2 py-1 rounded bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/30 cursor-pointer" data-tip="Unlock ($X)">$X</button>
               <button type="button" id="btn-macro-zero-xy" onclick="sendFluidNCRealtime('G10 L20 P1 X0 Y0')" class="px-2 py-1 rounded bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 cursor-pointer" data-tip="Zero XY">0 XY</button>
+              <button type="button" id="btn-macro-zero-z" onclick="sendFluidNCRealtime('G10 L20 P1 Z0')" class="px-2 py-1 rounded bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 cursor-pointer" data-tip="Zero Z">0 Z</button>
               <button type="button" onclick="sendFluidNCRealtime('!')" class="px-2 py-1 rounded bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white border border-red-500/30 cursor-pointer" data-tip="Feed Hold (!)">!</button>
               <button type="button" onclick="sendFluidNCRealtime('~')" class="px-2 py-1 rounded bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/30 cursor-pointer" data-tip="Resume (~)">~</button>
+              <button type="button" onclick="cancelFigJogNow()" class="px-2 py-1 rounded bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 cursor-pointer" data-tip="Cancel Jog (0x85)">Cancel Jog</button>
             </div>
-            <select id="jog-feed-select" class="bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-slate-300 font-mono text-[11px]" data-tip="Jog Feedrate">
-              <option value="300">F300</option>
-              <option value="600">F600</option>
-              <option value="1200" selected>F1200</option>
-              <option value="2000">F2000</option>
-            </select>
           </div>
           <div id="jog-status-lbl" class="text-[11px] font-mono text-slate-400 truncate">Ready</div>
 
@@ -7917,6 +9118,17 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
             <div class="flex items-center justify-between pb-2 border-b border-slate-800/80">
               <h2 class="text-sm font-semibold text-slate-100">Z-Zero &amp; UI Config</h2>
               <span class="text-[10px] font-mono text-slate-400">ui_config.json</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="flex-1">
+                <label class="block text-[10px] text-slate-400 mb-1" for="cfg-z-switch-offset">Switch Above Bed (mm)</label>
+                <input type="number" step="0.05" id="cfg-z-switch-offset" value="5.50"
+                       onchange="saveUIConfigPartial({{ z_switch_above_bed_mm: Number(this.value) }})"
+                       class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 font-mono text-slate-100">
+              </div>
+              <button type="button" onclick="applyPcbSwitchZero()" class="mt-4 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-semibold cursor-pointer" data-tip="Probe Z-zero switch with PCB mounted (switch height minus PCB thickness)">
+                Probe PCB Z0
+              </button>
             </div>
             <div class="flex items-center gap-2">
               <div class="flex-1">
@@ -8495,7 +9707,12 @@ class _BaseGrblLink:
         if not self.connected:
             return False, f"{self.link_name} not connected"
         try:
-            self._write_raw(rt_cmd.encode("utf-8"))
+            self._write_raw(rt_cmd.encode("latin-1"))
+            if rt_cmd == "\x18":
+                self._reply_q.put(("abort", "Controller reset (0x18)"))
+                return True, f"Sent E-Stop/Reset (0x18) via {self.link_name}"
+            if rt_cmd == "\x85":
+                return True, f"Sent Jog Cancel (0x85) via {self.link_name}"
             if rt_cmd == "?":
                 t0 = time.time()
                 while time.time() - t0 < 1.2:
@@ -8512,6 +9729,8 @@ class _BaseGrblLink:
             return False, str(e)
 
     def send_command(self, cmd: str, timeout: float = 8.0, expect_probe: bool = False) -> Tuple[bool, str]:
+        if cmd == "\x85" or (cmd or "").strip().upper() == "JOG_CANCEL":
+            return self.send_realtime("\x85")
         cmd_clean = (cmd or "").strip()
         if not cmd_clean:
             return True, "ok"
@@ -8539,6 +9758,8 @@ class _BaseGrblLink:
                     if not self.connected:
                         return False, f"{self.link_name} disconnected"
                     continue
+                if kind == "abort":
+                    return False, val
                 if kind == "status":
                     continue
                 collected.append(val)
@@ -8748,6 +9969,8 @@ class CNCWebSocketBridge(_BaseGrblLink):
                             self._sock.sendall(self._encode_client_frame(payload, opcode=0xA))
                 elif opcode in (0x1, 0x2, 0x0):
                     txt = payload.decode("utf-8", errors="replace")
+                    if txt.rstrip().endswith(">") and not txt.endswith(("\n", "\r")):
+                        txt += "\n"
                     self._feed_text(txt, key_ip=self.ip)
             except socket.timeout:
                 continue
@@ -8916,8 +10139,11 @@ class CNCBridgeManager:
             "ip": "192.168.8.109",
             "via": "none",
             "filename": "",
+            "is_macro": False,
             "sent": 0,
             "total": 0,
+            "current_cmd": "",
+            "started_at": 0.0,
             "prompt": "",
             "message": "",
             "abort": False,
@@ -9152,7 +10378,38 @@ class CNCBridgeManager:
         with self._stream_lock:
             return {k: v for k, v in self._stream_session.items() if k != "event"}
 
-    def start_stream_session(self, ip: str, gcode_text: str, filename: str = "") -> Dict[str, Any]:
+    def _get_machine_safe_limits(self) -> Tuple[float, float]:
+        """Return (bed_travel_x_mm, x_switch_backoff_threshold_mm) from manufacture_config.json."""
+        bed_x, sw_x = 275.0, 272.001
+        if os.path.exists("manufacture_config.json"):
+            try:
+                with open("manufacture_config.json", "r", encoding="utf-8") as cf:
+                    cfg = json.load(cf)
+                bed_x = float(cfg.get("cnc_limits", {}).get("bed_travel_x_mm", bed_x))
+                sw_x = float(cfg.get("guides_and_fixturing", {}).get("z_probe_limit_switch", {}).get("x_mm", sw_x))
+            except Exception:
+                pass
+        threshold_x = min(bed_x - 12.0, sw_x - 5.0)
+        return bed_x, threshold_x
+
+    def _safe_start_prefix_lines(self, link: Optional[_BaseGrblLink], filename: str = "") -> List[Tuple[str, str]]:
+        """
+        Ensure Z pulls to machine top safe Z=10mm before motion, and back off X-10mm
+        relatively if currently near X-max / limit switch (e.g. X275 tool-change park).
+        """
+        prefix: List[Tuple[str, str]] = [("G21", ""), ("G90", ""), ("G53 G0 Z10.000", "")]
+        if filename == "change_tool.gcode":
+            return prefix
+        mpos = link.mpos if link is not None else None
+        if mpos is None:
+            snap = self.get_status_snapshot(probe_if_idle=False)
+            mpos = snap.get("mpos")
+        _, threshold_x = self._get_machine_safe_limits()
+        if isinstance(mpos, (list, tuple)) and len(mpos) >= 1 and float(mpos[0]) >= threshold_x:
+            prefix.extend([("G91", ""), ("G0 X-10.000", ""), ("G90", "")])
+        return prefix
+
+    def start_stream_session(self, ip: str, gcode_text: str, filename: str = "", is_macro: bool = False) -> Dict[str, Any]:
         if ip and ip.strip():
             self.ip = ip.strip()
         parsed_lines: List[Tuple[str, str]] = []
@@ -9192,6 +10449,9 @@ class CNCBridgeManager:
         if self.transport_mode == "usb" and link is None:
             return {"success": False, "error": self.usb_bridge.last_error or "USB Serial not connected"}
 
+        safe_prefix = self._safe_start_prefix_lines(link, filename=filename)
+        parsed_lines = safe_prefix + parsed_lines
+
         ev = threading.Event()
         with self._stream_lock:
             if self._stream_session.get("active") and self._stream_session.get("event"):
@@ -9203,8 +10463,11 @@ class CNCBridgeManager:
                 "ip": self.ip,
                 "via": via,
                 "filename": filename,
+                "is_macro": bool(is_macro),
                 "sent": 0,
                 "total": len(parsed_lines),
+                "current_cmd": parsed_lines[0][0] if parsed_lines else "",
+                "started_at": time.time(),
                 "prompt": "",
                 "message": f"Streaming {filename or 'G-code'} via {via.upper()}...",
                 "abort": False,
@@ -9221,12 +10484,12 @@ class CNCBridgeManager:
 
                 def _send_one(line_cmd: str) -> Tuple[bool, str]:
                     if link is not None:
-                        return link.send_command(line_cmd, timeout=25.0)
+                        return link.send_command(line_cmd, timeout=120.0)
                     assert telnet_sock is not None
                     telnet_sock.sendall((line_cmd + "\n").encode("utf-8"))
                     buf = ""
                     t0 = time.time()
-                    while time.time() - t0 < 25.0:
+                    while time.time() - t0 < 120.0:
                         chunk = telnet_sock.recv(1024).decode("utf-8", errors="replace")
                         if not chunk:
                             break
@@ -9237,25 +10500,30 @@ class CNCBridgeManager:
                             return True, buf.strip()
                     return False, "Telnet timeout waiting for ok"
 
+                last_bcast_ts = 0.0
                 for idx, (cmd, msg_txt) in enumerate(parsed_lines):
                     with self._stream_lock:
                         if self._stream_session["abort"]:
                             break
-                    ok, reply = _send_one(cmd)
-                    if not ok:
-                        with self._stream_lock:
-                            self._stream_session["state"] = "error"
-                            self._stream_session["message"] = f"Error at line {idx+1} ({cmd}): {reply}"
-                            self._stream_session["active"] = False
-                        self._broadcast("stream", self.get_stream_snapshot())
-                        return
-
-                    with self._stream_lock:
-                        self._stream_session["sent"] = idx + 1
-                    if (idx + 1) % 5 == 0 or (idx + 1) == len(parsed_lines):
-                        self._broadcast("stream", self.get_stream_snapshot())
+                        self._stream_session["current_cmd"] = cmd
 
                     if cmd.upper() in ("M0", "M1"):
+                        # Drain FluidNC planner buffer via G4 P0 instead of raw M0,
+                        # because FluidNC withholds M0 'ok' until Cycle Start (~).
+                        ok_sync, sync_reply = _send_one("G4 P0")
+                        if not ok_sync:
+                            with self._stream_lock:
+                                if not self._stream_session["abort"]:
+                                    self._stream_session["state"] = "error"
+                                    self._stream_session["message"] = f"Error before line {idx+1} ({cmd}): {sync_reply}"
+                                self._stream_session["active"] = False
+                            self._broadcast("stream", self.get_stream_snapshot())
+                            return
+
+                        with self._stream_lock:
+                            self._stream_session["sent"] = idx + 1
+                            if self._stream_session["abort"]:
+                                break
                         ev.clear()
                         with self._stream_lock:
                             self._stream_session["state"] = "waiting_confirm"
@@ -9265,20 +10533,31 @@ class CNCBridgeManager:
                         ev.wait()
                         with self._stream_lock:
                             if self._stream_session["abort"]:
-                                self.send_command(self.ip, "\x18")
-                                time.sleep(0.15)
-                                self.send_command(self.ip, "M5")
-                                self._stream_session["state"] = "aborted"
-                                self._stream_session["message"] = "Aborted by operator at M0"
                                 self._stream_session["active"] = False
                                 self._broadcast("stream", self.get_stream_snapshot())
                                 return
-                        self.send_command(self.ip, "~")
-                        time.sleep(0.2)
                         with self._stream_lock:
                             self._stream_session["state"] = "running"
                             self._stream_session["prompt"] = ""
                             self._stream_session["message"] = f"Resumed {filename or 'G-code'}..."
+                        self._broadcast("stream", self.get_stream_snapshot())
+                        continue
+
+                    ok, reply = _send_one(cmd)
+                    if not ok:
+                        with self._stream_lock:
+                            if not self._stream_session["abort"]:
+                                self._stream_session["state"] = "error"
+                                self._stream_session["message"] = f"Error at line {idx+1} ({cmd}): {reply}"
+                            self._stream_session["active"] = False
+                        self._broadcast("stream", self.get_stream_snapshot())
+                        return
+
+                    with self._stream_lock:
+                        self._stream_session["sent"] = idx + 1
+                    now_b = time.time()
+                    if idx < 5 or (now_b - last_bcast_ts >= 0.12) or (idx + 1) == len(parsed_lines):
+                        last_bcast_ts = now_b
                         self._broadcast("stream", self.get_stream_snapshot())
 
                 with self._stream_lock:
@@ -9302,28 +10581,57 @@ class CNCBridgeManager:
 
         t = threading.Thread(target=_worker, daemon=True)
         t.start()
-        return {"success": True, "total": len(parsed_lines), "via": via}
+        return {"success": True, "total": len(parsed_lines), "via": via, "is_macro": bool(is_macro)}
 
     def stream_action(self, action: str, ip: str = "192.168.8.109") -> Dict[str, Any]:
         act = (action or "").lower().strip()
+        is_stop = act in ("abort", "stop", "estop")
         with self._stream_lock:
             ev = self._stream_session.get("event")
             active = self._stream_session.get("active", False)
             target_ip = self._stream_session.get("ip") or ip
             if active and ev is not None:
-                if act == "abort":
+                if is_stop:
                     self._stream_session["abort"] = True
                     self._stream_session["state"] = "aborted"
-                    self._stream_session["message"] = "Aborted by operator"
+                    self._stream_session["message"] = (
+                        "EMERGENCY STOP (E-STOP) triggered!" if act == "estop"
+                        else "Stream stopped by operator"
+                    )
                     self._stream_session["active"] = False
                 else:
                     self._stream_session["abort"] = False
+                    self._stream_session["state"] = "running"
+                    self._stream_session["prompt"] = ""
+                    self._stream_session["message"] = f"Resumed {self._stream_session.get('filename') or 'G-code'}..."
                 ev.set()
-                self._broadcast("stream", self.get_stream_snapshot())
-                return {"success": True, "action": act}
-        cmd = "\x18" if act == "abort" else "~"
+                snap = self.get_stream_snapshot()
+                self._broadcast("stream", snap)
+            else:
+                snap = self.get_stream_snapshot()
+
+        if is_stop:
+            link = self._resolve_active_link()
+            if link is not None:
+                link.send_realtime("!")
+                time.sleep(0.03)
+                link.send_realtime("\x18")
+                time.sleep(0.12)
+                try:
+                    link._write_raw(b"M5\nS0\n")
+                except Exception:
+                    pass
+                return {"success": True, "action": act, "message": "E-Stop / Reset (0x18) + Spindle OFF (M5) sent"}
+            self.send_command(target_ip, "!")
+            ok, msg = self.send_command(target_ip, "\x18")
+            self.send_command(target_ip, "M5")
+            return {"success": ok, "action": act, "message": msg}
+
+        if active:
+            return {"success": True, "action": act, "stream": snap}
+        cmd = "~"
         ok, msg = self.send_command(target_ip, cmd)
-        return {"success": ok, "action": act, "message": msg}
+        return {"success": ok, "action": act, "message": msg, "stream": snap}
 
 
 CNC_BRIDGE = CNCBridgeManager()
@@ -9347,6 +10655,9 @@ def stream_gcode_to_fluidnc(ip: str, gcode_text: str, timeout: float = 20.0) -> 
         line = raw.split(";")[0].strip()
         if not line or (line.startswith("(") and line.endswith(")")):
             continue
+        base = re.sub(r"\([^)]*\)", "", line).strip().upper()
+        if base in ("M0", "M1"):
+            line = "G4 P0"
         lines.append(line)
     if not lines:
         return False, "No executable G-code lines found"
@@ -9360,8 +10671,8 @@ def stream_gcode_to_fluidnc(ip: str, gcode_text: str, timeout: float = 20.0) -> 
     return True, f"Streamed {sent} G-code command(s) via {via.upper()}"
 
 
-def start_fluidnc_stream_session(ip: str, gcode_text: str, filename: str = "") -> Dict[str, Any]:
-    return CNC_BRIDGE.start_stream_session(ip, gcode_text, filename=filename)
+def start_fluidnc_stream_session(ip: str, gcode_text: str, filename: str = "", is_macro: bool = False) -> Dict[str, Any]:
+    return CNC_BRIDGE.start_stream_session(ip, gcode_text, filename=filename, is_macro=is_macro)
 
 
 def fluidnc_stream_action(action: str, ip: str = "192.168.8.109") -> Dict[str, Any]:
@@ -9484,6 +10795,27 @@ def load_saved_heightmap(hm_path: str = os.path.join("macros", "bed_heightmap.js
     return None
 
 
+def _prepare_bridge_safe_start(ip: str):
+    """Pull Z to machine top 10mm first and back off X-10mm if currently near X-max/limit switch."""
+    _bridge_send_or_raise(ip, "G21")
+    _bridge_send_or_raise(ip, "G90")
+    _bridge_send_or_raise(ip, "G53 G0 Z10.000")
+    snap = CNC_BRIDGE.get_status_snapshot(probe_if_idle=True, ip=ip)
+    mpos = snap.get("mpos")
+    _, threshold_x = CNC_BRIDGE._get_machine_safe_limits()
+    if isinstance(mpos, (list, tuple)) and len(mpos) >= 1 and float(mpos[0]) >= threshold_x:
+        _bridge_send_or_raise(ip, "G91")
+        _bridge_send_or_raise(ip, "G0 X-10.000")
+        _bridge_send_or_raise(ip, "G90")
+
+
+def _park_bridge_tool_change(ip: str):
+    """Retract to machine top Z=10mm and park at X max, Y0 tool-change position."""
+    bed_x, _ = CNC_BRIDGE._get_machine_safe_limits()
+    _bridge_send_or_raise(ip, "G53 G0 Z10.000")
+    _bridge_send_or_raise(ip, f"G53 G0 X{bed_x:.3f} Y0.000")
+
+
 def _bridge_send_or_raise(ip: str, cmd: str, expect_probe: bool = False) -> str:
     """Execute a controller command through CNC_BRIDGE and raise on controller errors."""
     ok, reply = CNC_BRIDGE.send_command(ip, cmd, timeout=25.0, expect_probe=expect_probe)
@@ -9527,9 +10859,7 @@ def scan_bed_heightmap(
     valid_zs: List[float] = []
 
     try:
-        _bridge_send_or_raise(ip, "G21")
-        _bridge_send_or_raise(ip, "G90")
-        _bridge_send_or_raise(ip, f"G0 Z{safe_z:.3f}")
+        _prepare_bridge_safe_start(ip)
 
         for j, y in enumerate(ys):
             row_xs = xs if (j % 2 == 0) else list(reversed(xs))
@@ -9549,7 +10879,7 @@ def scan_bed_heightmap(
                 else:
                     points.append({"x": x, "y": y, "z": None, "dz": None, "skipped": False, "error": "No trigger"})
 
-        _bridge_send_or_raise(ip, f"G0 Z{safe_z:.3f}")
+        _park_bridge_tool_change(ip)
     except Exception as e:
         return False, {"error": str(e)}
 
@@ -9588,6 +10918,7 @@ def load_ui_config(cfg_path: str = "ui_config.json") -> Dict[str, Any]:
         "enable_pcb_z_offset": True,
         "enable_heightmap_leveling": True,
         "pcb_thickness_mm": 1.6,
+        "z_switch_above_bed_mm": 5.5,
         "cnc_transport": "auto",
         "cnc_serial_port": "auto",
         "cnc_baudrate": 115200,
@@ -9602,6 +10933,109 @@ def load_ui_config(cfg_path: str = "ui_config.json") -> Dict[str, Any]:
     return default_ui
 
 
+def _load_z_switch_xy(cfg_path: str = "manufacture_config.json") -> Tuple[float, float]:
+    """Read Z-zero limit switch machine XY coordinates from manufacture_config.json."""
+    sx, sy = 272.001, 135.002
+    if os.path.isfile(cfg_path):
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                sw = json.load(f).get("z_probe_limit_switch", {})
+            sx = float(sw.get("x_mm", sx))
+            sy = float(sw.get("y_mm", sy))
+        except Exception:
+            pass
+    return sx, sy
+
+
+def _render_switch_probe_macro(
+    header_comment: str,
+    sx: float,
+    sy: float,
+    prompt_msg: str,
+    datum_z_mm: float,
+    datum_comment: str,
+    done_msg: str,
+) -> str:
+    """Render a safe G38.2 Z-limit-switch probing macro in machine XY with incremental Z probing."""
+    return (
+        f"{header_comment}"
+        "G21 ; Millimeters\n"
+        "G90 ; Absolute positioning\n"
+        "M5 ; Ensure spindle is off before moving to switch\n"
+        "S0 ; Ensure spindle RPM is zero\n"
+        "G53 G0 Z10.000 ; Retract spindle to machine top safe Z\n"
+        f"G53 G0 X{sx:.3f} Y{sy:.3f} ; Move over fixed Z-Zero limit switch\n"
+        f"(MSG, {prompt_msg})\n"
+        f"M0 ({prompt_msg})\n"
+        "G91 ; Incremental probing moves\n"
+        "G38.2 Z-25.000 F80.0 ; Probe down until limit switch triggers\n"
+        "G0 Z2.000 ; Back off 2mm\n"
+        "G38.2 Z-5.000 F25.0 ; Slow precision re-probe\n"
+        "G90 ; Restore absolute positioning\n"
+        f"G10 L20 P1 Z{datum_z_mm:.3f} ; {datum_comment}\n"
+        "G53 G0 Z10.000 ; Retract to safe machine Z\n"
+        f"(MSG, {done_msg})\n"
+    )
+
+
+def _sync_z_zero_macros(cur: Dict[str, Any], macros_dir: str = "macros") -> None:
+    """Keep Bed Z-zero, PCB-mounted switch Z-zero, and PCB-thickness Z-zero macros synced."""
+    t_mm = float(cur.get("pcb_thickness_mm", 1.6))
+    sw_mm = float(cur.get("z_switch_above_bed_mm", 5.5))
+    pcb_sw_z = sw_mm - t_mm
+    sx, sy = _load_z_switch_xy()
+    os.makedirs(macros_dir, exist_ok=True)
+
+    bed_macro = _render_switch_probe_macro(
+        header_comment=(
+            "; === Z-Tool Zero Calibration Macro (Bed Z=0 via Limit Switch) ===\n"
+            f"; Fixed Bed Z-Zero Limit Switch at Machine G53 (X={sx:.3f}, Y={sy:.3f})\n"
+            f"; Limit switch trigger point is {sw_mm:.3f} mm ABOVE the CNC bed surface\n"
+        ),
+        sx=sx,
+        sy=sy,
+        prompt_msg=f"Confirm spindle is off and tool is above bed switch at +{sw_mm:.3f}mm above bed",
+        datum_z_mm=sw_mm,
+        datum_comment=f"Switch trigger is {sw_mm:.3f}mm above bed -> Bed = G54 Z0.000",
+        done_msg=f"Bed Z-Tool Zero complete: switch datum = Z+{sw_mm:.3f}mm, Bed = Z0",
+    )
+    pcb_switch_macro = _render_switch_probe_macro(
+        header_comment=(
+            "; === PCB Mounted Z-Zero Calibration Macro (via Limit Switch) ===\n"
+            f"; Fixed Bed Z-Zero Limit Switch at Machine G53 (X={sx:.3f}, Y={sy:.3f})\n"
+            f"; Limit switch trigger is {sw_mm:.3f}mm above bed; PCB thickness is {t_mm:.3f}mm\n"
+            f"; Switch trigger is therefore {pcb_sw_z:+.3f}mm above the mounted PCB top copper surface\n"
+        ),
+        sx=sx,
+        sy=sy,
+        prompt_msg=f"Confirm spindle is off and tool is above switch for {t_mm:.3f}mm mounted PCB",
+        datum_z_mm=pcb_sw_z,
+        datum_comment=f"{sw_mm:.3f}mm switch - {t_mm:.3f}mm PCB -> PCB Top = G54 Z0.000",
+        done_msg=f"Mounted PCB Z-Zero complete: switch = Z{pcb_sw_z:+.3f}mm, PCB Top = Z0",
+    )
+    thickness_macro = (
+        "; === PCB Thickness Z-Zero Calibration Macro (from Bed Z=0) ===\n"
+        f"; Converts calibrated Bed G54 Z=0 to top copper surface G54 Z=0 for a {t_mm:.3f}mm PCB\n"
+        "G21 ; Millimeters\nG90 ; Absolute positioning\nM5 ; Ensure spindle is off\n"
+        "S0 ; Ensure spindle RPM is zero\n"
+        "G53 G0 Z10.000 ; Retract to machine top safe Z clear of limit switch\n"
+        f"(MSG, Confirm Bed Z=0 is already calibrated and spindle is OFF before applying +{t_mm:.3f}mm PCB thickness offset)\n"
+        "M0 (Confirm Bed Z=0 calibrated and spindle OFF)\n"
+        "G0 X20.000 Y20.000 ; Move clear of limit switch before lowering to PCB thickness Z\n"
+        f"G0 Z{t_mm:.3f} ; Move to top surface of {t_mm:.3f}mm copper board\n"
+        "G10 L20 P1 Z0.000 ; Set PCB top copper surface as G54 Z=0\n"
+        "G53 G0 Z10.000 ; Retract safely to machine top safe Z\n"
+        f"(MSG, PCB Top Z=0 calibrated for {t_mm:.3f}mm board)\n"
+    )
+    for fname, content in (
+        ("z_tool_zero.gcode", bed_macro),
+        ("pcb_z_zero_switch.gcode", pcb_switch_macro),
+        ("pcb_z_zero_thickness.gcode", thickness_macro),
+    ):
+        with open(os.path.join(macros_dir, fname), "w", encoding="utf-8") as mf:
+            mf.write(content)
+
+
 def save_ui_config(updates: Dict[str, Any], cfg_path: str = "ui_config.json") -> Dict[str, Any]:
     cur = load_ui_config(cfg_path)
     for k in ("touch_probe_enabled", "show_macros_in_dispatch", "enable_homing_btn",
@@ -9611,6 +11045,8 @@ def save_ui_config(updates: Dict[str, Any], cfg_path: str = "ui_config.json") ->
             cur[k] = bool(updates[k])
     if "pcb_thickness_mm" in updates:
         cur["pcb_thickness_mm"] = round(float(updates["pcb_thickness_mm"]), 3)
+    if "z_switch_above_bed_mm" in updates:
+        cur["z_switch_above_bed_mm"] = round(float(updates["z_switch_above_bed_mm"]), 3)
     if "cnc_transport" in updates:
         t = str(updates["cnc_transport"]).lower().strip()
         if t in ("auto", "ws", "usb", "telnet"):
@@ -9621,22 +11057,7 @@ def save_ui_config(updates: Dict[str, Any], cfg_path: str = "ui_config.json") ->
         cur["cnc_baudrate"] = int(updates["cnc_baudrate"])
     with open(cfg_path, "w", encoding="utf-8") as f:
         json.dump(cur, f, indent=2)
-    # Keep macros/pcb_z_zero_thickness.gcode synced to pcb_thickness_mm
-    t_mm = float(cur.get("pcb_thickness_mm", 1.6))
-    os.makedirs("macros", exist_ok=True)
-    macro_txt = (
-        "; === PCB Thickness Z-Zero Calibration Macro ===\n"
-        f"; Raises Z by {t_mm:.3f} mm from BED Z=0 and sets top copper surface as G54 Z=0\n"
-        "G21 ; Millimeters\nG90 ; Absolute positioning\nM5 ; Ensure spindle is off\n"
-        f"(MSG, Confirm tool is at BED Z=0 and spindle is OFF before applying +{t_mm:.3f}mm PCB thickness offset)\n"
-        f"M0 (Confirm tool is at BED Z=0 and spindle is OFF)\n"
-        f"G0 Z{t_mm:.3f} ; Move to top surface of {t_mm:.3f}mm copper board\n"
-        "G10 L20 P1 Z0.000 ; Set PCB top copper surface as Z=0\n"
-        f"G0 Z{t_mm + 3.4:.3f} ; Retract safely above copper board\n"
-        f"(MSG, PCB Top Z=0 calibrated for {t_mm:.3f}mm board)\n"
-    )
-    with open(os.path.join("macros", "pcb_z_zero_thickness.gcode"), "w", encoding="utf-8") as mf:
-        mf.write(macro_txt)
+    _sync_z_zero_macros(cur)
     return cur
 
 
@@ -9731,13 +11152,12 @@ def probe_4pt_edge_alignment(
                 raise RuntimeError(f"Edge probe did not trigger at ({start_x}, {start_y})")
             return (float(m.group(1)), float(m.group(2)))
 
-        _bridge_send_or_raise(ip, "G21")
-        _bridge_send_or_raise(ip, "G90")
+        _prepare_bridge_safe_start(ip)
         l1 = _probe_pt(-5.0, 30.0, f"G38.2 X6.000 F{feed:.1f}")
         l2 = _probe_pt(-5.0, 115.0, f"G38.2 X6.000 F{feed:.1f}")
         f1 = _probe_pt(45.0, -5.0, f"G38.2 Y6.000 F{feed:.1f}")
         f2 = _probe_pt(165.0, -5.0, f"G38.2 Y6.000 F{feed:.1f}")
-        _bridge_send_or_raise(ip, "G0 X0.000 Y0.000")
+        _park_bridge_tool_change(ip)
 
         res = compute_4pt_edge_alignment(l1, l2, f1, f2, enabled=True)
         return True, res
@@ -10464,21 +11884,24 @@ class ChecklistHandler(http.server.SimpleHTTPRequestHandler):
                 ip = req_data.get("ip", "192.168.8.109").strip() or "192.168.8.109"
                 fname = os.path.basename(req_data.get("filename", ""))
                 gcode_text = req_data.get("gcode", "")
+                is_macro = bool(fname and os.path.isfile(os.path.join("macros", fname)))
                 if not gcode_text and fname:
                     for folder in ("manufacture_gcode", "macros"):
                         fpath = os.path.join(folder, fname)
                         if os.path.isfile(fpath):
                             with open(fpath, "r", encoding="utf-8", errors="replace") as gf:
                                 gcode_text = gf.read()
+                            if folder == "macros":
+                                is_macro = True
                             break
-                if fname not in ("edge_4pt_align.gcode", "z_tool_zero.gcode", "bed_height_scan.gcode", "pcb_z_zero_thickness.gcode"):
+                if not is_macro and fname not in ("edge_4pt_align.gcode", "z_tool_zero.gcode", "bed_height_scan.gcode", "pcb_z_zero_thickness.gcode", "pcb_z_zero_switch.gcode"):
                     al = load_board_alignment()
                     gcode_text = apply_alignment_to_gcode(gcode_text, al)
                     ucfg = load_ui_config()
                     if ucfg.get("enable_heightmap_leveling", True):
                         hm = load_saved_heightmap()
                         gcode_text = apply_heightmap_to_gcode(gcode_text, hm, enabled=True)
-                res_obj = start_fluidnc_stream_session(ip, gcode_text, filename=fname)
+                res_obj = start_fluidnc_stream_session(ip, gcode_text, filename=fname, is_macro=is_macro)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()

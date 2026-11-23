@@ -105,9 +105,9 @@
 
     const projectDrills = {"PCB-AC-01": {"total_holes": 78, "via_count": 1, "tools": [{"dia": 0.3, "count": 1, "color": "#22d3ee"}, {"dia": 0.7, "count": 4, "color": "#a78bfa"}, {"dia": 0.75, "count": 6, "color": "#c084fc"}, {"dia": 0.8, "count": 22, "color": "#d946ef"}, {"dia": 0.9, "count": 2, "color": "#fbbf24"}, {"dia": 1.0, "count": 13, "color": "#f59e0b"}, {"dia": 1.1, "count": 14, "color": "#fb923c"}, {"dia": 1.3, "count": 6, "color": "#ef4444"}, {"dia": 1.5, "count": 10, "color": "#f43f5e"}]}, "PCB-AC-02": {"total_holes": 67, "via_count": 4, "tools": [{"dia": 0.3, "count": 4, "color": "#22d3ee"}, {"dia": 0.9, "count": 16, "color": "#fbbf24"}, {"dia": 1.0, "count": 29, "color": "#f59e0b"}, {"dia": 1.2, "count": 10, "color": "#f97316"}, {"dia": 1.8, "count": 4, "color": "#e11d48"}, {"dia": 3.0, "count": 4, "color": "#34d399"}]}, "PCB-AC-03": {"total_holes": 30, "via_count": 0, "tools": [{"dia": 0.7, "count": 10, "color": "#a78bfa"}, {"dia": 0.8, "count": 8, "color": "#d946ef"}, {"dia": 0.9, "count": 2, "color": "#fbbf24"}, {"dia": 1.0, "count": 5, "color": "#f59e0b"}, {"dia": 1.2, "count": 2, "color": "#f97316"}, {"dia": 3.0, "count": 3, "color": "#34d399"}]}};
     const allUnitRecords = [{"index": 1, "pcb_id": "PCB-AC-01", "project_name": "AirCooler", "unit_id": "PCB-AC-01-001", "sheet_num": 1, "half": "front", "half_label": "Front Bed Half", "rotation_deg": 0, "pcb_w": 124.2, "pcb_h": 78.2, "x": 18.0, "y": 8.5, "attach_side": "LEFT", "shortest_edge": 78.2, "tab_summary": "2 x 2.0mm Tabs", "drill_holes": 78, "svg_front": "Unit_PCB-AC-01-001_FrontSide.svg", "svg_front_mirrored": "Unit_PCB-AC-01-001_FrontSide_Mirrored.svg", "svg_back": "Unit_PCB-AC-01-001_BackSide.svg", "svg_back_mirrored": "Unit_PCB-AC-01-001_BackSide_Mirrored.svg"}, {"index": 2, "pcb_id": "PCB-AC-02", "project_name": "Board-01", "unit_id": "PCB-AC-02-001", "sheet_num": 1, "half": "front", "half_label": "Front Bed Half", "rotation_deg": 0, "pcb_w": 127.2, "pcb_h": 56.2, "x": 18.0, "y": 89.2, "attach_side": "LEFT", "shortest_edge": 56.2, "tab_summary": "2 x 2.0mm Tabs", "drill_holes": 67, "svg_front": "Unit_PCB-AC-02-001_FrontSide.svg", "svg_front_mirrored": "Unit_PCB-AC-02-001_FrontSide_Mirrored.svg", "svg_back": "Unit_PCB-AC-02-001_BackSide.svg", "svg_back_mirrored": "Unit_PCB-AC-02-001_BackSide_Mirrored.svg"}, {"index": 3, "pcb_id": "PCB-AC-03", "project_name": "Micro Probe", "unit_id": "PCB-AC-03-001", "sheet_num": 1, "half": "front", "half_label": "Front Bed Half", "rotation_deg": 90, "pcb_w": 64.5, "pcb_h": 30.1, "x": 149.7, "y": 8.5, "attach_side": "BOTTOM", "shortest_edge": 30.1, "tab_summary": "2 x 2.0mm Tabs", "drill_holes": 30, "svg_front": "Unit_PCB-AC-03-001_FrontSide.svg", "svg_front_mirrored": "Unit_PCB-AC-03-001_FrontSide_Mirrored.svg", "svg_back": "Unit_PCB-AC-03-001_BackSide.svg", "svg_back_mirrored": "Unit_PCB-AC-03-001_BackSide_Mirrored.svg"}];
-    const bedOperationsBySheet = {"1": [{"op_id": "S01-OP01", "sheet_num": 1, "seq": 1, "step_code": "Step0A", "step_title": "Step 0A: Sheet Data & Ref Marks", "work_type": "Alignment Guides", "tool_name": "30\u00b0 V-Bit", "tool_dia_mm": 0.1, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount A4 sheet Top-Side Up at G54 (0,0) FRONT HALF", "gcode_file": "Sheet01_Step0A_Front_Alignment_Guides.gcode", "svg_file": "Bed_Sheet01_Op01_Step0A_top_front_30deg_V-Bit.svg", "depth_mm": -0.04, "feed_mm_min": 250.0, "spindle_rpm": 10000, "stats_label": "42 strokes, 2 pins", "bounds_x": [13.5, 186.5], "bounds_y": [1.2, 166.4]}, {"op_id": "S01-OP02", "sheet_num": 1, "seq": 2, "step_code": "Step0B", "step_title": "Step 0B: Back Alignment Guides", "work_type": "Alignment Guides", "tool_name": "30\u00b0 V-Bit", "tool_dia_mm": 0.1, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 165.0, "started_back_same_tool": false, "shift_action": "Slide sheet -165.0mm along Y-axis ONLY -> BACK HALF", "gcode_file": "Sheet01_Step0B_Back_Alignment_Guides.gcode", "svg_file": "Bed_Sheet01_Op02_Step0B_top_back_30deg_V-Bit.svg", "depth_mm": -0.04, "feed_mm_min": 250.0, "spindle_rpm": 10000, "stats_label": "2 strokes, 0 pins", "bounds_x": [15.0, 185.0], "bounds_y": [21.0, 23.0]}, {"op_id": "S01-OP03", "sheet_num": 1, "seq": 3, "step_code": "Step1_01", "step_title": "Step 1 Drilling (0.30mm)", "work_type": "CNC Drilling", "tool_name": "0.30mm Carbide Drill", "tool_dia_mm": 0.3, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Set sheet Top-Side Up at FRONT HALF (Y=0 datum)", "gcode_file": "Sheet01_Step1_01_Front_Top_Drills_0.30mm.gcode", "svg_file": "Bed_Sheet01_Op03_Step1_01_top_front_0.30mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "5 holes @ 0.30mm", "bounds_x": [42.71, 141.5], "bounds_y": [85.5, 139.21]}, {"op_id": "S01-OP04", "sheet_num": 1, "seq": 4, "step_code": "Step1_02", "step_title": "Step 1 Drilling (0.70mm)", "work_type": "CNC Drilling", "tool_name": "0.70mm Carbide Drill", "tool_dia_mm": 0.7, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 0.70mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_02_Front_Top_Drills_0.70mm.gcode", "svg_file": "Bed_Sheet01_Op04_Step1_02_top_front_0.70mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "14 holes @ 0.70mm", "bounds_x": [126.92, 166.75], "bounds_y": [26.0, 67.81]}, {"op_id": "S01-OP05", "sheet_num": 1, "seq": 5, "step_code": "Step1_03", "step_title": "Step 1 Drilling (0.75mm)", "work_type": "CNC Drilling", "tool_name": "0.75mm Carbide Drill", "tool_dia_mm": 0.75, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 0.75mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_03_Front_Top_Drills_0.75mm.gcode", "svg_file": "Bed_Sheet01_Op05_Step1_03_top_front_0.75mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "6 holes @ 0.75mm", "bounds_x": [76.0, 76.0], "bounds_y": [53.0, 76.54]}, {"op_id": "S01-OP06", "sheet_num": 1, "seq": 6, "step_code": "Step1_04", "step_title": "Step 1 Drilling (0.80mm)", "work_type": "CNC Drilling", "tool_name": "0.80mm Carbide Drill", "tool_dia_mm": 0.8, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 0.80mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_04_Front_Top_Drills_0.80mm.gcode", "svg_file": "Bed_Sheet01_Op06_Step1_04_top_front_0.80mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "30 holes @ 0.80mm", "bounds_x": [82.0, 166.06], "bounds_y": [22.18, 75.0]}, {"op_id": "S01-OP07", "sheet_num": 1, "seq": 7, "step_code": "Step1_05", "step_title": "Step 1 Drilling (0.90mm)", "work_type": "CNC Drilling", "tool_name": "0.90mm Carbide Drill", "tool_dia_mm": 0.9, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 0.90mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_05_Front_Top_Drills_0.90mm.gcode", "svg_file": "Bed_Sheet01_Op07_Step1_05_top_front_0.90mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "20 holes @ 0.90mm", "bounds_x": [27.95, 153.75], "bounds_y": [39.96, 138.97]}, {"op_id": "S01-OP08", "sheet_num": 1, "seq": 8, "step_code": "Step1_06", "step_title": "Step 1 Drilling (1.00mm)", "work_type": "CNC Drilling", "tool_name": "1.00mm Carbide Drill", "tool_dia_mm": 1.0, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 1.00mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_06_Front_Top_Drills_1.00mm.gcode", "svg_file": "Bed_Sheet01_Op08_Step1_06_top_front_1.00mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "49 holes @ 1.00mm", "bounds_x": [15.5, 184.5], "bounds_y": [16.5, 135.42]}, {"op_id": "S01-OP09", "sheet_num": 1, "seq": 9, "step_code": "Step1_07", "step_title": "Step 1 Drilling (1.00mm)", "work_type": "CNC Drilling", "tool_name": "1.00mm Carbide Drill", "tool_dia_mm": 1.0, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 165.0, "started_back_same_tool": false, "shift_action": "Slide sheet -165.0mm along Y-axis ONLY -> BACK HALF", "gcode_file": "Sheet01_Step1_07_Back_Top_Drills_1.00mm.gcode", "svg_file": "Bed_Sheet01_Op09_Step1_07_top_back_1.00mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "2 holes @ 1.00mm", "bounds_x": [15.5, 184.5], "bounds_y": [30.0, 30.0]}, {"op_id": "S01-OP10", "sheet_num": 1, "seq": 10, "step_code": "Step1_08", "step_title": "Step 1 Drilling (1.10mm)", "work_type": "CNC Drilling", "tool_name": "1.10mm Carbide Drill", "tool_dia_mm": 1.1, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Slide sheet +165.0mm back along Y-axis ONLY -> FRONT HALF", "gcode_file": "Sheet01_Step1_08_Front_Top_Drills_1.10mm.gcode", "svg_file": "Bed_Sheet01_Op10_Step1_08_top_front_1.10mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "14 holes @ 1.10mm", "bounds_x": [66.34, 126.25], "bounds_y": [19.0, 80.25]}, {"op_id": "S01-OP11", "sheet_num": 1, "seq": 11, "step_code": "Step1_09", "step_title": "Step 1 Drilling (1.20mm)", "work_type": "CNC Drilling", "tool_name": "1.20mm Carbide Drill", "tool_dia_mm": 1.2, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 1.20mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_09_Front_Top_Drills_1.20mm.gcode", "svg_file": "Bed_Sheet01_Op11_Step1_09_top_front_1.20mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "12 holes @ 1.20mm", "bounds_x": [82.3, 165.75], "bounds_y": [50.0, 138.37]}, {"op_id": "S01-OP12", "sheet_num": 1, "seq": 12, "step_code": "Step1_10", "step_title": "Step 1 Drilling (1.30mm)", "work_type": "CNC Drilling", "tool_name": "1.30mm Carbide Drill", "tool_dia_mm": 1.3, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 1.30mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_10_Front_Top_Drills_1.30mm.gcode", "svg_file": "Bed_Sheet01_Op12_Step1_10_top_front_1.30mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "6 holes @ 1.30mm", "bounds_x": [34.47, 36.5], "bounds_y": [23.02, 80.0]}, {"op_id": "S01-OP13", "sheet_num": 1, "seq": 13, "step_code": "Step1_11", "step_title": "Step 1 Drilling (1.50mm)", "work_type": "CNC Drilling", "tool_name": "1.50mm Carbide Drill", "tool_dia_mm": 1.5, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 1.50mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_11_Front_Top_Drills_1.50mm.gcode", "svg_file": "Bed_Sheet01_Op13_Step1_11_top_front_1.50mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "10 holes @ 1.50mm", "bounds_x": [45.9, 61.1], "bounds_y": [46.0, 80.0]}, {"op_id": "S01-OP14", "sheet_num": 1, "seq": 14, "step_code": "Step1_12", "step_title": "Step 1 Drilling (1.80mm)", "work_type": "CNC Drilling", "tool_name": "1.80mm Carbide Drill", "tool_dia_mm": 1.8, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 1.80mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_12_Front_Top_Drills_1.80mm.gcode", "svg_file": "Bed_Sheet01_Op14_Step1_12_top_front_1.80mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "4 holes @ 1.80mm", "bounds_x": [83.3, 98.54], "bounds_y": [95.37, 95.37]}, {"op_id": "S01-OP15", "sheet_num": 1, "seq": 15, "step_code": "Step1_13", "step_title": "Step 1 Drilling (3.00mm)", "work_type": "CNC Drilling", "tool_name": "3.00mm Carbide Drill", "tool_dia_mm": 3.0, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 3.00mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_13_Front_Top_Drills_3.00mm.gcode", "svg_file": "Bed_Sheet01_Op15_Step1_13_top_front_3.00mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "7 holes @ 3.00mm", "bounds_x": [75.8, 175.75], "bounds_y": [18.0, 136.87]}, {"op_id": "S01-OP16", "sheet_num": 1, "seq": 16, "step_code": "Step3A", "step_title": "Step 3A: Top Copper Isolation", "work_type": "Top Isolation", "tool_name": "30\u00b0 / 0.2mm V-Bit", "tool_dia_mm": 0.2, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount sheet Top-Side Up at G54 (0,0) FRONT HALF", "gcode_file": "Sheet01_Step3A_Front_Top_Copper_Isolation.gcode", "svg_file": "Bed_Sheet01_Op16_Step3A_top_front_30deg_0.2mm_V-Bit.svg", "depth_mm": -0.04, "feed_mm_min": 300.0, "spindle_rpm": 10000, "stats_label": "291 toolpaths", "bounds_x": [19.0, 179.35], "bounds_y": [9.5, 141.56]}, {"op_id": "S01-OP17", "sheet_num": 1, "seq": 17, "step_code": "Step4A", "step_title": "Step 4A: Bottom Copper Isolation", "work_type": "Bottom Isolation", "tool_name": "30\u00b0 / 0.2mm V-Bit", "tool_dia_mm": 0.2, "board_side": "bottom", "mirrored": true, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "FLIP board horizontally along Y-axis (Left <-> Right) -> FRONT HALF", "gcode_file": "Sheet01_Step4A_Front_Bottom_Copper_Isolation.gcode", "svg_file": "Bed_Sheet01_Op17_Step4A_bottom_front_30deg_0.2mm_V-Bit.svg", "depth_mm": -0.04, "feed_mm_min": 300.0, "spindle_rpm": 10000, "stats_label": "180 toolpaths", "bounds_x": [20.65, 175.6], "bounds_y": [9.9, 142.48]}, {"op_id": "S01-OP18", "sheet_num": 1, "seq": 18, "step_code": "Step5A", "step_title": "Step 5A: Top Mask Clear", "work_type": "Solder Mask Clear", "tool_name": "0.4mm Flat Endmill / V-Bit", "tool_dia_mm": 0.4, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount sheet Top-Side Up at FRONT HALF & re-zero Z on cured mask (M0)", "gcode_file": "Sheet01_Step5A_Front_Top_Mask_Clear.gcode", "svg_file": "Bed_Sheet01_Op18_Step5A_top_front_0.4mm_Flat_Endmill_V-Bit.svg", "depth_mm": -0.06, "feed_mm_min": 300.0, "spindle_rpm": 10000, "stats_label": "165 toolpaths", "bounds_x": [27.04, 173.99], "bounds_y": [15.4, 140.22]}, {"op_id": "S01-OP19", "sheet_num": 1, "seq": 19, "step_code": "Step5C", "step_title": "Step 5C: Bottom Mask Clear", "work_type": "Solder Mask Clear", "tool_name": "0.4mm Flat Endmill / V-Bit", "tool_dia_mm": 0.4, "board_side": "bottom", "mirrored": true, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "FLIP board horizontally along Y-axis -> FRONT HALF & re-zero Z on bottom mask (M0)", "gcode_file": "Sheet01_Step5C_Front_Bottom_Mask_Clear.gcode", "svg_file": "Bed_Sheet01_Op19_Step5C_bottom_front_0.4mm_Flat_Endmill_V-Bit.svg", "depth_mm": -0.06, "feed_mm_min": 300.0, "spindle_rpm": 10000, "stats_label": "161 toolpaths", "bounds_x": [26.01, 172.96], "bounds_y": [15.4, 140.22]}, {"op_id": "S01-OP20", "sheet_num": 1, "seq": 20, "step_code": "Step6A", "step_title": "Step 6A: Top Silkscreen (Front)", "work_type": "Inkjet Silkscreen", "tool_name": "STM32 UV Inkjet (600 DPI)", "tool_dia_mm": 0.05, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Load sheet TOP side up (FRONT half) on flatbed printer", "gcode_file": "Sheet01_Step6A_Front_Top_Silkscreen_Inkjet.json", "svg_file": "Bed_Sheet01_Op20_Step6A_top_front_STM32_UV_Inkjet_600_DPI.svg", "depth_mm": 0.0, "feed_mm_min": 2400.0, "spindle_rpm": 85, "stats_label": "301 silkscreen paths @ 600 DPI", "bounds_x": [26.56, 176.33], "bounds_y": [9.84, 143.1]}, {"op_id": "S01-OP21", "sheet_num": 1, "seq": 21, "step_code": "Step7A", "step_title": "Step 7A: Top Endmill Cutout", "work_type": "Cutout & Breakaway", "tool_name": "1.0mm Corn Endmill", "tool_dia_mm": 1.0, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount Top-Side Up at FRONT HALF (Y=0 datum) with 1.0mm Endmill", "gcode_file": "Sheet01_Step7A_Front_Top_Snap_Cutout.gcode", "svg_file": "Bed_Sheet01_Op21_Step7A_top_front_1.0mm_Corn_Endmill.svg", "depth_mm": -0.85, "feed_mm_min": 200.0, "spindle_rpm": 10000, "stats_label": "33 cut segments", "bounds_x": [18.0, 179.75], "bounds_y": [8.5, 145.45]}, {"op_id": "S01-OP22", "sheet_num": 1, "seq": 22, "step_code": "Step7C", "step_title": "Step 7C: Top V-Bit Breakaway Score", "work_type": "Cutout & Breakaway", "tool_name": "30\u00b0 V-Bit (Score)", "tool_dia_mm": 0.2, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount 30\u00b0 V-Bit & return to FRONT HALF (Y=0 datum)", "gcode_file": "Sheet01_Step7C_Front_Top_VBit_Score.gcode", "svg_file": "Bed_Sheet01_Op22_Step7C_top_front_30deg_V-Bit_Score.svg", "depth_mm": -0.85, "feed_mm_min": 220.0, "spindle_rpm": 10000, "stats_label": "6 cut segments", "bounds_x": [23.0, 171.23], "bounds_y": [13.5, 128.2]}, {"op_id": "S01-OP23", "sheet_num": 1, "seq": 23, "step_code": "Step7E", "step_title": "Step 7E: Bottom Endmill Cutout (Mirrored)", "work_type": "Cutout & Breakaway", "tool_name": "1.0mm Corn Endmill", "tool_dia_mm": 1.0, "board_side": "bottom", "mirrored": true, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "FLIP board horizontally along Y-axis -> FRONT HALF (Mirrored X) with 1.0mm Endmill", "gcode_file": "Sheet01_Step7E_Front_Bottom_Snap_Cutout.gcode", "svg_file": "Bed_Sheet01_Op23_Step7E_bottom_front_1.0mm_Corn_Endmill.svg", "depth_mm": -0.85, "feed_mm_min": 200.0, "spindle_rpm": 10000, "stats_label": "33 cut segments", "bounds_x": [20.25, 182.0], "bounds_y": [8.5, 145.45]}, {"op_id": "S01-OP24", "sheet_num": 1, "seq": 24, "step_code": "Step7G", "step_title": "Step 7G: Bottom V-Bit Score (Mirrored)", "work_type": "Cutout & Breakaway", "tool_name": "30\u00b0 V-Bit (Score)", "tool_dia_mm": 0.2, "board_side": "bottom", "mirrored": true, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount 30\u00b0 V-Bit at FRONT HALF (Bottom Side Mirrored X)", "gcode_file": "Sheet01_Step7G_Front_Bottom_VBit_Score.gcode", "svg_file": "Bed_Sheet01_Op24_Step7G_bottom_front_30deg_V-Bit_Score.svg", "depth_mm": -0.85, "feed_mm_min": 220.0, "spindle_rpm": 10000, "stats_label": "6 cut segments", "bounds_x": [28.77, 177.0], "bounds_y": [13.5, 128.2]}]};
-    const bedHoldersList = [{"id": "lock_bed_front_left", "name": "Front-Left Common M4 Washer Clamp", "shape": "circle", "x": -5.0, "y": 8.0, "diameter": 30.0, "holder_gap": 3.0, "step_zone": "bed_common", "common_for_both_halves": true, "drill_through_pcb": false, "anchor_type": "washer_clamp", "description": "Common bed locking screw with M4 washer clamping over PCB margin (no through-PCB anchor hole)"}, {"id": "lock_bed_front_right", "name": "Front-Right Common M4 Washer Clamp", "shape": "circle", "x": 205.0, "y": 0.0, "diameter": 30.0, "holder_gap": 3.0, "step_zone": "bed_common", "common_for_both_halves": true, "drill_through_pcb": false, "anchor_type": "washer_clamp", "description": "Common bed locking screw with M4 washer clamping over PCB margin (no through-PCB anchor hole)"}, {"id": "lock_bed_rear_left", "name": "Rear-Left Common Edge Washer Clamp", "shape": "circle", "x": 205.0, "y": 160.0, "diameter": 30.0, "holder_gap": 3.0, "step_zone": "bed_common", "common_for_both_halves": true, "drill_through_pcb": false, "anchor_type": "washer_clamp", "description": "Common bed locking screw with M4 washer clamping over PCB margin (no through-PCB anchor hole)"}, {"id": "lock_bed_rear_right", "name": "Rear-Right Common Edge Washer Clamp", "shape": "circle", "x": -5, "y": 160.0, "diameter": 30.0, "holder_gap": 3.0, "step_zone": "bed_common", "common_for_both_halves": true, "drill_through_pcb": false, "anchor_type": "washer_clamp", "description": "Common bed locking screw with M4 washer clamping over PCB margin (no through-PCB anchor hole)"}];
-    const bedZSwitch = {"enabled": true, "x_mm": 272.001, "y_mm": 135.002, "width_mm": 7.0, "length_mm": 20.0, "danger_margin_mm": 6.0, "label": "Z-ZERO LIMIT SWITCH (DANGER ZONE)", "description": "Fixed bed tool-length / Z-zero limit switch danger zone"};
+    const bedOperationsBySheet = {"1": [{"op_id": "S01-OP01", "sheet_num": 1, "seq": 1, "step_code": "Step0A", "step_title": "Step 0A: Sheet Data & Ref Marks", "work_type": "Alignment Guides", "tool_name": "30\u00b0 V-Bit", "tool_dia_mm": 0.1, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount A4 sheet Top-Side Up at G54 (0,0) FRONT HALF", "gcode_file": "Sheet01_Step0A_Front_Alignment_Guides.gcode", "svg_file": "Bed_Sheet01_Op01_Step0A_top_front_30deg_V-Bit.svg", "depth_mm": -0.04, "feed_mm_min": 250.0, "spindle_rpm": 10000, "stats_label": "43 strokes, 2 pins", "bounds_x": [14.18, 186.5], "bounds_y": [1.2, 166.4]}, {"op_id": "S01-OP02", "sheet_num": 1, "seq": 2, "step_code": "Step0B", "step_title": "Step 0B: Back Alignment Guides", "work_type": "Alignment Guides", "tool_name": "30\u00b0 V-Bit", "tool_dia_mm": 0.1, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 165.0, "started_back_same_tool": false, "shift_action": "Slide sheet -165.0mm along Y-axis ONLY -> BACK HALF", "gcode_file": "Sheet01_Step0B_Back_Alignment_Guides.gcode", "svg_file": "Bed_Sheet01_Op02_Step0B_top_back_30deg_V-Bit.svg", "depth_mm": -0.04, "feed_mm_min": 250.0, "spindle_rpm": 10000, "stats_label": "2 strokes, 0 pins", "bounds_x": [15.0, 185.0], "bounds_y": [21.0, 23.0]}, {"op_id": "S01-OP03", "sheet_num": 1, "seq": 3, "step_code": "Step1_01", "step_title": "Step 1 Drilling (0.30mm)", "work_type": "CNC Drilling", "tool_name": "0.30mm Carbide Drill", "tool_dia_mm": 0.3, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Set sheet Top-Side Up at FRONT HALF (Y=0 datum)", "gcode_file": "Sheet01_Step1_01_Front_Top_Drills_0.30mm.gcode", "svg_file": "Bed_Sheet01_Op03_Step1_01_top_front_0.30mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "5 holes @ 0.30mm", "bounds_x": [42.71, 141.5], "bounds_y": [85.5, 139.21]}, {"op_id": "S01-OP04", "sheet_num": 1, "seq": 4, "step_code": "Step1_02", "step_title": "Step 1 Drilling (0.70mm)", "work_type": "CNC Drilling", "tool_name": "0.70mm Carbide Drill", "tool_dia_mm": 0.7, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 0.70mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_02_Front_Top_Drills_0.70mm.gcode", "svg_file": "Bed_Sheet01_Op04_Step1_02_top_front_0.70mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "14 holes @ 0.70mm", "bounds_x": [126.92, 166.75], "bounds_y": [26.0, 67.81]}, {"op_id": "S01-OP05", "sheet_num": 1, "seq": 5, "step_code": "Step1_03", "step_title": "Step 1 Drilling (0.75mm)", "work_type": "CNC Drilling", "tool_name": "0.75mm Carbide Drill", "tool_dia_mm": 0.75, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 0.75mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_03_Front_Top_Drills_0.75mm.gcode", "svg_file": "Bed_Sheet01_Op05_Step1_03_top_front_0.75mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "6 holes @ 0.75mm", "bounds_x": [76.0, 76.0], "bounds_y": [53.0, 76.54]}, {"op_id": "S01-OP06", "sheet_num": 1, "seq": 6, "step_code": "Step1_04", "step_title": "Step 1 Drilling (0.80mm)", "work_type": "CNC Drilling", "tool_name": "0.80mm Carbide Drill", "tool_dia_mm": 0.8, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 0.80mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_04_Front_Top_Drills_0.80mm.gcode", "svg_file": "Bed_Sheet01_Op06_Step1_04_top_front_0.80mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "30 holes @ 0.80mm", "bounds_x": [82.0, 166.06], "bounds_y": [22.18, 75.0]}, {"op_id": "S01-OP07", "sheet_num": 1, "seq": 7, "step_code": "Step1_05", "step_title": "Step 1 Drilling (0.90mm)", "work_type": "CNC Drilling", "tool_name": "0.90mm Carbide Drill", "tool_dia_mm": 0.9, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 0.90mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_05_Front_Top_Drills_0.90mm.gcode", "svg_file": "Bed_Sheet01_Op07_Step1_05_top_front_0.90mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "20 holes @ 0.90mm", "bounds_x": [27.95, 153.75], "bounds_y": [39.96, 138.97]}, {"op_id": "S01-OP08", "sheet_num": 1, "seq": 8, "step_code": "Step1_06", "step_title": "Step 1 Drilling (1.00mm)", "work_type": "CNC Drilling", "tool_name": "1.00mm Carbide Drill", "tool_dia_mm": 1.0, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 1.00mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_06_Front_Top_Drills_1.00mm.gcode", "svg_file": "Bed_Sheet01_Op08_Step1_06_top_front_1.00mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "49 holes @ 1.00mm", "bounds_x": [15.5, 184.5], "bounds_y": [16.5, 135.42]}, {"op_id": "S01-OP09", "sheet_num": 1, "seq": 9, "step_code": "Step1_07", "step_title": "Step 1 Drilling (1.00mm)", "work_type": "CNC Drilling", "tool_name": "1.00mm Carbide Drill", "tool_dia_mm": 1.0, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 165.0, "started_back_same_tool": false, "shift_action": "Slide sheet -165.0mm along Y-axis ONLY -> BACK HALF", "gcode_file": "Sheet01_Step1_07_Back_Top_Drills_1.00mm.gcode", "svg_file": "Bed_Sheet01_Op09_Step1_07_top_back_1.00mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "2 holes @ 1.00mm", "bounds_x": [15.5, 184.5], "bounds_y": [30.0, 30.0]}, {"op_id": "S01-OP10", "sheet_num": 1, "seq": 10, "step_code": "Step1_08", "step_title": "Step 1 Drilling (1.10mm)", "work_type": "CNC Drilling", "tool_name": "1.10mm Carbide Drill", "tool_dia_mm": 1.1, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Slide sheet +165.0mm back along Y-axis ONLY -> FRONT HALF", "gcode_file": "Sheet01_Step1_08_Front_Top_Drills_1.10mm.gcode", "svg_file": "Bed_Sheet01_Op10_Step1_08_top_front_1.10mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "14 holes @ 1.10mm", "bounds_x": [66.34, 126.25], "bounds_y": [19.0, 80.25]}, {"op_id": "S01-OP11", "sheet_num": 1, "seq": 11, "step_code": "Step1_09", "step_title": "Step 1 Drilling (1.20mm)", "work_type": "CNC Drilling", "tool_name": "1.20mm Carbide Drill", "tool_dia_mm": 1.2, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 1.20mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_09_Front_Top_Drills_1.20mm.gcode", "svg_file": "Bed_Sheet01_Op11_Step1_09_top_front_1.20mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "12 holes @ 1.20mm", "bounds_x": [82.3, 165.75], "bounds_y": [50.0, 138.37]}, {"op_id": "S01-OP12", "sheet_num": 1, "seq": 12, "step_code": "Step1_10", "step_title": "Step 1 Drilling (1.30mm)", "work_type": "CNC Drilling", "tool_name": "1.30mm Carbide Drill", "tool_dia_mm": 1.3, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 1.30mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_10_Front_Top_Drills_1.30mm.gcode", "svg_file": "Bed_Sheet01_Op12_Step1_10_top_front_1.30mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "6 holes @ 1.30mm", "bounds_x": [34.47, 36.5], "bounds_y": [23.02, 80.0]}, {"op_id": "S01-OP13", "sheet_num": 1, "seq": 13, "step_code": "Step1_11", "step_title": "Step 1 Drilling (1.50mm)", "work_type": "CNC Drilling", "tool_name": "1.50mm Carbide Drill", "tool_dia_mm": 1.5, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 1.50mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_11_Front_Top_Drills_1.50mm.gcode", "svg_file": "Bed_Sheet01_Op13_Step1_11_top_front_1.50mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "10 holes @ 1.50mm", "bounds_x": [45.9, 61.1], "bounds_y": [46.0, 80.0]}, {"op_id": "S01-OP14", "sheet_num": 1, "seq": 14, "step_code": "Step1_12", "step_title": "Step 1 Drilling (1.80mm)", "work_type": "CNC Drilling", "tool_name": "1.80mm Carbide Drill", "tool_dia_mm": 1.8, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 1.80mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_12_Front_Top_Drills_1.80mm.gcode", "svg_file": "Bed_Sheet01_Op14_Step1_12_top_front_1.80mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "4 holes @ 1.80mm", "bounds_x": [83.3, 98.54], "bounds_y": [95.37, 95.37]}, {"op_id": "S01-OP15", "sheet_num": 1, "seq": 15, "step_code": "Step1_13", "step_title": "Step 1 Drilling (3.00mm)", "work_type": "CNC Drilling", "tool_name": "3.00mm Carbide Drill", "tool_dia_mm": 3.0, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 3.00mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_13_Front_Top_Drills_3.00mm.gcode", "svg_file": "Bed_Sheet01_Op15_Step1_13_top_front_3.00mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "7 holes @ 3.00mm", "bounds_x": [75.8, 175.75], "bounds_y": [18.0, 136.87]}, {"op_id": "S01-OP16", "sheet_num": 1, "seq": 16, "step_code": "Step3A", "step_title": "Step 3A: Top Copper Isolation", "work_type": "Top Isolation", "tool_name": "30\u00b0 / 0.2mm V-Bit", "tool_dia_mm": 0.2, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount sheet Top-Side Up at G54 (0,0) FRONT HALF", "gcode_file": "Sheet01_Step3A_Front_Top_Copper_Isolation.gcode", "svg_file": "Bed_Sheet01_Op16_Step3A_top_front_30deg_0.2mm_V-Bit.svg", "depth_mm": -0.04, "feed_mm_min": 300.0, "spindle_rpm": 10000, "stats_label": "309 toolpaths", "bounds_x": [18.0, 179.75], "bounds_y": [8.5, 145.45]}, {"op_id": "S01-OP17", "sheet_num": 1, "seq": 17, "step_code": "Step4A", "step_title": "Step 4A: Bottom Copper Isolation", "work_type": "Bottom Isolation", "tool_name": "30\u00b0 / 0.2mm V-Bit", "tool_dia_mm": 0.2, "board_side": "bottom", "mirrored": true, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "FLIP board horizontally along Y-axis (Left <-> Right) -> FRONT HALF", "gcode_file": "Sheet01_Step4A_Front_Bottom_Copper_Isolation.gcode", "svg_file": "Bed_Sheet01_Op17_Step4A_bottom_front_30deg_0.2mm_V-Bit.svg", "depth_mm": -0.04, "feed_mm_min": 300.0, "spindle_rpm": 10000, "stats_label": "198 toolpaths", "bounds_x": [20.25, 182.0], "bounds_y": [8.5, 145.45]}, {"op_id": "S01-OP18", "sheet_num": 1, "seq": 18, "step_code": "Step5A", "step_title": "Step 5A: Top Mask Clear", "work_type": "Solder Mask Clear", "tool_name": "0.4mm Flat Endmill / V-Bit", "tool_dia_mm": 0.4, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount sheet Top-Side Up at FRONT HALF & re-zero Z on cured mask (M0)", "gcode_file": "Sheet01_Step5A_Front_Top_Mask_Clear.gcode", "svg_file": "Bed_Sheet01_Op18_Step5A_top_front_0.4mm_Flat_Endmill_V-Bit.svg", "depth_mm": -0.06, "feed_mm_min": 300.0, "spindle_rpm": 10000, "stats_label": "183 toolpaths", "bounds_x": [18.0, 179.75], "bounds_y": [8.5, 145.45]}, {"op_id": "S01-OP19", "sheet_num": 1, "seq": 19, "step_code": "Step5C", "step_title": "Step 5C: Bottom Mask Clear", "work_type": "Solder Mask Clear", "tool_name": "0.4mm Flat Endmill / V-Bit", "tool_dia_mm": 0.4, "board_side": "bottom", "mirrored": true, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "FLIP board horizontally along Y-axis -> FRONT HALF & re-zero Z on bottom mask (M0)", "gcode_file": "Sheet01_Step5C_Front_Bottom_Mask_Clear.gcode", "svg_file": "Bed_Sheet01_Op19_Step5C_bottom_front_0.4mm_Flat_Endmill_V-Bit.svg", "depth_mm": -0.06, "feed_mm_min": 300.0, "spindle_rpm": 10000, "stats_label": "179 toolpaths", "bounds_x": [20.25, 182.0], "bounds_y": [8.5, 145.45]}, {"op_id": "S01-OP20", "sheet_num": 1, "seq": 20, "step_code": "Step6A", "step_title": "Step 6A: Top Silkscreen (Front)", "work_type": "Inkjet Silkscreen", "tool_name": "STM32 UV Inkjet (600 DPI)", "tool_dia_mm": 0.05, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Load sheet TOP side up (FRONT half) on flatbed printer", "gcode_file": "Sheet01_Step6A_Front_Top_Silkscreen_Inkjet.json", "svg_file": "Bed_Sheet01_Op20_Step6A_top_front_STM32_UV_Inkjet_600_DPI.svg", "depth_mm": 0.0, "feed_mm_min": 2400.0, "spindle_rpm": 85, "stats_label": "301 silkscreen paths @ 600 DPI", "bounds_x": [26.56, 176.33], "bounds_y": [9.84, 143.1]}, {"op_id": "S01-OP21", "sheet_num": 1, "seq": 21, "step_code": "Step7A", "step_title": "Step 7A: Top Endmill Cutout", "work_type": "Cutout & Breakaway", "tool_name": "1.0mm Corn Endmill", "tool_dia_mm": 1.0, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount Top-Side Up at FRONT HALF (Y=0 datum) with 1.0mm Endmill", "gcode_file": "Sheet01_Step7A_Front_Top_Snap_Cutout.gcode", "svg_file": "Bed_Sheet01_Op21_Step7A_top_front_1.0mm_Corn_Endmill.svg", "depth_mm": -0.85, "feed_mm_min": 200.0, "spindle_rpm": 10000, "stats_label": "33 cut segments", "bounds_x": [18.0, 179.75], "bounds_y": [8.5, 145.45]}, {"op_id": "S01-OP22", "sheet_num": 1, "seq": 22, "step_code": "Step7C", "step_title": "Step 7C: Top V-Bit Breakaway Score", "work_type": "Cutout & Breakaway", "tool_name": "30\u00b0 V-Bit (Score)", "tool_dia_mm": 0.2, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount 30\u00b0 V-Bit & return to FRONT HALF (Y=0 datum)", "gcode_file": "Sheet01_Step7C_Front_Top_VBit_Score.gcode", "svg_file": "Bed_Sheet01_Op22_Step7C_top_front_30deg_V-Bit_Score.svg", "depth_mm": -0.85, "feed_mm_min": 220.0, "spindle_rpm": 10000, "stats_label": "6 cut segments", "bounds_x": [23.0, 171.23], "bounds_y": [13.5, 128.2]}, {"op_id": "S01-OP23", "sheet_num": 1, "seq": 23, "step_code": "Step7E", "step_title": "Step 7E: Bottom Endmill Cutout (Mirrored)", "work_type": "Cutout & Breakaway", "tool_name": "1.0mm Corn Endmill", "tool_dia_mm": 1.0, "board_side": "bottom", "mirrored": true, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "FLIP board horizontally along Y-axis -> FRONT HALF (Mirrored X) with 1.0mm Endmill", "gcode_file": "Sheet01_Step7E_Front_Bottom_Snap_Cutout.gcode", "svg_file": "Bed_Sheet01_Op23_Step7E_bottom_front_1.0mm_Corn_Endmill.svg", "depth_mm": -0.85, "feed_mm_min": 200.0, "spindle_rpm": 10000, "stats_label": "33 cut segments", "bounds_x": [20.25, 182.0], "bounds_y": [8.5, 145.45]}, {"op_id": "S01-OP24", "sheet_num": 1, "seq": 24, "step_code": "Step7G", "step_title": "Step 7G: Bottom V-Bit Score (Mirrored)", "work_type": "Cutout & Breakaway", "tool_name": "30\u00b0 V-Bit (Score)", "tool_dia_mm": 0.2, "board_side": "bottom", "mirrored": true, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount 30\u00b0 V-Bit at FRONT HALF (Bottom Side Mirrored X)", "gcode_file": "Sheet01_Step7G_Front_Bottom_VBit_Score.gcode", "svg_file": "Bed_Sheet01_Op24_Step7G_bottom_front_30deg_V-Bit_Score.svg", "depth_mm": -0.85, "feed_mm_min": 220.0, "spindle_rpm": 10000, "stats_label": "6 cut segments", "bounds_x": [28.77, 177.0], "bounds_y": [13.5, 128.2]}]};
+    const bedHoldersList = [{"id": "lock_bed_front_left", "name": "Front-Left Common M4 Washer Clamp", "shape": "circle", "x": -5.0, "y": 8.0, "diameter": 30.0, "holder_gap": 3.0, "step_zone": "bed_common", "common_for_both_halves": true, "drill_through_pcb": false, "anchor_type": "washer_clamp", "description": "Common bed locking screw with M4 washer clamping over PCB margin (no through-PCB anchor hole)"}, {"id": "lock_bed_front_right", "name": "Front-Right Common M4 Washer Clamp", "shape": "circle", "x": 205.0, "y": 0.0, "diameter": 30.0, "holder_gap": 3.0, "step_zone": "bed_common", "common_for_both_halves": true, "drill_through_pcb": false, "anchor_type": "washer_clamp", "description": "Common bed locking screw with M4 washer clamping over PCB margin (no through-PCB anchor hole)"}, {"id": "lock_bed_rear_right", "name": "Rear-right Common Edge Washer Clamp", "shape": "circle", "x": 205.0, "y": 160.0, "diameter": 30.0, "holder_gap": 3.0, "step_zone": "bed_common", "common_for_both_halves": true, "drill_through_pcb": false, "anchor_type": "washer_clamp", "description": "Common bed locking screw with M4 washer clamping over PCB margin (no through-PCB anchor hole)"}, {"id": "lock_bed_rear_left", "name": "Rear-left Common Edge Washer Clamp", "shape": "circle", "x": -3, "y": 160.0, "diameter": 30.0, "holder_gap": 3.0, "step_zone": "bed_common", "common_for_both_halves": true, "drill_through_pcb": false, "anchor_type": "washer_clamp", "description": "Common bed locking screw with M4 washer clamping over PCB margin (no through-PCB anchor hole)"}];
+    const bedZSwitch = {"enabled": true, "x_mm": 272.001, "y_mm": 135.002, "width_mm": 7.0, "length_mm": 20.0, "danger_margin_mm": 6.0, "label": "Z-ZERO LIMIT SWITCH (DANGER ZONE)", "height_above_bed_mm": 5.5, "description": "Fixed bed tool-length / Z-zero limit switch danger zone"};
     const cncBedTravelX = 275.0;
     const cncBedTravelY = 170.0;
     const cncBedMillingX = 260.0;
@@ -775,6 +775,39 @@
     let activeStreamWs = null;
     let streamAborted = false;
     let bridgeEventSource = null;
+    let m0ShownKey = '';
+    let m0DismissedKey = '';
+    let liveStreamState = {
+      active: false,
+      state: 'idle',
+      filename: '',
+      isMacro: false,
+      via: 'none',
+      sent: 0,
+      total: 0,
+      current_cmd: '',
+      started_at: 0,
+      message: '',
+      prompt: '',
+      jobFilename: '',
+      jobState: 'idle',
+      jobSent: 0,
+      jobTotal: 0,
+      jobCurrentCmd: '',
+      loadedFilename: '',
+      rawLines: [],
+      execToRawLine: [],
+      segments: [],
+      drills: [],
+      bounds: { minX: 0, maxX: 200, minY: 0, maxY: 165 },
+      lastCompletedFile: '',
+      dismissed: false
+    };
+
+    function isMacroFilename(fname) {
+      if (!fname) return false;
+      return Array.isArray(macrosCatalog) && macrosCatalog.some(m => m.file === fname);
+    }
 
     function applyFluidNCStatusPayload(data) {
       if (!data) return;
@@ -794,6 +827,14 @@
         : via === 'ws' ? 'WS Proxy'
         : via === 'http' ? 'HTTP/Telnet'
         : 'Offline';
+
+      const wposEl = document.getElementById('live-pos-wpos');
+      const mposEl = document.getElementById('live-pos-mpos');
+      if (wposEl && data.wpos) wposEl.innerText = `X:${data.wpos[0].toFixed(2)} Y:${data.wpos[1].toFixed(2)} Z:${data.wpos[2].toFixed(2)}`;
+      if (mposEl && data.mpos) mposEl.innerText = `X:${data.mpos[0].toFixed(2)} Y:${data.mpos[1].toFixed(2)} Z:${data.mpos[2].toFixed(2)}`;
+      if (liveStreamState && (liveStreamState.active || !document.getElementById('dispatch-live-stream-panel')?.classList.contains('hidden'))) {
+        if (typeof drawLiveStreamCanvas === 'function') drawLiveStreamCanvas();
+      }
 
       if (data.online) {
         fluidncMachineState = data.state || 'Online';
@@ -866,8 +907,9 @@
       bridgeEventSource.addEventListener('stream', (evt) => {
         try {
           const s = JSON.parse(evt.data);
-          const stText = document.getElementById('fluidnc-status-text');
-          if (stText && s.total && s.active) stText.innerText = `${s.state} (${s.sent}/${s.total})`;
+          updateLiveStreamTracking(s);
+          if (s.state === 'waiting_confirm') showM0ConfirmModal(s.prompt, s.filename, s.sent, s.total);
+          else if (!s.active) hideM0ConfirmModal();
         } catch (e) {}
       });
     }
@@ -1094,6 +1136,20 @@
         });
         const data = await res.json();
         if (data.success) {
+          m0ShownKey = '';
+          m0DismissedKey = '';
+          liveStreamState.dismissed = false;
+          updateLiveStreamTracking({
+            active: true,
+            state: 'running',
+            filename: filename,
+            is_macro: Boolean(data.is_macro || isMacroFilename(filename)),
+            via: data.via || '',
+            sent: 0,
+            total: data.total || 0,
+            started_at: Date.now() / 1000,
+            message: `Streaming ${filename}...`
+          });
           startStreamStatusPolling(buttonEl);
         } else {
           alert('Stream failed: ' + (data.error || data.message));
@@ -1105,15 +1161,366 @@
       }
     }
 
+    function hideLiveStreamPanel() {
+      liveStreamState.dismissed = true;
+      document.getElementById('dispatch-live-stream-panel')?.classList.add('hidden');
+    }
+
+    async function loadLivePreviewFile(filename) {
+      if (!filename || liveStreamState.loadedFilename === filename) return;
+      liveStreamState.loadedFilename = filename;
+      let txt = '';
+      try {
+        txt = await fetchGCodeText(filename);
+      } catch (e) {
+        try {
+          const res = await fetch(`${getApiBase()}/api/macros_file?file=${encodeURIComponent(filename)}`, { cache: 'no-store' });
+          if (res.ok) {
+            const d = await res.json();
+            txt = d.content || '';
+          }
+        } catch (e2) {}
+      }
+      if (!txt) {
+        liveStreamState.rawLines = [];
+        liveStreamState.execToRawLine = [];
+        liveStreamState.segments = [];
+        liveStreamState.drills = [];
+        drawLiveStreamCanvas();
+        return;
+      }
+      const parsed = parseGCodeToolpath(txt);
+      const execMap = [];
+      parsed.lines.forEach((raw, idx) => {
+        const code = raw.split(';')[0].trim();
+        if (!code) return;
+        if (code.startsWith('(') && code.endsWith(')')) return;
+        execMap.push(idx);
+      });
+      liveStreamState.rawLines = parsed.lines;
+      liveStreamState.execToRawLine = execMap;
+      liveStreamState.segments = parsed.segments;
+      liveStreamState.drills = parsed.drills;
+      liveStreamState.bounds = parsed.bounds;
+      drawLiveStreamCanvas();
+      renderLiveExecutionWindow();
+    }
+
+    function renderLiveExecutionWindow() {
+      const winEl = document.getElementById('live-stream-lines');
+      if (!winEl) return;
+      const lines = liveStreamState.rawLines;
+      if (!lines || !lines.length) {
+        winEl.innerHTML = `<div class="text-slate-500 italic">${liveStreamState.current_cmd || 'Waiting for toolpath...'}</div>`;
+        return;
+      }
+      const trackSent = liveStreamState.jobFilename ? (liveStreamState.jobSent || 1) : (liveStreamState.sent || 1);
+      const execIdx = Math.max(0, Math.min(liveStreamState.execToRawLine.length - 1, trackSent - 1));
+      const curRawIdx = liveStreamState.execToRawLine[execIdx] ?? 0;
+      const start = Math.max(0, curRawIdx - 3);
+      const end = Math.min(lines.length, start + 8);
+      let rows = '';
+      for (let i = start; i < end; i++) {
+        const safeLine = String(lines[i] || '').replace(/</g, '&lt;');
+        const cls = (i < curRawIdx)
+          ? 'text-emerald-400/75'
+          : (i === curRawIdx ? 'bg-cyan-500/20 text-cyan-200 font-bold border-l-2 border-cyan-400 pl-1.5 rounded-r' : 'text-slate-500');
+        rows += `<div class="flex gap-2 truncate ${cls}"><span class="text-slate-600 w-7 text-right shrink-0">${i + 1}</span><span class="truncate">${safeLine}</span></div>`;
+      }
+      winEl.innerHTML = rows;
+    }
+
+    function drawLiveStreamCanvas() {
+      const canvas = document.getElementById('dispatch-live-canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width = canvas.clientWidth || 640;
+      const H = canvas.height = canvas.clientHeight || 260;
+      ctx.fillStyle = '#04060b';
+      ctx.fillRect(0, 0, W, H);
+
+      const segs = liveStreamState.segments || [];
+      const b = liveStreamState.bounds || { minX: 0, maxX: cncBedTravelX, minY: 0, maxY: cncBedTravelY };
+      const minX = Math.min(0, b.minX ?? 0);
+      const maxX = Math.max(cncBedTravelX, b.maxX ?? cncBedTravelX);
+      const minY = Math.min(0, b.minY ?? 0);
+      const maxY = Math.max(cncBedTravelY, b.maxY ?? cncBedTravelY);
+      const pad = 18;
+      const spanX = Math.max(20, maxX - minX);
+      const spanY = Math.max(20, maxY - minY);
+      const sc = Math.min((W - 2 * pad) / spanX, (H - 2 * pad) / spanY);
+      const ox = (W - spanX * sc) / 2 - minX * sc;
+      const oy = H - (H - spanY * sc) / 2 + minY * sc;
+      const tx = (x) => ox + x * sc;
+      const ty = (y) => oy - y * sc;
+
+      // Bed outline & Milling zone
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(tx(0), ty(cncBedTravelY), cncBedTravelX * sc, cncBedTravelY * sc);
+      ctx.setLineDash([4, 3]);
+      ctx.strokeStyle = 'rgba(2, 132, 199, 0.45)';
+      ctx.strokeRect(tx(0), ty(cncBedTravelY), cncBedMillingX * sc, cncBedTravelY * sc);
+      ctx.setLineDash([]);
+
+      // Clamps & Z-Switch keep-outs
+      (bedHoldersList || []).forEach(h => {
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.16)';
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
+        if ((h.shape || '').toLowerCase() === 'circle') {
+          const r = ((h.diameter || 12) / 2 + (h.holder_gap || 3)) * sc;
+          ctx.beginPath(); ctx.arc(tx(h.x), ty(h.y), r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        }
+      });
+      if (bedZSwitch && bedZSwitch.enabled !== false) {
+        const sx = bedZSwitch.x_mm || 272.001, sy = bedZSwitch.y_mm || 135.002;
+        const sw = (bedZSwitch.width_mm || 7) / 2 + (bedZSwitch.danger_margin_mm || 6);
+        const sl = (bedZSwitch.length_mm || 20) / 2 + (bedZSwitch.danger_margin_mm || 6);
+        ctx.fillStyle = 'rgba(220, 38, 38, 0.25)';
+        ctx.fillRect(tx(sx - sw), ty(sy + sl), sw * 2 * sc, sl * 2 * sc);
+      }
+
+      // Determine current raw line index from stream progress (preserve PCB job progress while macros run)
+      const sent = liveStreamState.jobFilename ? (liveStreamState.jobSent || 0) : (liveStreamState.sent || 0);
+      const execIdx = Math.max(-1, Math.min(liveStreamState.execToRawLine.length - 1, sent - 1));
+      const curRawLine = execIdx >= 0 ? (liveStreamState.execToRawLine[execIdx] ?? -1) : -1;
+
+      let targetPt = null;
+      if (segs.length) {
+        // 1. Future segments (dimmed)
+        ctx.lineWidth = 1.0;
+        for (const sg of segs) {
+          if (sg.lineIdx <= curRawLine) continue;
+          ctx.strokeStyle = sg.rapid ? 'rgba(56, 189, 248, 0.22)' : 'rgba(148, 163, 184, 0.32)';
+          ctx.beginPath(); ctx.moveTo(tx(sg.x1), ty(sg.y1)); ctx.lineTo(tx(sg.x2), ty(sg.y2)); ctx.stroke();
+        }
+
+        // 2. Completed segments (bright emerald / cyan for current)
+        for (const sg of segs) {
+          if (sg.lineIdx > curRawLine) continue;
+          const isCur = (sg.lineIdx === curRawLine);
+          ctx.strokeStyle = isCur ? '#22d3ee' : (sg.rapid ? 'rgba(56, 189, 248, 0.55)' : '#10b981');
+          ctx.lineWidth = isCur ? 2.4 : (sg.rapid ? 1.0 : 1.7);
+          ctx.beginPath(); ctx.moveTo(tx(sg.x1), ty(sg.y1)); ctx.lineTo(tx(sg.x2), ty(sg.y2)); ctx.stroke();
+          targetPt = { x: sg.x2, y: sg.y2, z: sg.z2 };
+        }
+
+        // 3. Drills
+        for (const dr of (liveStreamState.drills || [])) {
+          ctx.fillStyle = (dr.lineIdx <= curRawLine) ? '#f59e0b' : 'rgba(245, 158, 11, 0.25)';
+          ctx.beginPath(); ctx.arc(tx(dr.x), ty(dr.y), dr.lineIdx <= curRawLine ? 2.6 : 1.6, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+
+      // Target command crosshair
+      if (targetPt) {
+        const px = tx(targetPt.x), py = ty(targetPt.y);
+        ctx.strokeStyle = '#22d3ee';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI * 2); ctx.stroke();
+      }
+
+      // Live reported CNC head position (WPos or MPos)
+      const p = lastLiveToolPos && (lastLiveToolPos.wpos || lastLiveToolPos.mpos);
+      if (p) {
+        const mx = tx(p[0]), my = ty(p[1]);
+        ctx.fillStyle = '#e879f9';
+        ctx.beginPath(); ctx.arc(mx, my, 4.5, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(232, 121, 249, 0.55)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(mx, my, 10, 0, Math.PI * 2);
+        ctx.moveTo(mx - 14, my); ctx.lineTo(mx + 14, my);
+        ctx.moveTo(mx, my - 14); ctx.lineTo(mx, my + 14);
+        ctx.stroke();
+      }
+    }
+
+    function updateLiveStreamTracking(s) {
+      if (!s) return;
+      const prevActive = liveStreamState.active;
+      const prevFile = liveStreamState.filename;
+      const prevState = liveStreamState.state;
+      const prevLastCompleted = liveStreamState.lastCompletedFile;
+
+      const fname = s.filename || liveStreamState.filename || '';
+      const isMacro = Boolean(s.is_macro || isMacroFilename(fname));
+
+      liveStreamState.active = !!s.active;
+      liveStreamState.state = s.state || 'idle';
+      liveStreamState.isMacro = isMacro;
+      if (s.filename) liveStreamState.filename = s.filename;
+      if (s.via) liveStreamState.via = s.via;
+      liveStreamState.sent = Number(s.sent || 0);
+      liveStreamState.total = Number(s.total || 0);
+      liveStreamState.current_cmd = s.current_cmd || '';
+      liveStreamState.started_at = Number(s.started_at || liveStreamState.started_at || 0);
+      liveStreamState.message = s.message || '';
+      liveStreamState.prompt = s.prompt || '';
+
+      if (!isMacro && fname) {
+        liveStreamState.jobFilename = fname;
+        liveStreamState.jobState = liveStreamState.state;
+        liveStreamState.jobSent = liveStreamState.sent;
+        liveStreamState.jobTotal = liveStreamState.total;
+        liveStreamState.jobCurrentCmd = liveStreamState.current_cmd;
+        if (!s.active && liveStreamState.state === 'done') {
+          liveStreamState.lastCompletedFile = fname;
+        }
+      }
+
+      if (s.active) liveStreamState.dismissed = false;
+
+      const previewFile = liveStreamState.jobFilename || liveStreamState.filename;
+      const panel = document.getElementById('dispatch-live-stream-panel');
+      if (panel && !liveStreamState.dismissed && (s.active || (previewFile && liveStreamState.state !== 'idle'))) {
+        panel.classList.remove('hidden');
+      }
+
+      if (previewFile) loadLivePreviewFile(previewFile);
+
+      const dispSent = (!isMacro || !liveStreamState.jobFilename) ? liveStreamState.sent : liveStreamState.jobSent;
+      const dispTotal = (!isMacro || !liveStreamState.jobFilename) ? liveStreamState.total : liveStreamState.jobTotal;
+      const pct = dispTotal ? Math.min(100, Math.round((dispSent / dispTotal) * 100)) : 0;
+      const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.innerText = v; };
+      setTxt('live-stream-filename', previewFile || '-');
+      setTxt('live-stream-via', (liveStreamState.via || '-').toUpperCase());
+      setTxt('live-stream-counter', `${dispSent} / ${dispTotal} (${pct}%)`);
+      setTxt('live-stream-pct', `${pct}%`);
+      setTxt('live-stream-cmd', liveStreamState.current_cmd || liveStreamState.jobCurrentCmd || '-');
+      const statusMsg = (isMacro && liveStreamState.jobFilename)
+        ? `Macro [${fname} ${(s.active || liveStreamState.state === 'waiting_confirm') ? `${liveStreamState.sent}/${liveStreamState.total}` : liveStreamState.state}] • Job preview preserved`
+        : (liveStreamState.message || liveStreamState.state);
+      setTxt('live-stream-message', statusMsg);
+
+      if (liveStreamState.started_at > 0) {
+        const sec = Math.max(0, Math.floor((Date.now() / 1000) - liveStreamState.started_at));
+        const mm = String(Math.floor(sec / 60)).padStart(2, '0');
+        const ss = String(sec % 60).padStart(2, '0');
+        setTxt('live-stream-elapsed', `${mm}:${ss}`);
+      }
+
+      const bar = document.getElementById('live-stream-progress-bar');
+      if (bar) bar.style.width = `${pct}%`;
+
+      const displayState = (isMacro && liveStreamState.jobFilename && !s.active && liveStreamState.state === 'done')
+        ? liveStreamState.jobState
+        : liveStreamState.state;
+      const badge = document.getElementById('live-stream-badge');
+      if (badge) {
+        const map = {
+          running: ['bg-cyan-500/20 text-cyan-300 border-cyan-500/40', `<span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span><span>${isMacro ? 'MACRO' : 'STREAMING'}</span>`],
+          waiting_confirm: ['bg-amber-500/20 text-amber-300 border-amber-500/40', '<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span><span>M0 PAUSED</span>'],
+          done: ['bg-amber-500/20 text-amber-300 border-amber-400/50', '<span>COMPLETED</span>'],
+          aborted: ['bg-rose-500/20 text-rose-300 border-rose-500/40', '<span>STOPPED</span>'],
+          error: ['bg-red-500/20 text-red-300 border-red-500/40', '<span>ERROR</span>']
+        };
+        const [cls, inner] = map[displayState] || ['bg-slate-800 text-slate-300 border-slate-700', `<span>${displayState.toUpperCase()}</span>`];
+        badge.className = `inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border font-mono text-[11px] font-bold ${cls}`;
+        badge.innerHTML = inner;
+      }
+
+      if (panel) {
+        panel.classList.toggle('border-cyan-500/40', !!s.active);
+        panel.classList.toggle('border-amber-400/60', !s.active && displayState === 'done');
+      }
+
+      syncLiveDoneButton();
+
+      // Toggle Dispatch Stop Stream button
+      const stopBtn = document.getElementById('btn-dispatch-stop-stream');
+      if (stopBtn) {
+        stopBtn.disabled = !s.active;
+        stopBtn.className = s.active
+          ? 'inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white border border-rose-400/50 font-semibold text-xs transition cursor-pointer animate-pulse shadow-sm shadow-rose-950/50'
+          : 'inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800/70 text-slate-500 border border-slate-700/60 font-semibold text-xs transition cursor-not-allowed opacity-50';
+      }
+      const liveStopBtn = document.getElementById('btn-live-stop');
+      if (liveStopBtn) liveStopBtn.classList.toggle('hidden', !s.active);
+
+      const stText = document.getElementById('fluidnc-status-text');
+      if (stText && s.total && s.active) stText.innerText = `${s.state} (${s.sent}/${s.total})`;
+      const rowBadge = document.getElementById('active-row-stream-badge');
+      if (rowBadge && liveStreamState.active && !isMacro) {
+        rowBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-cyan-300"></span>${liveStreamState.state === 'waiting_confirm' ? 'M0 PAUSED' : 'STREAMING'} ${liveStreamState.sent}/${liveStreamState.total}`;
+      }
+
+      drawLiveStreamCanvas();
+      renderLiveExecutionWindow();
+
+      if (prevActive !== liveStreamState.active || prevFile !== liveStreamState.filename || prevState !== liveStreamState.state || prevLastCompleted !== liveStreamState.lastCompletedFile) {
+        renderFluidNCDispatcher();
+        renderDispatchMacrosBar();
+      }
+    }
+
+    function syncLiveDoneButton() {
+      const doneBtn = document.getElementById('btn-live-mark-done');
+      if (!doneBtn) return;
+      const targetFile = liveStreamState.lastCompletedFile || (!liveStreamState.isMacro ? liveStreamState.filename : '');
+      const show = !!targetFile && !(liveStreamState.active && !liveStreamState.isMacro) && (liveStreamState.jobState === 'done' || liveStreamState.lastCompletedFile === targetFile);
+      doneBtn.classList.toggle('hidden', !show);
+      if (!show) return;
+      const checked = dispatchDoneSet.has(targetFile);
+      doneBtn.className = checked
+        ? 'px-2.5 py-1 rounded-lg bg-emerald-900/60 hover:bg-emerald-800/70 text-emerald-300 border border-emerald-500/50 font-semibold cursor-pointer inline-flex items-center gap-1'
+        : 'px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold cursor-pointer inline-flex items-center gap-1 shadow-sm';
+      doneBtn.innerHTML = checked
+        ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg><span>Checked</span>'
+        : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg><span>Check File</span>';
+    }
+
+    function toggleLiveStreamDone() {
+      const targetFile = liveStreamState.lastCompletedFile || liveStreamState.jobFilename || liveStreamState.filename;
+      if (!targetFile) return;
+      const nextState = !dispatchDoneSet.has(targetFile);
+      toggleDispatchDone(targetFile, nextState);
+      syncLiveDoneButton();
+    }
+
+    async function stopOngoingStream() {
+      try {
+        appendBridgeConsoleLine('stop', 'Stopping active G-code stream (! + 0x18 + M5)...', '');
+        await fetch(`${getApiBase()}/api/fluidnc_stream_action`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'abort', ip: fluidncTargetIp })
+        });
+        hideM0ConfirmModal();
+        setTimeout(() => testFluidNCConnection(), 300);
+      } catch (e) {
+        alert('Stop stream failed: ' + e);
+      }
+    }
+
+    async function triggerVirtualEStop() {
+      const btn = document.getElementById('btn-virtual-estop');
+      if (btn) {
+        btn.classList.add('ring-4', 'ring-red-400');
+        setTimeout(() => btn.classList.remove('ring-4', 'ring-red-400'), 700);
+      }
+      try {
+        appendBridgeConsoleLine('estop', 'VIRTUAL E-STOP: Sending ! + Soft Reset (0x18) + M5!', '');
+        await fetch(`${getApiBase()}/api/fluidnc_stream_action`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'estop', ip: fluidncTargetIp })
+        });
+        hideM0ConfirmModal();
+        setTimeout(() => testFluidNCConnection(), 300);
+      } catch (e) {
+        alert('E-Stop command failed: ' + e);
+      }
+    }
+
     function startStreamStatusPolling(buttonEl) {
       if (streamPollTimer) clearInterval(streamPollTimer);
       streamPollTimer = setInterval(async () => {
         try {
           const sRes = await fetch(`${getApiBase()}/api/fluidnc_stream_status`, { cache: 'no-store' });
           const s = await sRes.json();
-          const stText = document.getElementById('fluidnc-status-text');
+          updateLiveStreamTracking(s);
           const mSt = document.getElementById('macros-status');
-          if (stText && s.total) stText.innerText = `${s.state} (${s.sent}/${s.total})`;
           if (mSt && s.active) mSt.innerText = s.message || s.state;
 
           if (s.state === 'waiting_confirm') {
@@ -1132,39 +1539,62 @@
             }
             testFluidNCConnection();
             if (s.state === 'error') alert(s.message);
+          } else {
+            hideM0ConfirmModal();
           }
         } catch (e) {}
-      }, 450);
+      }, 350);
     }
 
     async function showM0ConfirmModal(promptText, fname, sent, total) {
       const modal = document.getElementById('m0-confirm-modal');
       if (!modal) return;
+      const key = `${fname || ''}:${sent || 0}`;
+      if (m0DismissedKey === key) return;
+      if (m0ShownKey === key && !modal.classList.contains('hidden')) return;
+      m0ShownKey = key;
+
       document.getElementById('m0-prompt-text').innerText = promptText || 'Operator pause (M0). Verify tool position & clamps before continuing.';
       document.getElementById('m0-file-meta').innerText = `${fname || 'CNC Job'} — Line ${sent || 0} / ${total || 0}`;
+      const cachedPos = lastLiveToolPos && (lastLiveToolPos.wpos || lastLiveToolPos.mpos);
+      if (cachedPos && document.getElementById('m0-live-pos')) {
+        document.getElementById('m0-live-pos').innerText = `X:${cachedPos[0].toFixed(3)}  Y:${cachedPos[1].toFixed(3)}  Z:${cachedPos[2].toFixed(3)} mm`;
+      }
+      modal.classList.remove('hidden');
+
       try {
         const stRes = await fetch(`${getApiBase()}/api/fluidnc_status?ip=${encodeURIComponent(fluidncTargetIp)}`, { cache: 'no-store' });
         const stData = await stRes.json();
         const pos = stData.wpos || stData.mpos;
-        if (pos && document.getElementById('m0-live-pos')) {
+        if (pos && m0ShownKey === key && !modal.classList.contains('hidden') && document.getElementById('m0-live-pos')) {
           document.getElementById('m0-live-pos').innerText = `X:${pos[0].toFixed(3)}  Y:${pos[1].toFixed(3)}  Z:${pos[2].toFixed(3)} mm`;
         }
       } catch (e) {}
-      modal.classList.remove('hidden');
     }
 
     function hideM0ConfirmModal() {
+      m0ShownKey = '';
       document.getElementById('m0-confirm-modal')?.classList.add('hidden');
     }
 
     async function sendM0Action(action) {
+      if (m0ShownKey) m0DismissedKey = m0ShownKey;
+      hideM0ConfirmModal();
+      updateLiveStreamTracking({
+        ...liveStreamState,
+        active: action !== 'abort',
+        state: action === 'abort' ? 'aborted' : 'running',
+        prompt: '',
+        message: action === 'abort' ? 'Stopping...' : `Resuming ${liveStreamState.filename || 'G-code'}...`
+      });
       try {
-        await fetch(`${getApiBase()}/api/fluidnc_stream_action`, {
+        const res = await fetch(`${getApiBase()}/api/fluidnc_stream_action`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: action, ip: fluidncTargetIp })
         });
-        hideM0ConfirmModal();
+        const d = await res.json();
+        if (d && d.stream) updateLiveStreamTracking(d.stream);
       } catch (e) {
         alert('Action failed: ' + e);
       }
@@ -2295,6 +2725,8 @@
         const rowNum = String(idx + 1).padStart(2, '0');
         const isSent = fluidncSentFiles.has(op.gcode_file);
         const isDone = dispatchDoneSet.has(op.gcode_file);
+        const isStreamingThis = !!(liveStreamState && liveStreamState.active && liveStreamState.filename === op.gcode_file);
+        const isJustFinishedThis = !isStreamingThis && !!(liveStreamState && liveStreamState.lastCompletedFile === op.gcode_file);
         const btnClass = isSent
           ? 'p-1.5 rounded-lg bg-emerald-600 text-white shadow-sm transition cursor-pointer'
           : 'p-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white shadow-sm transition cursor-pointer';
@@ -2308,12 +2740,24 @@
           ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-violet-500/20 text-violet-300 border border-violet-500/30" data-tip="Horizontally mirrored for Bottom Side">Flip</span>'
           : '';
 
+        const streamingBadge = isStreamingThis
+          ? `<span id="active-row-stream-badge" class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono font-bold rounded bg-cyan-500/25 text-cyan-200 border border-cyan-400/50 animate-pulse"><span class="w-1.5 h-1.5 rounded-full bg-cyan-300"></span>${liveStreamState.state === 'waiting_confirm' ? 'M0 PAUSED' : 'STREAMING'} ${liveStreamState.sent}/${liveStreamState.total}</span>`
+          : (isJustFinishedThis
+            ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono font-bold rounded bg-amber-500/25 text-amber-200 border border-amber-400/60" data-tip="Most recently completed stream">JUST FINISHED</span>`
+            : '');
+
+        const rowStyle = isStreamingThis
+          ? 'border-cyan-400 bg-cyan-950/35 ring-2 ring-cyan-500/40 shadow-lg shadow-cyan-950/40'
+          : (isJustFinishedThis
+            ? 'border-amber-400 bg-amber-950/30 ring-2 ring-amber-500/40 shadow-md shadow-amber-950/30'
+            : (isDone ? 'border-emerald-500/30 bg-emerald-950/15 opacity-70' : 'border-slate-800/90 bg-[#0b101b]/90'));
+
         html += `
-          <div class="p-2.5 rounded-xl border ${isDone ? 'border-emerald-500/30 bg-emerald-950/15 opacity-70' : 'border-slate-800/90 bg-[#0b101b]/90'} hover:border-slate-700 transition flex items-center justify-between gap-3 text-xs">
+          <div class="p-2.5 rounded-xl border ${rowStyle} hover:border-slate-700 transition flex items-center justify-between gap-3 text-xs">
             <div class="flex items-center gap-2.5 min-w-0">
-              <span class="text-xs font-mono font-bold ${isDone ? 'text-emerald-400/70' : 'text-cyan-400'} w-6 text-right shrink-0 select-none" data-tip="File #${idx + 1} (Op #${String(op.seq).padStart(2, '0')})">${rowNum}.</span>
+              <span class="text-xs font-mono font-bold ${isStreamingThis ? 'text-cyan-300' : (isJustFinishedThis ? 'text-amber-300' : (isDone ? 'text-emerald-400/70' : 'text-cyan-400'))} w-6 text-right shrink-0 select-none" data-tip="File #${idx + 1} (Op #${String(op.seq).padStart(2, '0')})">${rowNum}.</span>
               <input type="checkbox" ${isDone ? 'checked' : ''}
-                     onchange="toggleDispatchDone('${op.gcode_file}', this.checked)"
+                     onchange="toggleDispatchDone('${op.gcode_file}', this.checked); syncLiveDoneButton();"
                      class="w-4 h-4 rounded accent-emerald-500 bg-slate-900 border-slate-600 cursor-pointer shrink-0"
                      data-tip="Mark step done">
               <div draggable="true"
@@ -2326,10 +2770,11 @@
               <div class="min-w-0">
                 <div class="flex items-center gap-2 flex-wrap">
                   <button type="button" onclick="openGCodeViewer('${op.gcode_file}')"
-                          class="font-mono font-semibold ${isDone ? 'line-through text-slate-400' : 'text-slate-100'} hover:text-cyan-300 transition truncate max-w-xs sm:max-w-md text-left cursor-pointer"
+                          class="font-mono font-semibold ${isStreamingThis ? 'text-cyan-200' : (isJustFinishedThis ? 'text-amber-200' : (isDone ? 'line-through text-slate-400' : 'text-slate-100'))} hover:text-cyan-300 transition truncate max-w-xs sm:max-w-md text-left cursor-pointer"
                           data-tip="Inspect toolpath in 2D/3D Viewer">
                     ${op.gcode_file}
                   </button>
+                  ${streamingBadge}
                   <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-400">S${op.sheet_num} #${String(op.seq).padStart(2, '0')}</span>
                   ${halfBadge} ${mirrorBadge}
                 </div>
@@ -2344,6 +2789,14 @@
             </div>
 
             <div class="flex items-center gap-1.5 shrink-0">
+              ${isStreamingThis ? `
+              <button type="button" onclick="stopOngoingStream()"
+                      class="px-2 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold shadow-sm transition cursor-pointer inline-flex items-center gap-1 text-[11px]"
+                      data-tip="Stop this ongoing stream" aria-label="Stop Stream">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+                <span>Stop</span>
+              </button>
+              ` : ''}
               ${op.step_code.startsWith('Step6') ? `
               <button type="button" onclick="printSilkscreenViaSTM32('${op.gcode_file}', this)"
                       class="p-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white shadow-sm transition cursor-pointer"
@@ -2537,32 +2990,544 @@
     }
 
     async function runMacroOnCNC(fname, btn) {
+      if (liveStreamState.active && !liveStreamState.isMacro) {
+        if (!confirm(`PCB job "${liveStreamState.jobFilename || liveStreamState.filename}" is currently streaming. Stop it and run macro "${fname}"?`)) return;
+      }
       return _executeStreamStart(fname, btn);
     }
 
     let jogStepMm = 1.0;
+    const figJogState = {
+      mode: localStorage.getItem('figjog.mode') || 'step', // 'step' | 'continuous' | 'compact'
+      fine: localStorage.getItem('figjog.fine') === '1',
+      keyboard: false,
+      xyFeed: Number(localStorage.getItem('figjog.xyFeed') || 1000),
+      zFeed: Number(localStorage.getItem('figjog.zFeed') || 200),
+      hoverId: null,
+      hoverAxis: null,
+      hoverStep: null,
+      isJogging: false,
+      contTimer: null,
+      contLastTs: 0,
+      contDirs: [],
+      pressedKeys: new Set()
+    };
+
+    const FIG_RADII = [22, 40, 56, 74, 94];
+    const FIG_RING_OPACITIES = [0.15, 0.25, 0.37, 0.52];
+    const FIG_DIRS = [
+      { axis: 'Y',  sx:  0, sy:  1, dir: 0, label: '+Y', title: '+Y',    dirs: ['Y+'],       color: '#22c55e', diag: false },
+      { axis: 'XY', sx:  1, sy:  1, dir: 1, label: '↗',  title: '+X +Y', dirs: ['X+', 'Y+'], color: '#f59e0b', diag: true },
+      { axis: 'X',  sx:  1, sy:  0, dir: 2, label: '+X', title: '+X',    dirs: ['X+'],       color: '#ef4444', diag: false },
+      { axis: 'XY', sx:  1, sy: -1, dir: 3, label: '↘',  title: '+X −Y', dirs: ['X+', 'Y-'], color: '#f59e0b', diag: true },
+      { axis: 'Y',  sx:  0, sy: -1, dir: 4, label: '−Y', title: '−Y',    dirs: ['Y-'],       color: '#22c55e', diag: false },
+      { axis: 'XY', sx: -1, sy: -1, dir: 5, label: '↙',  title: '−X −Y', dirs: ['X-', 'Y-'], color: '#f59e0b', diag: true },
+      { axis: 'X',  sx: -1, sy:  0, dir: 6, label: '−X', title: '−X',    dirs: ['X-'],       color: '#ef4444', diag: false },
+      { axis: 'XY', sx: -1, sy:  1, dir: 7, label: '↖',  title: '−X +Y', dirs: ['X-', 'Y+'], color: '#f59e0b', diag: true }
+    ];
+
+    function figArcPath(innerR, outerR, dir, sectorCount = 8) {
+      const slice = (2 * Math.PI) / sectorCount;
+      const s = (dir - 0.5) * slice;
+      const e = (dir + 0.5) * slice;
+      const ix1 = innerR * Math.sin(s), iy1 = -innerR * Math.cos(s);
+      const ix2 = innerR * Math.sin(e), iy2 = -innerR * Math.cos(e);
+      const ox1 = outerR * Math.sin(s), oy1 = -outerR * Math.cos(s);
+      const ox2 = outerR * Math.sin(e), oy2 = -outerR * Math.cos(e);
+      return `M${ix1.toFixed(2)},${iy1.toFixed(2)} L${ox1.toFixed(2)},${oy1.toFixed(2)} A${outerR},${outerR} 0 0,1 ${ox2.toFixed(2)},${oy2.toFixed(2)} L${ix2.toFixed(2)},${iy2.toFixed(2)} A${innerR},${innerR} 0 0,0 ${ix1.toFixed(2)},${iy1.toFixed(2)} Z`;
+    }
+
+    function figRingSteps() {
+      return figJogState.fine ? [0.01, 1, 10, 100] : [0.1, 1, 10, 100];
+    }
+
+    function figZSteps() {
+      return figJogState.fine ? [10, 1, 0.01] : [10, 1, 0.1];
+    }
+
+    function setFigJogMode(mode) {
+      stopFigContJog(false);
+      figJogState.mode = mode;
+      localStorage.setItem('figjog.mode', mode);
+      if (mode !== 'continuous') figJogState.keyboard = false;
+      renderFigUIJogPad();
+    }
+
+    function toggleFigFineJog() {
+      figJogState.fine = !figJogState.fine;
+      localStorage.setItem('figjog.fine', figJogState.fine ? '1' : '0');
+      renderFigUIJogPad();
+    }
+
+    function toggleFigKeyboardJog() {
+      figJogState.keyboard = !figJogState.keyboard;
+      if (!figJogState.keyboard) {
+        figJogState.pressedKeys.clear();
+        stopFigContJog(true);
+      }
+      renderFigUIJogPad();
+    }
+
+    function setFigJogFeed(which, val) {
+      const n = Math.max(10, Number(val) || (which === 'z' ? 200 : 1000));
+      if (which === 'z') {
+        figJogState.zFeed = n;
+        localStorage.setItem('figjog.zFeed', String(n));
+      } else {
+        figJogState.xyFeed = n;
+        localStorage.setItem('figjog.xyFeed', String(n));
+      }
+    }
+
     function setJogStep(step) {
       jogStepMm = step;
       document.querySelectorAll('.jog-step-btn').forEach(b => {
         const active = (Number(b.dataset.step) === step);
         b.className = active
-          ? 'jog-step-btn px-2 py-1 rounded bg-blue-600 text-white font-mono text-[11px] font-semibold cursor-pointer'
-          : 'jog-step-btn px-2 py-1 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer';
+          ? 'jog-step-btn px-1.5 py-0.5 rounded bg-blue-600 text-white font-mono text-[11px] font-semibold cursor-pointer'
+          : 'jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer';
+      });
+    }
+
+    async function sendJogMoves(axesDeltas, feed) {
+      const words = Object.entries(axesDeltas || {})
+        .filter(([, d]) => Number.isFinite(Number(d)) && Number(d) !== 0)
+        .map(([ax, d]) => `${ax}${Number(d).toFixed(3)}`);
+      if (!words.length) return;
+      figJogState.isJogging = true;
+      updateFigCenterReadout();
+      await sendFluidNCRealtime(`$J=G91 G21 ${words.join(' ')} F${Math.round(feed)}`);
+      setTimeout(() => {
+        figJogState.isJogging = false;
+        updateFigCenterReadout();
+        refreshLiveBedTool();
+      }, 300);
+    }
+
+    async function sendStepJog(axis, delta, feed) {
+      return sendJogMoves({ [axis]: delta }, feed);
+    }
+
+    function startFigContJog(dirs, feed) {
+      stopFigContJog(false);
+      if (!dirs || !dirs.length) return;
+      figJogState.contDirs = dirs;
+      figJogState.isJogging = true;
+      updateFigCenterReadout();
+      const mmPerMs = feed / 60000 / Math.sqrt(dirs.length);
+      const sendSeg = (ms) => {
+        const dist = mmPerMs * ms;
+        const words = dirs.map(d => `${d[0]}${(d[1] === '+' ? dist : -dist).toFixed(3)}`).join(' ');
+        sendFluidNCRealtime(`$J=G91 G21 F${Math.round(feed)} ${words}`);
+      };
+      figJogState.contLastTs = Date.now();
+      sendSeg(260);
+      figJogState.contTimer = setInterval(() => {
+        const now = Date.now();
+        const elapsed = Math.min(now - figJogState.contLastTs, 260);
+        figJogState.contLastTs = now;
+        if (elapsed > 0) sendSeg(elapsed);
+      }, 110);
+    }
+
+    function stopFigContJog(sendCancel = true) {
+      const wasActive = !!(figJogState.contTimer || figJogState.isJogging);
+      if (figJogState.contTimer) {
+        clearInterval(figJogState.contTimer);
+        figJogState.contTimer = null;
+      }
+      figJogState.contDirs = [];
+      figJogState.isJogging = false;
+      if (sendCancel && wasActive) {
+        sendFluidNCRealtime('JOG_CANCEL');
+        setTimeout(refreshLiveBedTool, 300);
+      }
+      updateFigCenterReadout();
+    }
+
+    function cancelFigJogNow() {
+      stopFigContJog(false);
+      sendFluidNCRealtime('JOG_CANCEL');
+      setTimeout(refreshLiveBedTool, 300);
+    }
+
+    function updateFigCenterReadout() {
+      const g = document.getElementById('fig-center-content');
+      const bg = document.getElementById('fig-center-disc');
+      if (!g || !bg) return;
+      if (figJogState.isJogging) {
+        bg.setAttribute('fill', 'rgba(239,68,68,0.28)');
+        bg.setAttribute('stroke', '#ef4444');
+        g.innerHTML = `<rect x="-6" y="-6" width="12" height="12" rx="1.5" fill="#ef4444"/><title>Click to Cancel Jog (0x85)</title>`;
+        return;
+      }
+      bg.setAttribute('fill', '#131a27');
+      bg.setAttribute('stroke', '#334155');
+      const figAxColor = (ax) => ax === 'X' ? '#ef4444' : (ax === 'Y' ? '#22c55e' : (ax === 'XY' ? '#f59e0b' : '#38bdf8'));
+      if (figJogState.hoverStep != null && figJogState.hoverAxis) {
+        const c = figAxColor(figJogState.hoverAxis);
+        const dirTag = figJogState.hoverDirLabel ? `${figJogState.hoverDirLabel} ` : '';
+        g.innerHTML = `<text x="0" y="-2" text-anchor="middle" dominant-baseline="middle" fill="${c}" font-size="11.5" font-weight="700" font-family="ui-monospace, monospace">${dirTag}${figJogState.hoverStep}</text><text x="0" y="11" text-anchor="middle" fill="#94a3b8" font-size="7" font-family="ui-monospace, monospace">${figJogState.hoverAxis === 'XY' ? 'XY mm' : 'mm'}</text>`;
+      } else if (figJogState.mode === 'continuous' && (figJogState.hoverAxis || figJogState.pressedKeys.size > 0)) {
+        const ax = figJogState.hoverAxis || (figJogState.pressedKeys.size > 1 ? 'XY' : [...figJogState.pressedKeys][0][0]);
+        const c = figAxColor(ax);
+        const dirTag = figJogState.hoverDirLabel || (ax === 'XY' ? 'XY' : ax);
+        g.innerHTML = `<text x="0" y="-2" text-anchor="middle" dominant-baseline="middle" fill="${c}" font-size="8.5" font-weight="700" font-family="ui-monospace, monospace">HOLD</text><text x="0" y="9" text-anchor="middle" fill="${c}" font-size="7.5" font-weight="700" font-family="ui-monospace, monospace">${dirTag}</text>`;
+      } else {
+        g.innerHTML = `<g opacity="0.5"><line x1="-8" y1="0" x2="8" y2="0" stroke="#94a3b8" stroke-width="1.4" stroke-linecap="round"/><line x1="0" y1="-8" x2="0" y2="8" stroke="#94a3b8" stroke-width="1.4" stroke-linecap="round"/><circle cx="0" cy="0" r="3" fill="none" stroke="#94a3b8" stroke-width="1"/></g>`;
+      }
+    }
+
+    function renderFigUIJogPad() {
+      const isCont = figJogState.mode === 'continuous';
+      const isCompact = figJogState.mode === 'compact';
+      ['step', 'continuous', 'compact'].forEach(m => {
+        const b = document.getElementById(`fig-mode-${m}`);
+        if (!b) return;
+        const on = figJogState.mode === m;
+        b.className = on
+          ? 'px-2 py-0.5 text-[11px] font-semibold bg-blue-600/25 text-cyan-300 transition-colors cursor-pointer'
+          : 'px-2 py-0.5 text-[11px] font-semibold text-slate-400 hover:text-slate-100 transition-colors cursor-pointer';
+      });
+
+      const roseWrap = document.getElementById('fig-jog-rose-wrap');
+      const compactWrap = document.getElementById('fig-jog-compact-wrap');
+      if (roseWrap) roseWrap.style.display = isCompact ? 'none' : '';
+      if (compactWrap) compactWrap.style.display = isCompact ? '' : 'none';
+
+      const fineBtn = document.getElementById('fig-fine-btn');
+      const kbdBtn = document.getElementById('fig-kbd-btn');
+      const hintLbl = document.getElementById('fig-jog-mode-hint');
+      if (fineBtn) {
+        fineBtn.style.display = isCont ? 'none' : '';
+        fineBtn.className = figJogState.fine
+          ? 'h-7 px-2 rounded border border-cyan-500/60 bg-cyan-500/20 text-cyan-300 font-mono text-[11px] font-bold cursor-pointer'
+          : 'h-7 px-2 rounded border border-slate-700 bg-slate-900/90 text-slate-400 hover:text-slate-100 font-mono text-[11px] font-semibold cursor-pointer';
+      }
+      if (kbdBtn) {
+        kbdBtn.style.display = isCont ? '' : 'none';
+        kbdBtn.className = figJogState.keyboard
+          ? 'h-7 px-2 rounded border border-emerald-500/60 bg-emerald-500/20 text-emerald-300 font-mono text-[11px] font-bold cursor-pointer flex items-center gap-1'
+          : 'h-7 px-2 rounded border border-slate-700 bg-slate-900/90 text-slate-400 hover:text-slate-100 font-mono text-[11px] font-semibold cursor-pointer flex items-center gap-1';
+      }
+      if (hintLbl) {
+        hintLbl.textContent = isCont
+          ? (figJogState.keyboard ? 'Hold octant or Arrows (hold 2 for XY) / +- (Z) · Release cancels' : 'Hold any of 8 XY sectors (incl. diagonals) or Z bar · Release cancels')
+          : (figJogState.fine ? '8-Way Step mode (Fine 0.01 mm) · Diagonals move X & Y together' : '8-Way Step mode · Diagonals (↗↘↙↖) move X & Y simultaneously');
+      }
+
+      const xySel = document.getElementById('fig-xy-feed');
+      const zSel = document.getElementById('fig-z-feed');
+      if (xySel) xySel.value = String(figJogState.xyFeed);
+      if (zSel) zSel.value = String(figJogState.zFeed);
+
+      if (isCompact) return;
+
+      // Render FigUI JogRose SVG + Mainsail Corner Homing Ears (viewBox -108 -108 216 216)
+      const roseSvg = document.getElementById('fig-jog-rose');
+      if (roseSvg) {
+        const steps = figRingSteps();
+        const outerR = FIG_RADII[FIG_RADII.length - 1];
+        const centerR = FIG_RADII[0];
+        const showHome = !!(uiConfigState && uiConfigState.enable_homing_btn !== false);
+        // Material Home house path (24x24 viewBox) scaled neatly to 14x14 at ear center
+        const homeGlyph = 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z';
+        const mainsailEars = [
+          { id: 'X', cmd: '$HX', tip: 'Home X ($HX)', sx: -1, sy: -1, fill: '#1e293b', hover: '#b91c1c', stroke: '#475569', txt: '#fca5a5', label: 'X' },
+          { id: 'Y', cmd: '$HY', tip: 'Home Y ($HY)', sx:  1, sy: -1, fill: '#1e293b', hover: '#15803d', stroke: '#475569', txt: '#86efac', label: 'Y' },
+          { id: 'Z', cmd: '$HZ', tip: 'Home Z ($HZ)', sx:  1, sy:  1, fill: '#1e293b', hover: '#0369a1', stroke: '#475569', txt: '#7dd3fc', label: 'Z' },
+          { id: 'ALL', cmd: '$H', tip: 'Home All ($H)', sx: -1, sy:  1, fill: '#0c4a6e', hover: '#0284c7', stroke: '#0284c7', txt: '#e0f2fe', label: 'ALL' }
+        ];
+        let parts = [];
+        if (showHome) {
+          parts.push('<g id="fig-home-ears">');
+          mainsailEars.forEach(e => {
+            const x54 = e.sx * 54, x95 = e.sx * 95, x105 = e.sx * 105, x91 = e.sx * 91, x37 = e.sx * 37;
+            const y105 = e.sy * 105, y95 = e.sy * 95, y54 = e.sy * 54, y37 = e.sy * 37, y91 = e.sy * 91;
+            // Arc direction: from (x91, y37) back to (x37, y91) hugging r=98
+            const sweep = (e.sx * e.sy < 0) ? 0 : 1;
+            const dEar = `M ${x54},${y105} L ${x95},${y105} Q ${x105},${y105} ${x105},${y95} L ${x105},${y54} L ${x91},${y37} A 98,98 0 0,${sweep} ${x37},${y91} Z`;
+            const cx = e.sx * 82, cy = e.sy * 82;
+            const labelSize = e.label === 'ALL' ? 8.5 : 10;
+            const iconShiftX = e.label === 'ALL' ? cx - 10 : cx - 8;
+            const txtShiftX = e.label === 'ALL' ? cx + 8 : cx + 6;
+            parts.push(
+              `<g class="mainsail-home-ear cursor-pointer" data-home-cmd="${e.cmd}" data-home-fill="${e.fill}" data-home-hover="${e.hover}">` +
+              `<title>${e.tip}</title>` +
+              `<path d="${dEar}" fill="${e.fill}" stroke="${e.stroke}" stroke-width="1.2"/>` +
+              `<g transform="translate(${iconShiftX - 6}, ${cy - 7}) scale(0.54)" pointer-events="none"><path d="${homeGlyph}" fill="${e.txt}"/></g>` +
+              `<text x="${txtShiftX}" y="${cy + 1}" text-anchor="middle" dominant-baseline="middle" fill="${e.txt}" font-size="${labelSize}" font-weight="800" font-family="ui-monospace, monospace" pointer-events="none">${e.label}</text>` +
+              `</g>`
+            );
+          });
+          parts.push('</g>');
+        }
+        parts.push(`<circle cx="0" cy="0" r="${outerR + 2}" fill="#0b101b" stroke="#334155" stroke-width="1.5" pointer-events="none"/>`);
+        if (isCont) {
+          FIG_DIRS.forEach(d => {
+            const dirsJson = d.dirs.join(',');
+            const dPath = figArcPath(centerR, outerR, d.dir, 8);
+            const baseOp = d.diag ? '0.22' : '0.30';
+            parts.push(`<path data-fig-cont="${dirsJson}" data-fig-axis="${d.axis}" data-fig-label="${d.label}" data-fig-op="${baseOp}" d="${dPath}" fill="${d.color}" fill-opacity="${baseOp}" stroke="#0b101b" stroke-width="1.4" class="cursor-pointer transition-opacity"><title>Hold to Jog ${d.title}</title></path>`);
+          });
+        } else {
+          for (let ri = steps.length - 1; ri >= 0; ri--) {
+            const stepVal = steps[ri];
+            const rIn = FIG_RADII[ri], rOut = FIG_RADII[ri + 1];
+            const baseOp = (FIG_RING_OPACITIES[ri] * (1.0)).toFixed(2);
+            FIG_DIRS.forEach(d => {
+              const dPath = figArcPath(rIn, rOut, d.dir, 8);
+              const dx = d.sx * stepVal, dy = d.sy * stepVal;
+              const secOp = d.diag ? (FIG_RING_OPACITIES[ri] * 0.78).toFixed(2) : baseOp;
+              parts.push(`<path data-fig-dx="${dx}" data-fig-dy="${dy}" data-fig-abs="${stepVal}" data-fig-axis="${d.axis}" data-fig-label="${d.label}" data-fig-color="${d.color}" data-fig-op="${secOp}" d="${dPath}" fill="${d.color}" fill-opacity="${secOp}" stroke="#0b101b" stroke-width="1.3" class="cursor-pointer"><title>Jog ${d.title} by ${stepVal} mm</title></path>`);
+            });
+          }
+          // Step labels along the 22.5 deg & 202.5 deg octant boundary seams (cleanly between labels)
+          steps.forEach((step, i) => {
+            const midR = (FIG_RADII[i] + FIG_RADII[i + 1]) / 2;
+            const a1 = Math.PI / 8, a2 = (9 * Math.PI) / 8;
+            const x1 = midR * Math.sin(a1), y1 = -midR * Math.cos(a1);
+            const x2 = midR * Math.sin(a2), y2 = -midR * Math.cos(a2);
+            const fs = i === 0 ? 6.8 : 8.5;
+            parts.push(`<g pointer-events="none"><text x="${x1.toFixed(1)}" y="${y1.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" fill="#e2e8f0" stroke="#0b101b" stroke-width="2.4" paint-order="stroke" font-size="${fs}" font-weight="700" font-family="ui-monospace, monospace" opacity="0.92">${step}</text><text x="${x2.toFixed(1)}" y="${y2.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" fill="#e2e8f0" stroke="#0b101b" stroke-width="2.4" paint-order="stroke" font-size="${fs}" font-weight="700" font-family="ui-monospace, monospace" opacity="0.88">${step}</text></g>`);
+          });
+        }
+        // Directional edge labels (+Y, ↗, +X, ↘, −Y, ↙, −X, ↖)
+        FIG_DIRS.forEach(d => {
+          const a = d.dir * (Math.PI / 4);
+          const r = outerR - (FIG_RADII[FIG_RADII.length - 1] - FIG_RADII[FIG_RADII.length - 2]) / 2;
+          const fs = d.diag ? 11.5 : 10;
+          const fillCol = d.diag ? '#fde68a' : '#ffffff';
+          parts.push(`<text x="${(r * Math.sin(a)).toFixed(1)}" y="${(-r * Math.cos(a)).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" fill="${fillCol}" font-size="${fs}" font-weight="800" font-family="ui-monospace, monospace" pointer-events="none">${d.label}</text>`);
+        });
+        // Center Stop/Cancel/Reticle Disc
+        parts.push(`<circle id="fig-center-disc" cx="0" cy="0" r="${centerR}" fill="#131a27" stroke="#334155" stroke-width="1.5" class="cursor-pointer"><title>Go to Work XY0 (or Cancel Jog when moving)</title></circle><circle cx="0" cy="0" r="${centerR - 3}" fill="#0f172a" stroke="#1e293b" stroke-width="0.6" pointer-events="none"/><g id="fig-center-content" pointer-events="none"></g>`);
+        roseSvg.innerHTML = parts.join('');
+        bindFigRoseEvents(roseSvg);
+      }
+
+      // Render FigUI Z AxisBar SVG (viewBox 0 0 44 220)
+      const zSvg = document.getElementById('fig-jog-z-bar');
+      if (zSvg) {
+        const zSteps = figZSteps();
+        const zoneFills = ['#1e293b', '#263549', '#334863'];
+        let zParts = [
+          `<rect x="2" y="0" width="40" height="24" rx="3" fill="#38bdf8" fill-opacity="0.18"/>`,
+          `<text x="22" y="16" text-anchor="middle" fill="#38bdf8" font-size="12" font-weight="700" font-family="ui-monospace, monospace" pointer-events="none">+Z</text>`
+        ];
+        if (isCont) {
+          zParts.push(`<rect data-fig-z-cont="Z+" x="2" y="26" width="40" height="82" rx="3" fill="#263549" stroke="#0b101b" stroke-width="1.5" class="cursor-pointer"/>`);
+          zParts.push(`<rect x="2" y="110" width="40" height="4" rx="1" fill="#334155"/>`);
+          zParts.push(`<rect data-fig-z-cont="Z-" x="2" y="116" width="40" height="82" rx="3" fill="#263549" stroke="#0b101b" stroke-width="1.5" class="cursor-pointer"/>`);
+        } else {
+          zSteps.forEach((step, i) => {
+            const y = 26 + i * 28;
+            const fill = zoneFills[zSteps.length - 1 - i];
+            zParts.push(`<g data-fig-z-step="${step}" data-fig-fill="${fill}" class="cursor-pointer"><rect x="2" y="${y}" width="40" height="26" rx="2.5" fill="${fill}" stroke="#0b101b" stroke-width="1.5"/><text x="22" y="${y + 16.5}" text-anchor="middle" fill="#e2e8f0" font-size="11.5" font-weight="700" font-family="ui-monospace, monospace" pointer-events="none">${step}</text></g>`);
+          });
+          zParts.push(`<rect x="2" y="110" width="40" height="4" rx="1" fill="#334155"/>`);
+          [...zSteps].reverse().forEach((step, i) => {
+            const y = 116 + i * 28;
+            const fill = zoneFills[i];
+            zParts.push(`<g data-fig-z-step="${-step}" data-fig-fill="${fill}" class="cursor-pointer"><rect x="2" y="${y}" width="40" height="26" rx="2.5" fill="${fill}" stroke="#0b101b" stroke-width="1.5"/><text x="22" y="${y + 16.5}" text-anchor="middle" fill="#e2e8f0" font-size="11.5" font-weight="700" font-family="ui-monospace, monospace" pointer-events="none">${step}</text></g>`);
+          });
+        }
+        zParts.push(`<rect x="2" y="200" width="40" height="20" rx="3" fill="#38bdf8" fill-opacity="0.18"/>`);
+        zParts.push(`<text x="22" y="214" text-anchor="middle" fill="#38bdf8" font-size="12" font-weight="700" font-family="ui-monospace, monospace" pointer-events="none">−Z</text>`);
+        zSvg.innerHTML = zParts.join('');
+        bindFigZBarEvents(zSvg);
+      }
+      updateFigCenterReadout();
+    }
+
+    function bindFigRoseEvents(svg) {
+      svg.querySelectorAll('.mainsail-home-ear').forEach(el => {
+        const path = el.querySelector('path');
+        const cmd = el.getAttribute('data-home-cmd');
+        const baseFill = el.getAttribute('data-home-fill');
+        const hoverFill = el.getAttribute('data-home-hover');
+        el.addEventListener('pointerenter', () => {
+          if (path) path.setAttribute('fill', hoverFill);
+        });
+        el.addEventListener('pointerleave', () => {
+          if (path) path.setAttribute('fill', baseFill);
+        });
+        el.addEventListener('click', () => sendFluidNCRealtime(cmd));
+      });
+      const center = svg.querySelector('#fig-center-disc');
+      if (center) {
+        center.addEventListener('click', () => {
+          if (figJogState.isJogging) cancelFigJogNow();
+          else goToWorkZero('XY');
+        });
+      }
+      svg.querySelectorAll('[data-fig-abs]').forEach(el => {
+        const op = el.getAttribute('data-fig-op');
+        const ax = el.getAttribute('data-fig-axis');
+        const absVal = el.getAttribute('data-fig-abs');
+        const dirLbl = el.getAttribute('data-fig-label');
+        const dx = Number(el.getAttribute('data-fig-dx') || 0);
+        const dy = Number(el.getAttribute('data-fig-dy') || 0);
+        el.addEventListener('pointerenter', () => {
+          el.setAttribute('fill-opacity', '0.88');
+          figJogState.hoverAxis = ax;
+          figJogState.hoverStep = absVal;
+          figJogState.hoverDirLabel = dirLbl;
+          updateFigCenterReadout();
+        });
+        el.addEventListener('pointerleave', () => {
+          el.setAttribute('fill-opacity', op);
+          figJogState.hoverAxis = null;
+          figJogState.hoverStep = null;
+          figJogState.hoverDirLabel = null;
+          updateFigCenterReadout();
+        });
+        el.addEventListener('click', () => sendJogMoves({ X: dx, Y: dy }, figJogState.xyFeed));
+      });
+      svg.querySelectorAll('[data-fig-cont]').forEach(el => {
+        const dirs = String(el.getAttribute('data-fig-cont') || '').split(',').filter(Boolean);
+        const ax = el.getAttribute('data-fig-axis');
+        const dirLbl = el.getAttribute('data-fig-label');
+        const baseOp = el.getAttribute('data-fig-op') || '0.28';
+        el.addEventListener('pointerenter', () => {
+          el.setAttribute('fill-opacity', '0.85');
+          figJogState.hoverAxis = ax;
+          figJogState.hoverDirLabel = dirLbl;
+          updateFigCenterReadout();
+        });
+        el.addEventListener('pointerleave', () => {
+          el.setAttribute('fill-opacity', baseOp);
+          figJogState.hoverAxis = null;
+          figJogState.hoverDirLabel = null;
+          stopFigContJog(true);
+        });
+        el.addEventListener('pointerdown', (e) => {
+          try { el.setPointerCapture(e.pointerId); } catch (_) {}
+          el.setAttribute('fill-opacity', '0.94');
+          figJogState.hoverAxis = ax;
+          figJogState.hoverDirLabel = dirLbl;
+          const vecFeed = Math.round(figJogState.xyFeed * Math.sqrt(Math.max(1, dirs.length)));
+          startFigContJog(dirs, vecFeed);
+        });
+        el.addEventListener('pointerup', () => { el.setAttribute('fill-opacity', baseOp); stopFigContJog(true); });
+        el.addEventListener('pointercancel', () => { el.setAttribute('fill-opacity', baseOp); stopFigContJog(true); });
+      });
+    }
+
+    function bindFigZBarEvents(svg) {
+      svg.querySelectorAll('[data-fig-z-step]').forEach(el => {
+        const rect = el.querySelector('rect');
+        const baseFill = el.getAttribute('data-fig-fill');
+        const delta = Number(el.getAttribute('data-fig-z-step'));
+        el.addEventListener('pointerenter', () => {
+          if (rect) rect.setAttribute('fill', '#0284c7');
+          figJogState.hoverAxis = 'Z';
+          figJogState.hoverStep = String(Math.abs(delta));
+          updateFigCenterReadout();
+        });
+        el.addEventListener('pointerleave', () => {
+          if (rect) rect.setAttribute('fill', baseFill);
+          figJogState.hoverAxis = null;
+          figJogState.hoverStep = null;
+          updateFigCenterReadout();
+        });
+        el.addEventListener('click', () => sendStepJog('Z', delta, figJogState.zFeed));
+      });
+      svg.querySelectorAll('[data-fig-z-cont]').forEach(el => {
+        const dirCode = el.getAttribute('data-fig-z-cont');
+        el.addEventListener('pointerenter', () => {
+          el.setAttribute('fill', '#0284c7');
+          figJogState.hoverAxis = 'Z';
+          updateFigCenterReadout();
+        });
+        el.addEventListener('pointerleave', () => {
+          el.setAttribute('fill', '#263549');
+          figJogState.hoverAxis = null;
+          stopFigContJog(true);
+        });
+        el.addEventListener('pointerdown', (e) => {
+          try { el.setPointerCapture(e.pointerId); } catch (_) {}
+          el.setAttribute('fill', '#0ea5e9');
+          figJogState.hoverAxis = 'Z';
+          startFigContJog([dirCode], figJogState.zFeed);
+        });
+        el.addEventListener('pointerup', () => { el.setAttribute('fill', '#263549'); stopFigContJog(true); });
+        el.addEventListener('pointercancel', () => { el.setAttribute('fill', '#263549'); stopFigContJog(true); });
+      });
+    }
+
+    function initFigUIJogPad() {
+      renderFigUIJogPad();
+      window.addEventListener('keydown', (e) => {
+        if (figJogState.mode !== 'continuous' || !figJogState.keyboard) return;
+        if (e.ctrlKey || e.altKey || e.metaKey) return;
+        const tag = (e.target && e.target.tagName) || '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        const sec = document.getElementById('section-macros');
+        if (!sec || sec.style.display === 'none') return;
+        const map = { ArrowRight: 'X+', ArrowLeft: 'X-', ArrowUp: 'Y+', ArrowDown: 'Y-', '+': 'Z+', '=': 'Z+', '-': 'Z-' };
+        const dir = map[e.key];
+        if (!dir) return;
+        e.preventDefault();
+        if (e.repeat || figJogState.pressedKeys.has(dir)) return;
+        const opp = dir[0] + (dir[1] === '+' ? '-' : '+');
+        figJogState.pressedKeys.delete(opp);
+        figJogState.pressedKeys.add(dir);
+        const dirs = [...figJogState.pressedKeys];
+        const hasXY = dirs.some(d => d[0] === 'X' || d[0] === 'Y');
+        const feed = Math.round((hasXY ? figJogState.xyFeed : figJogState.zFeed) * Math.sqrt(dirs.length));
+        startFigContJog(dirs, feed);
+      });
+      window.addEventListener('keyup', (e) => {
+        if (figJogState.mode !== 'continuous' || !figJogState.keyboard) return;
+        const axMap = { ArrowRight: 'X', ArrowLeft: 'X', ArrowUp: 'Y', ArrowDown: 'Y', '+': 'Z', '=': 'Z', '-': 'Z' };
+        const ax = axMap[e.key];
+        if (!ax) return;
+        figJogState.pressedKeys.delete(ax + '+');
+        figJogState.pressedKeys.delete(ax + '-');
+        const dirs = [...figJogState.pressedKeys];
+        if (dirs.length > 0) {
+          const hasXY = dirs.some(d => d[0] === 'X' || d[0] === 'Y');
+          const feed = Math.round((hasXY ? figJogState.xyFeed : figJogState.zFeed) * Math.sqrt(dirs.length));
+          startFigContJog(dirs, feed);
+        } else {
+          stopFigContJog(true);
+        }
+      });
+      window.addEventListener('blur', () => {
+        if (figJogState.pressedKeys.size > 0 || figJogState.contTimer) {
+          figJogState.pressedKeys.clear();
+          stopFigContJog(true);
+        }
       });
     }
 
     async function sendJog(axis, dir) {
-      const dist = (jogStepMm * dir).toFixed(3);
-      const xyFeed = Number(document.getElementById('jog-feed-select')?.value || 1200);
-      const feed = (axis === 'Z') ? Math.min(400, xyFeed) : xyFeed;
-      await sendFluidNCRealtime(`$J=G91 G21 ${axis}${dist} F${feed}`);
-      setTimeout(refreshLiveBedTool, 350);
+      const feed = (axis === 'Z') ? figJogState.zFeed : figJogState.xyFeed;
+      return sendJogMoves({ [axis]: jogStepMm * dir }, feed);
     }
 
     async function sendJogDiag(dx, dy) {
-      const xyFeed = Number(document.getElementById('jog-feed-select')?.value || 1200);
-      await sendFluidNCRealtime(`$J=G91 G21 X${(jogStepMm * dx).toFixed(3)} Y${(jogStepMm * dy).toFixed(3)} F${xyFeed}`);
-      setTimeout(refreshLiveBedTool, 350);
+      return sendJogMoves({ X: jogStepMm * dx, Y: jogStepMm * dy }, figJogState.xyFeed);
+    }
+
+    async function goToWorkZero(axes) {
+      const mode = String(axes || '').toUpperCase();
+      if (mode === 'Z') {
+        if (!confirm('Move Z to Work Z=0 (G90 G1 Z0 F300)? Ensure tool is clear and Z0 is calibrated.')) return;
+        await sendFluidNCRealtime('G90 G1 Z0 F300');
+      } else if (mode === 'XYZ') {
+        if (!confirm('Move to Work X0 Y0 first, then move Z to Work Z=0 (F300)? Ensure path is clear.')) return;
+        await sendFluidNCRealtime('G90 G0 X0 Y0');
+        await sendFluidNCRealtime('G90 G1 Z0 F300');
+      } else if (mode === 'X') {
+        await sendFluidNCRealtime('G90 G0 X0');
+      } else if (mode === 'Y') {
+        await sendFluidNCRealtime('G90 G0 Y0');
+      } else if (mode === 'XY') {
+        await sendFluidNCRealtime('G90 G0 X0 Y0');
+      }
+      setTimeout(refreshLiveBedTool, 450);
     }
 
     let uiConfigState = {
@@ -2572,7 +3537,8 @@
       enable_unlock_btn: true,
       enable_zero_work_btn: true,
       enable_pcb_z_offset: true,
-      pcb_thickness_mm: 1.6
+      pcb_thickness_mm: 1.6,
+      z_switch_above_bed_mm: 5.5
     };
 
     async function loadUIConfig() {
@@ -2610,15 +3576,18 @@
       setChk('cfg-enable-hmap', u.enable_heightmap_leveling);
       const tIn = document.getElementById('cfg-pcb-thickness');
       if (tIn) tIn.value = Number(u.pcb_thickness_mm ?? 1.6).toFixed(2);
+      const swIn = document.getElementById('cfg-z-switch-offset');
+      if (swIn) swIn.value = Number(u.z_switch_above_bed_mm ?? 5.5).toFixed(2);
 
       // Toggle Homing / Unlock / Zero buttons in Dispatch & Macros
       const toggleVis = (ids, show) => ids.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = show ? '' : 'none';
       });
-      toggleVis(['btn-dispatch-home', 'btn-macro-home'], u.enable_homing_btn);
+      toggleVis(['btn-dispatch-home', 'btn-macro-home', 'fig-compact-home-block'], u.enable_homing_btn);
       toggleVis(['btn-dispatch-unlock', 'btn-macro-unlock'], u.enable_unlock_btn);
       toggleVis(['btn-dispatch-zero', 'btn-macro-zero-xy', 'btn-macro-zero-z'], u.enable_zero_work_btn);
+      renderFigUIJogPad();
 
       // Gate Touch-Probe buttons when touch_probe_enabled is false
       ['btn-hm-scan', 'btn-align-probe'].forEach(id => {
@@ -2649,20 +3618,36 @@
     function renderDispatchMacrosBar() {
       const list = document.getElementById('dispatch-macros-list');
       if (!list) return;
-      list.innerHTML = (macrosCatalog || []).map(m => `
+      list.innerHTML = (macrosCatalog || []).map(m => {
+        const isAct = !!(liveStreamState && liveStreamState.active && liveStreamState.filename === m.file);
+        const isJustDone = !isAct && !!(liveStreamState && liveStreamState.lastCompletedFile === m.file);
+        const cls = isAct
+          ? 'px-2.5 py-1 rounded-lg bg-cyan-600/30 text-cyan-200 border border-cyan-400 ring-1 ring-cyan-400/50 text-[11px] font-bold transition cursor-pointer flex items-center gap-1.5 animate-pulse'
+          : (isJustDone
+            ? 'px-2.5 py-1 rounded-lg bg-amber-600/25 text-amber-200 border border-amber-400/70 ring-1 ring-amber-400/40 text-[11px] font-bold transition cursor-pointer flex items-center gap-1.5'
+            : 'px-2.5 py-1 rounded-lg bg-slate-800/90 hover:bg-blue-600 text-slate-200 hover:text-white border border-slate-700/80 text-[11px] font-medium transition cursor-pointer flex items-center gap-1.5');
+        return `
         <button type="button" onclick="runMacroOnCNC('${m.file}', this)"
-                class="px-2.5 py-1 rounded-lg bg-slate-800/90 hover:bg-blue-600 text-slate-200 hover:text-white border border-slate-700/80 text-[11px] font-medium transition cursor-pointer flex items-center gap-1.5"
+                class="${cls}"
                 data-tip="${m.description || m.file}">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-          <span>${m.name}</span>
-        </button>
-      `).join('');
+          <span>${m.name}${isAct ? ' (Live)' : (isJustDone ? ' (Finished)' : '')}</span>
+        </button>`;
+      }).join('');
     }
 
     async function applyPcbThicknessZero() {
       const t = Number(document.getElementById('cfg-pcb-thickness')?.value || 1.6);
-      await saveUIConfigPartial({ pcb_thickness_mm: t });
+      const sw = Number(document.getElementById('cfg-z-switch-offset')?.value ?? 5.5);
+      await saveUIConfigPartial({ pcb_thickness_mm: t, z_switch_above_bed_mm: sw });
       await runMacroOnCNC('pcb_z_zero_thickness.gcode', null);
+    }
+
+    async function applyPcbSwitchZero() {
+      const t = Number(document.getElementById('cfg-pcb-thickness')?.value || 1.6);
+      const sw = Number(document.getElementById('cfg-z-switch-offset')?.value ?? 5.5);
+      await saveUIConfigPartial({ pcb_thickness_mm: t, z_switch_above_bed_mm: sw });
+      await runMacroOnCNC('pcb_z_zero_switch.gcode', null);
     }
 
     let liveBedTimer = null;
@@ -3008,6 +3993,7 @@
       loadUIConfig();
       loadMacrosAndHeightMap();
       loadBoardAlignment();
+      initFigUIJogPad();
       startLiveBedPolling();
     });
   </script>
@@ -3070,6 +4056,12 @@
 
       <!-- Compact Status & Safety Indicators -->
       <div class="flex items-center gap-2 text-xs">
+        <button type="button" id="btn-virtual-estop" onclick="triggerVirtualEStop()"
+                class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 active:scale-95 text-white font-bold border border-red-400/60 shadow-lg shadow-red-950/60 transition cursor-pointer"
+                data-tip="VIRTUAL E-STOP: Immediate Feed Hold (!) + Soft Reset (0x18) + Spindle OFF (M5)" aria-label="Virtual Emergency Stop">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>E-STOP</span>
+        </button>
         <span class="p-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 cursor-help"
               data-tip="Z-Switch Keep-Out: X272.0 Y135.0mm">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -3105,6 +4097,12 @@
 
         <!-- Compact Icon Action Bar -->
         <div class="flex flex-wrap items-center gap-1.5">
+          <button type="button" id="btn-dispatch-stop-stream" onclick="stopOngoingStream()" disabled
+                  class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800/70 text-slate-500 border border-slate-700/60 font-semibold text-xs transition cursor-not-allowed opacity-50"
+                  data-tip="Stop ongoing G-code stream immediately (! + Ctrl-X + M5)" aria-label="Stop Stream">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+            <span>Stop</span>
+          </button>
           <button type="button" onclick="testFluidNCConnection()" class="p-2 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700/80 transition cursor-pointer" data-tip="Ping FluidNC" aria-label="Ping FluidNC">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
           </button>
@@ -3280,6 +4278,81 @@
           </div>
         </div>
         <iframe id="fluidnc-iframe" src="about:blank" title="FluidNC WebUI" class="w-full h-[520px] border-0 bg-[#121620]"></iframe>
+      </div>
+
+      <!-- Live Stream Preview & Tracking View (auto-opens when streaming starts) -->
+      <div id="dispatch-live-stream-panel" class="hidden mb-4 p-3.5 rounded-xl bg-[#070b14] border border-cyan-500/40 shadow-lg shadow-cyan-950/30 space-y-3 text-xs">
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-800/90">
+          <div class="flex flex-wrap items-center gap-2 min-w-0">
+            <span id="live-stream-badge" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-mono text-[11px] font-bold">
+              <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+              <span>STREAMING</span>
+            </span>
+            <strong id="live-stream-filename" class="font-mono text-slate-100 truncate max-w-xs sm:max-w-md">-</strong>
+            <span id="live-stream-via" class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] uppercase">-</span>
+            <span id="live-stream-counter" class="font-mono text-cyan-300 font-semibold">0 / 0 (0%)</span>
+            <span id="live-stream-elapsed" class="font-mono text-slate-400 text-[11px]">00:00</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <button type="button" onclick="sendFluidNCRealtime('!')" class="px-2 py-1 rounded-lg bg-amber-600/25 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/35 font-semibold cursor-pointer" data-tip="Feed Hold (!)">Pause</button>
+            <button type="button" onclick="sendFluidNCRealtime('~')" class="px-2 py-1 rounded-lg bg-emerald-600/25 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/35 font-semibold cursor-pointer" data-tip="Cycle Start / Resume (~)">Resume</button>
+            <button type="button" id="btn-live-mark-done" onclick="toggleLiveStreamDone()" class="hidden px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold cursor-pointer inline-flex items-center gap-1 shadow-sm" data-tip="Check off this finished file in Dispatch">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              <span>Check File</span>
+            </button>
+            <button type="button" id="btn-live-stop" onclick="stopOngoingStream()" class="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold cursor-pointer inline-flex items-center gap-1" data-tip="Stop ongoing G-code stream">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+              <span>Stop Stream</span>
+            </button>
+            <button type="button" onclick="triggerVirtualEStop()" class="px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold border border-red-400/50 cursor-pointer" data-tip="Immediate Emergency Stop (! + Ctrl-X + M5)">E-STOP</button>
+            <button type="button" onclick="if (liveStreamState.jobFilename || liveStreamState.filename) openGCodeViewer(liveStreamState.jobFilename || liveStreamState.filename)" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer" data-tip="Open in Full 2D/3D Viewer">3D View</button>
+            <button type="button" onclick="hideLiveStreamPanel()" class="px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 cursor-pointer" data-tip="Dismiss Preview">&times;</button>
+          </div>
+        </div>
+
+        <div class="space-y-1">
+          <div class="flex items-center justify-between gap-2 text-[11px] font-mono">
+            <span id="live-stream-message" class="text-slate-300 truncate">Ready</span>
+            <span id="live-stream-cmd" class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-cyan-300 truncate max-w-md">-</span>
+          </div>
+          <div class="w-full h-2 rounded-full bg-slate-900 overflow-hidden border border-slate-800">
+            <div id="live-stream-progress-bar" class="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-200 rounded-full" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
+          <div class="lg:col-span-8 bg-[#05070d] rounded-xl border border-slate-800/90 p-2 flex flex-col">
+            <div class="flex items-center justify-between text-[10px] font-mono text-slate-400 px-1 pb-1">
+              <span>Live Toolpath Preview &amp; CNC Tracking (Preview Mode)</span>
+              <div class="flex items-center gap-3">
+                <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-400"></span>Done</span>
+                <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-cyan-400"></span>Current</span>
+                <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-fuchsia-400"></span>CNC Head</span>
+              </div>
+            </div>
+            <canvas id="dispatch-live-canvas" class="w-full h-[260px] rounded-lg bg-[#04060b]"></canvas>
+          </div>
+
+          <div class="lg:col-span-4 flex flex-col gap-2">
+            <div class="grid grid-cols-2 gap-2 font-mono text-[11px]">
+              <div class="p-2 rounded-lg bg-slate-900/90 border border-slate-800">
+                <span class="block text-[9px] uppercase text-slate-400">Work Pos (WPos)</span>
+                <strong id="live-pos-wpos" class="text-cyan-300">X:-- Y:-- Z:--</strong>
+              </div>
+              <div class="p-2 rounded-lg bg-slate-900/90 border border-slate-800">
+                <span class="block text-[9px] uppercase text-slate-400">Machine (MPos)</span>
+                <strong id="live-pos-mpos" class="text-slate-200">X:-- Y:-- Z:--</strong>
+              </div>
+            </div>
+            <div class="flex-1 p-2 rounded-lg bg-slate-950 border border-slate-800/90 flex flex-col">
+              <div class="text-[10px] font-mono uppercase text-slate-400 pb-1 mb-1 border-b border-slate-800/80 flex justify-between">
+                <span>Execution Window</span>
+                <span id="live-stream-pct" class="text-emerald-400 font-bold">0%</span>
+              </div>
+              <div id="live-stream-lines" class="font-mono text-[11px] space-y-0.5 overflow-hidden flex-1"></div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Sheet & Step Filter Row -->
@@ -4193,52 +5266,121 @@
     <!-- TAB 7: CUSTOM MACROS, JOG, UI CONFIG & BED HEIGHT MAP -->
     <section id="section-macros" class="dash-section space-y-4" style="display:none;">
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <!-- BOX 1: FigUI Jog Pad + Live Tool on Bed -->
+        <!-- BOX 1: FluidNC FigUI Jog Pad + Live Tool on Bed -->
         <div class="lg:col-span-4 glass-panel p-4 rounded-2xl border border-slate-800/90 flex flex-col gap-3">
           <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800/80">
-            <h2 class="text-sm font-semibold text-slate-100">Navigation &amp; Jog</h2>
-            <div class="flex items-center gap-1">
-              <button type="button" onclick="setJogStep(0.1)" data-step="0.1" class="jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer">0.1</button>
-              <button type="button" onclick="setJogStep(1)" data-step="1" class="jog-step-btn px-1.5 py-0.5 rounded bg-blue-600 text-white font-mono text-[11px] font-semibold cursor-pointer">1</button>
-              <button type="button" onclick="setJogStep(5)" data-step="5" class="jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer">5</button>
-              <button type="button" onclick="setJogStep(10)" data-step="10" class="jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer">10</button>
-              <button type="button" onclick="setJogStep(50)" data-step="50" class="jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer">50</button>
+            <div class="flex items-center gap-2">
+              <h2 class="text-sm font-semibold text-slate-100">Navigation &amp; Jog</h2>
+              <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800/90 text-cyan-300 border border-slate-700">FigUI</span>
+            </div>
+            <div class="inline-flex rounded-lg border border-slate-700 overflow-hidden bg-slate-950/80">
+              <button type="button" id="fig-mode-step" onclick="setFigJogMode('step')">Step</button>
+              <button type="button" id="fig-mode-continuous" onclick="setFigJogMode('continuous')" class="border-l border-slate-700">Continuous</button>
+              <button type="button" id="fig-mode-compact" onclick="setFigJogMode('compact')" class="border-l border-slate-700">Compact</button>
             </div>
           </div>
 
-          <!-- FigUI 3x3 XY Compass + Z Column -->
-          <div class="grid grid-cols-4 gap-1.5 text-xs font-mono">
-            <button type="button" onclick="sendJogDiag(-1, 1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X- Y+">&#8598;</button>
-            <button type="button" onclick="sendJog('Y', 1)" class="p-2 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-100 border border-slate-700 font-semibold cursor-pointer" data-tip="Jog Y+">Y+</button>
-            <button type="button" onclick="sendJogDiag(1, 1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X+ Y+">&#8599;</button>
-            <button type="button" onclick="sendJog('Z', 1)" class="p-2 rounded-lg bg-cyan-950/50 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-500/30 font-semibold cursor-pointer" data-tip="Jog Z+">Z+</button>
-
-            <button type="button" onclick="sendJog('X', -1)" class="p-2 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-100 border border-slate-700 font-semibold cursor-pointer" data-tip="Jog X-">X-</button>
-            <button type="button" onclick="sendFluidNCRealtime('G90 G0 X0 Y0')" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 cursor-pointer" data-tip="Go to Work X0 Y0">XY0</button>
-            <button type="button" onclick="sendJog('X', 1)" class="p-2 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-100 border border-slate-700 font-semibold cursor-pointer" data-tip="Jog X+">X+</button>
-            <button type="button" id="btn-macro-zero-z" onclick="sendFluidNCRealtime('G10 L20 P1 Z0')" class="p-2 rounded-lg bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 cursor-pointer" data-tip="Zero Z">0 Z</button>
-
-            <button type="button" onclick="sendJogDiag(-1, -1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X- Y-">&#8601;</button>
-            <button type="button" onclick="sendJog('Y', -1)" class="p-2 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-100 border border-slate-700 font-semibold cursor-pointer" data-tip="Jog Y-">Y-</button>
-            <button type="button" onclick="sendJogDiag(1, -1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X+ Y-">&#8600;</button>
-            <button type="button" onclick="sendJog('Z', -1)" class="p-2 rounded-lg bg-cyan-950/50 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-500/30 font-semibold cursor-pointer" data-tip="Jog Z-">Z-</button>
+          <!-- FigUI JogRose (Concentric SVG Rings / Continuous Wedges) + Mainsail Corner Homing + Z AxisBar -->
+          <div id="fig-jog-rose-wrap" class="relative flex flex-col gap-1.5" oncontextmenu="return false">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-1.5">
+                <button type="button" id="fig-fine-btn" onclick="toggleFigFineJog()" class="h-6 px-2 rounded border border-slate-700 text-[11px] font-mono" data-tip="Fine jog: swap 0.1 mm ring/bar for 0.01 mm">0.01 Fine</button>
+                <button type="button" id="fig-kbd-btn" onclick="toggleFigKeyboardJog()" style="display:none;" class="h-6 px-2 rounded border border-slate-700 text-[11px] font-mono" data-tip="Enable keyboard jogging (Arrows XY, +/- Z)">Kbd</button>
+              </div>
+              <span class="text-[10px] font-mono text-slate-400">Mainsail Homing Corners (X / Y / Z / ALL)</span>
+            </div>
+            <div class="relative flex items-center justify-center gap-2.5 py-0.5">
+              <svg id="fig-jog-rose" viewBox="-108 -108 216 216" style="touch-action:none;" class="w-full max-w-[248px] select-none"></svg>
+              <svg id="fig-jog-z-bar" viewBox="0 0 44 220" style="touch-action:none;" class="w-[46px] h-[230px] select-none shrink-0"></svg>
+            </div>
+            <div id="fig-jog-mode-hint" class="text-[10px] text-center font-mono text-slate-400">Step mode · Click concentric ring sector to jog</div>
           </div>
 
-          <!-- Quick Machine Actions + Feedrate -->
+          <!-- Compact Grid Fallback (FigUI Compact + Mainsail 2x2 Homing Block) -->
+          <div id="fig-jog-compact-wrap" style="display:none;" class="space-y-2">
+            <div class="flex items-center justify-between gap-1">
+              <span class="text-[10px] font-mono text-slate-400">Step (mm):</span>
+              <div class="flex items-center gap-1">
+                <button type="button" onclick="setJogStep(0.1)" data-step="0.1" class="jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer">0.1</button>
+                <button type="button" onclick="setJogStep(1)" data-step="1" class="jog-step-btn px-1.5 py-0.5 rounded bg-blue-600 text-white font-mono text-[11px] font-semibold cursor-pointer">1</button>
+                <button type="button" onclick="setJogStep(5)" data-step="5" class="jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer">5</button>
+                <button type="button" onclick="setJogStep(10)" data-step="10" class="jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer">10</button>
+                <button type="button" onclick="setJogStep(50)" data-step="50" class="jog-step-btn px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] cursor-pointer">50</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-4 gap-1.5 text-xs font-mono">
+              <button type="button" onclick="sendJogDiag(-1, 1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X- Y+">&#8598;</button>
+              <button type="button" onclick="sendJog('Y', 1)" class="p-2 rounded-lg bg-slate-800 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-slate-700 font-semibold cursor-pointer" data-tip="Jog Y+">Y+</button>
+              <button type="button" onclick="sendJogDiag(1, 1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X+ Y+">&#8599;</button>
+              <button type="button" onclick="sendJog('Z', 1)" class="p-2 rounded-lg bg-cyan-950/50 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-500/30 font-semibold cursor-pointer" data-tip="Jog Z+">Z+</button>
+
+              <button type="button" onclick="sendJog('X', -1)" class="p-2 rounded-lg bg-slate-800 hover:bg-red-600 text-red-300 hover:text-white border border-slate-700 font-semibold cursor-pointer" data-tip="Jog X-">X-</button>
+              <button type="button" onclick="goToWorkZero('XY')" class="p-2 rounded-lg bg-slate-800 hover:bg-amber-600/30 text-amber-300 border border-slate-700 cursor-pointer" data-tip="Go to Work X0 Y0">XY0</button>
+              <button type="button" onclick="sendJog('X', 1)" class="p-2 rounded-lg bg-slate-800 hover:bg-red-600 text-red-300 hover:text-white border border-slate-700 font-semibold cursor-pointer" data-tip="Jog X+">X+</button>
+              <button type="button" onclick="cancelFigJogNow()" class="p-2 rounded-lg bg-red-950/50 hover:bg-red-600 text-red-300 hover:text-white border border-red-500/30 cursor-pointer" data-tip="Cancel Jog (0x85)">Stop</button>
+
+              <button type="button" onclick="sendJogDiag(-1, -1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X- Y-">&#8601;</button>
+              <button type="button" onclick="sendJog('Y', -1)" class="p-2 rounded-lg bg-slate-800 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-slate-700 font-semibold cursor-pointer" data-tip="Jog Y-">Y-</button>
+              <button type="button" onclick="sendJogDiag(1, -1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X+ Y-">&#8600;</button>
+              <button type="button" onclick="sendJog('Z', -1)" class="p-2 rounded-lg bg-cyan-950/50 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-500/30 font-semibold cursor-pointer" data-tip="Jog Z-">Z-</button>
+            </div>
+            <!-- Mainsail-style 2x2 Homing Block -->
+            <div id="fig-compact-home-block" class="grid grid-cols-2 gap-1 rounded-lg overflow-hidden border border-slate-700 text-[11px] font-mono">
+              <button type="button" onclick="sendFluidNCRealtime('$H')" class="py-1.5 px-2 bg-sky-700/80 hover:bg-sky-600 text-white font-semibold flex items-center justify-center gap-1 cursor-pointer" data-tip="Home All ($H)">&#8962; ALL</button>
+              <button type="button" onclick="sendFluidNCRealtime('$HZ')" class="py-1.5 px-2 bg-slate-800 hover:bg-sky-700 text-sky-300 hover:text-white font-semibold flex items-center justify-center gap-1 cursor-pointer" data-tip="Home Z ($HZ)">&#8962; Z</button>
+              <button type="button" onclick="sendFluidNCRealtime('$HX')" class="py-1.5 px-2 bg-slate-800 hover:bg-red-700 text-red-300 hover:text-white font-semibold flex items-center justify-center gap-1 cursor-pointer" data-tip="Home X ($HX)">&#8962; X</button>
+              <button type="button" onclick="sendFluidNCRealtime('$HY')" class="py-1.5 px-2 bg-slate-800 hover:bg-emerald-700 text-emerald-300 hover:text-white font-semibold flex items-center justify-center gap-1 cursor-pointer" data-tip="Home Y ($HY)">&#8962; Y</button>
+            </div>
+          </div>
+
+          <!-- FigUI Separate XY & Z Feedrates -->
+          <div class="flex items-center justify-between gap-2 text-[11px] font-mono">
+            <label class="flex items-center gap-1.5 text-slate-300">
+              <span class="text-slate-400">XY</span>
+              <select id="fig-xy-feed" onchange="setFigJogFeed('xy', this.value)" class="bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-slate-200 font-mono text-[11px]">
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+                <option value="500">500</option>
+                <option value="1000" selected>1000</option>
+                <option value="2000">2000</option>
+                <option value="3000">3000</option>
+              </select>
+            </label>
+            <label class="flex items-center gap-1.5 text-slate-300">
+              <span class="text-slate-400">Z</span>
+              <select id="fig-z-feed" onchange="setFigJogFeed('z', this.value)" class="bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-slate-200 font-mono text-[11px]">
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="200" selected>200</option>
+                <option value="400">400</option>
+                <option value="800">800</option>
+              </select>
+            </label>
+            <span class="text-[10px] text-slate-500">mm/min</span>
+          </div>
+
+          <!-- Go to Work Zero Row -->
+          <div class="flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
+            <span class="text-slate-400 mr-0.5">Go 0:</span>
+            <button type="button" onclick="goToWorkZero('X')" class="px-2 py-1 rounded bg-amber-500/15 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/30 cursor-pointer" data-tip="Go to Work X0 (G90 G0 X0)">Go X0</button>
+            <button type="button" onclick="goToWorkZero('Y')" class="px-2 py-1 rounded bg-amber-500/15 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/30 cursor-pointer" data-tip="Go to Work Y0 (G90 G0 Y0)">Go Y0</button>
+            <button type="button" onclick="goToWorkZero('XY')" class="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-600 text-amber-200 hover:text-white border border-amber-500/40 font-semibold cursor-pointer" data-tip="Go to Work X0 Y0 (G90 G0 X0 Y0)">Go XY0</button>
+            <button type="button" onclick="goToWorkZero('Z')" class="px-2 py-1 rounded bg-orange-500/15 hover:bg-orange-600 text-orange-300 hover:text-white border border-orange-500/30 cursor-pointer" data-tip="Move Z to Work Z0 at F300 (confirms first)">Go Z0</button>
+            <button type="button" onclick="goToWorkZero('XYZ')" class="px-2 py-1 rounded bg-rose-500/15 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 font-semibold cursor-pointer" data-tip="Move to X0 Y0 then Z0 at F300 (confirms first)">Go XYZ0</button>
+          </div>
+
+          <!-- Quick Machine & Zero Actions -->
           <div class="flex flex-wrap items-center justify-between gap-1.5 text-[11px] font-mono">
-            <div class="flex items-center gap-1">
+            <div class="flex flex-wrap items-center gap-1">
               <button type="button" id="btn-macro-home" onclick="sendFluidNCRealtime('$H')" class="px-2 py-1 rounded bg-sky-600/20 hover:bg-sky-600 text-sky-300 hover:text-white border border-sky-500/30 cursor-pointer" data-tip="Home ($H)">$H</button>
               <button type="button" id="btn-macro-unlock" onclick="sendFluidNCRealtime('$X')" class="px-2 py-1 rounded bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/30 cursor-pointer" data-tip="Unlock ($X)">$X</button>
               <button type="button" id="btn-macro-zero-xy" onclick="sendFluidNCRealtime('G10 L20 P1 X0 Y0')" class="px-2 py-1 rounded bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 cursor-pointer" data-tip="Zero XY">0 XY</button>
+              <button type="button" id="btn-macro-zero-z" onclick="sendFluidNCRealtime('G10 L20 P1 Z0')" class="px-2 py-1 rounded bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 cursor-pointer" data-tip="Zero Z">0 Z</button>
               <button type="button" onclick="sendFluidNCRealtime('!')" class="px-2 py-1 rounded bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white border border-red-500/30 cursor-pointer" data-tip="Feed Hold (!)">!</button>
               <button type="button" onclick="sendFluidNCRealtime('~')" class="px-2 py-1 rounded bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/30 cursor-pointer" data-tip="Resume (~)">~</button>
+              <button type="button" onclick="cancelFigJogNow()" class="px-2 py-1 rounded bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 cursor-pointer" data-tip="Cancel Jog (0x85)">Cancel Jog</button>
             </div>
-            <select id="jog-feed-select" class="bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-slate-300 font-mono text-[11px]" data-tip="Jog Feedrate">
-              <option value="300">F300</option>
-              <option value="600">F600</option>
-              <option value="1200" selected>F1200</option>
-              <option value="2000">F2000</option>
-            </select>
           </div>
           <div id="jog-status-lbl" class="text-[11px] font-mono text-slate-400 truncate">Ready</div>
 
@@ -4257,6 +5399,17 @@
             <div class="flex items-center justify-between pb-2 border-b border-slate-800/80">
               <h2 class="text-sm font-semibold text-slate-100">Z-Zero &amp; UI Config</h2>
               <span class="text-[10px] font-mono text-slate-400">ui_config.json</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="flex-1">
+                <label class="block text-[10px] text-slate-400 mb-1" for="cfg-z-switch-offset">Switch Above Bed (mm)</label>
+                <input type="number" step="0.05" id="cfg-z-switch-offset" value="5.50"
+                       onchange="saveUIConfigPartial({ z_switch_above_bed_mm: Number(this.value) })"
+                       class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 font-mono text-slate-100">
+              </div>
+              <button type="button" onclick="applyPcbSwitchZero()" class="mt-4 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-semibold cursor-pointer" data-tip="Probe Z-zero switch with PCB mounted (switch height minus PCB thickness)">
+                Probe PCB Z0
+              </button>
             </div>
             <div class="flex items-center gap-2">
               <div class="flex-1">

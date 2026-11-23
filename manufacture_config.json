@@ -80,6 +80,7 @@
       "enabled": true,
       "x_mm": 272.001,
       "y_mm": 135.002,
+      "height_above_bed_mm": 5.5,
       "width_mm": 7.0,
       "length_mm": 20.0,
       "danger_margin_mm": 6.0,

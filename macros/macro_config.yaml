@@ -1,11 +1,11 @@
 # Custom CNC Macros & Bed Height Map Configuration
 macros:
   - id: z_tool_zero
-    name: Z-Tool Zero (Limit Switch)
+    name: Z-Tool Zero (Bed Switch +5.5mm)
     file: z_tool_zero.gcode
     category: calibration
     color: amber
-    description: Probe fixed bed Z-zero limit switch at X272.001 Y135.002 and set G54 Z0.
+    description: Probe fixed Z-zero limit switch at X272.001 Y135.002 (+5.500mm above bed) and set Bed = G54 Z0.
 
   - id: bed_height_scan
     name: Bed Height Scan (3x3 Quick)
@@ -21,12 +21,19 @@ macros:
     color: emerald
     description: Probe 2 left-edge and 2 front-edge points to compensate X/Y offset & rotation.
 
+  - id: pcb_z_zero_switch
+    name: PCB Z-Zero (Switch, PCB Mounted)
+    file: pcb_z_zero_switch.gcode
+    category: calibration
+    color: violet
+    description: Probe fixed Z-zero switch at X272.001 Y135.002 with PCB mounted (+5.500mm switch - 1.600mm PCB = +3.900mm above PCB).
+
   - id: pcb_z_zero_thickness
     name: PCB Z-Zero (Thickness Offset)
     file: pcb_z_zero_thickness.gcode
     category: calibration
     color: blue
-    description: Zero Z on top of copper board by offsetting from bed Z0 by board thickness.
+    description: Zero Z on top of copper board by offsetting from Bed Z0 by board thickness (moves clear of switch first).
 
   - id: change_tool
     name: Change Tool (M5 Park)

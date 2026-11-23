@@ -3,10 +3,11 @@
   "show_macros_in_dispatch": true,
   "enable_homing_btn": true,
   "enable_unlock_btn": true,
-  "enable_zero_work_btn": false,
+  "enable_zero_work_btn": true,
   "enable_pcb_z_offset": true,
   "enable_heightmap_leveling": true,
   "pcb_thickness_mm": 1.6,
+  "z_switch_above_bed_mm": 6.8,
   "cnc_transport": "auto",
   "cnc_serial_port": "auto",
   "cnc_baudrate": 115200
