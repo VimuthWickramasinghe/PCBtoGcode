@@ -12,7 +12,7 @@
       "x": 275.0,
       "y": 170.0
     },
-    "y_split_threshold_mm": 145.0,
+    "y_split_threshold_mm": 165.0,
     "y_axis_only_shift": true,
     "serpentine_same_tool_back_first": true,
     "breakaway_mode": "v_bit_and_milling",
@@ -40,7 +40,7 @@
       "sheet_tag": "S01/01 | U:3 | GREEN | FRONT",
       "sheet_tag_corner": {
         "position": "front_right",
-        "x_mm": 91.0,
+        "x_mm": 86.0,
         "y_mm": 1.2,
         "width_mm": 96.0,
         "height_mm": 6.0
@@ -49,15 +49,56 @@
       "unit_count": 3,
       "units": [
         {
+          "unit_id": "PCB-AC-01-001",
+          "project_name": "AirCooler",
+          "pcb_id": "PCB-AC-01",
+          "orientation_deg": 0,
+          "bounding_box_on_sheet": {
+            "x_min": 18.0,
+            "y_min": 8.5,
+            "x_max": 147.2,
+            "y_max": 86.7
+          },
+          "pcb_dimensions_mm": {
+            "width": 124.2,
+            "height": 78.2
+          },
+          "tag_strip": {
+            "width_mm": 5.0,
+            "attached_edge": "shortest",
+            "attached_side_on_sheet": "left",
+            "shortest_edge_mm": 78.2,
+            "tag_content": "pcb_id_and_triangle_arrow_only",
+            "has_triangle_arrow": true,
+            "breakaway_mode": "v_bit_and_milling",
+            "retention_tabs": [
+              {
+                "start_mm": 25.07,
+                "end_mm": 27.07,
+                "width_mm": 2.0
+              },
+              {
+                "start_mm": 51.13,
+                "end_mm": 53.13,
+                "width_mm": 2.0
+              }
+            ],
+            "mouse_bites_count": 0
+          },
+          "half": "front",
+          "solder_mask_color": "green",
+          "drill_holes_count": 78
+        },
+        {
           "unit_id": "PCB-AC-02-001",
           "project_name": "Board-01",
           "pcb_id": "PCB-AC-02",
           "orientation_deg": 0,
           "bounding_box_on_sheet": {
-            "x_min": 22.0,
-            "y_min": 8.5,
-            "x_max": 154.25,
-            "y_max": 64.75
+            "x_min": 18.0,
+            "y_min": 89.2,
+            "x_max": 150.25,
+            "y_max": 145.45
           },
           "pcb_dimensions_mm": {
             "width": 127.25,
@@ -90,56 +131,15 @@
           "drill_holes_count": 67
         },
         {
-          "unit_id": "PCB-AC-01-001",
-          "project_name": "AirCooler",
-          "pcb_id": "PCB-AC-01",
-          "orientation_deg": 90,
-          "bounding_box_on_sheet": {
-            "x_min": 24.0,
-            "y_min": 150.0,
-            "x_max": 102.2,
-            "y_max": 279.2
-          },
-          "pcb_dimensions_mm": {
-            "width": 124.2,
-            "height": 78.2
-          },
-          "tag_strip": {
-            "width_mm": 5.0,
-            "attached_edge": "shortest",
-            "attached_side_on_sheet": "bottom",
-            "shortest_edge_mm": 78.2,
-            "tag_content": "pcb_id_and_triangle_arrow_only",
-            "has_triangle_arrow": true,
-            "breakaway_mode": "v_bit_and_milling",
-            "retention_tabs": [
-              {
-                "start_mm": 25.07,
-                "end_mm": 27.07,
-                "width_mm": 2.0
-              },
-              {
-                "start_mm": 51.13,
-                "end_mm": 53.13,
-                "width_mm": 2.0
-              }
-            ],
-            "mouse_bites_count": 0
-          },
-          "half": "back",
-          "solder_mask_color": "green",
-          "drill_holes_count": 78
-        },
-        {
           "unit_id": "PCB-AC-03-001",
           "project_name": "Micro Probe",
           "pcb_id": "PCB-AC-03",
           "orientation_deg": 90,
           "bounding_box_on_sheet": {
-            "x_min": 102.2,
-            "y_min": 150.0,
-            "x_max": 132.25,
-            "y_max": 219.55
+            "x_min": 149.7,
+            "y_min": 8.5,
+            "x_max": 179.75,
+            "y_max": 78.05
           },
           "pcb_dimensions_mm": {
             "width": 64.55,
@@ -167,7 +167,7 @@
             ],
             "mouse_bites_count": 0
           },
-          "half": "back",
+          "half": "front",
           "solder_mask_color": "green",
           "drill_holes_count": 30
         }
@@ -193,14 +193,14 @@
           "depth_mm": -0.04,
           "feed_mm_min": 250.0,
           "spindle_rpm": 10000,
-          "stats_label": "90 strokes, 0 pins",
+          "stats_label": "42 strokes, 2 pins",
           "bounds_x": [
-            1.53,
-            187.0
+            13.5,
+            186.5
           ],
           "bounds_y": [
-            0.0,
-            145.0
+            1.2,
+            166.4
           ]
         },
         {
@@ -215,22 +215,22 @@
           "board_side": "top",
           "mirrored": false,
           "bed_half": "back",
-          "y_shift_mm": 145.0,
+          "y_shift_mm": 165.0,
           "started_back_same_tool": false,
-          "shift_action": "Slide sheet -145.0mm along Y-axis ONLY -> BACK HALF",
+          "shift_action": "Slide sheet -165.0mm along Y-axis ONLY -> BACK HALF",
           "gcode_file": "Sheet01_Step0B_Back_Alignment_Guides.gcode",
           "svg_file": "Bed_Sheet01_Op02_Step0B_top_back_30deg_V-Bit.svg",
           "depth_mm": -0.04,
           "feed_mm_min": 250.0,
           "spindle_rpm": 10000,
-          "stats_label": "36 strokes, 0 pins",
+          "stats_label": "2 strokes, 0 pins",
           "bounds_x": [
-            2.0,
-            12.0
+            15.0,
+            185.0
           ],
           "bounds_y": [
-            0.0,
-            152.0
+            21.0,
+            23.0
           ]
         },
         {
@@ -253,14 +253,14 @@
           "depth_mm": -1.8,
           "feed_mm_min": 150.0,
           "spindle_rpm": 10000,
-          "stats_label": "4 holes @ 0.30mm",
+          "stats_label": "5 holes @ 0.30mm",
           "bounds_x": [
-            46.71,
-            63.5
+            42.71,
+            141.5
           ],
           "bounds_y": [
-            19.16,
-            58.51
+            85.5,
+            139.21
           ]
         },
         {
@@ -268,29 +268,29 @@
           "sheet_num": 1,
           "seq": 4,
           "step_code": "Step1_02",
-          "step_title": "Step 1 Drilling (0.30mm)",
+          "step_title": "Step 1 Drilling (0.70mm)",
           "work_type": "CNC Drilling",
-          "tool_name": "0.30mm Carbide Drill",
-          "tool_dia_mm": 0.3,
+          "tool_name": "0.70mm Carbide Drill",
+          "tool_dia_mm": 0.7,
           "board_side": "top",
           "mirrored": false,
-          "bed_half": "back",
-          "y_shift_mm": 145.0,
+          "bed_half": "front",
+          "y_shift_mm": 0.0,
           "started_back_same_tool": false,
-          "shift_action": "Slide sheet -145.0mm along Y-axis ONLY -> BACK HALF",
-          "gcode_file": "Sheet01_Step1_02_Back_Top_Drills_0.30mm.gcode",
-          "svg_file": "Bed_Sheet01_Op04_Step1_02_top_back_0.30mm_Carbide_Drill.svg",
+          "shift_action": "Stay at FRONT HALF & change drill to 0.70mm (Serpentine: same work, no Y-shift needed!)",
+          "gcode_file": "Sheet01_Step1_02_Front_Top_Drills_0.70mm.gcode",
+          "svg_file": "Bed_Sheet01_Op04_Step1_02_top_front_0.70mm_Carbide_Drill.svg",
           "depth_mm": -1.8,
           "feed_mm_min": 150.0,
           "spindle_rpm": 10000,
-          "stats_label": "1 holes @ 0.30mm",
+          "stats_label": "14 holes @ 0.70mm",
           "bounds_x": [
-            25.2,
-            25.2
+            126.92,
+            166.75
           ],
           "bounds_y": [
-            128.5,
-            128.5
+            26.0,
+            67.81
           ]
         },
         {
@@ -298,29 +298,29 @@
           "sheet_num": 1,
           "seq": 5,
           "step_code": "Step1_03",
-          "step_title": "Step 1 Drilling (0.70mm)",
+          "step_title": "Step 1 Drilling (0.75mm)",
           "work_type": "CNC Drilling",
-          "tool_name": "0.70mm Carbide Drill",
-          "tool_dia_mm": 0.7,
+          "tool_name": "0.75mm Carbide Drill",
+          "tool_dia_mm": 0.75,
           "board_side": "top",
           "mirrored": false,
-          "bed_half": "back",
-          "y_shift_mm": 145.0,
-          "started_back_same_tool": true,
-          "shift_action": "Stay at BACK HALF & change drill to 0.70mm (Serpentine: same work, no Y-shift needed!)",
-          "gcode_file": "Sheet01_Step1_03_Back_Top_Drills_0.70mm.gcode",
-          "svg_file": "Bed_Sheet01_Op05_Step1_03_top_back_0.70mm_Carbide_Drill.svg",
+          "bed_half": "front",
+          "y_shift_mm": 0.0,
+          "started_back_same_tool": false,
+          "shift_action": "Stay at FRONT HALF & change drill to 0.75mm (Serpentine: same work, no Y-shift needed!)",
+          "gcode_file": "Sheet01_Step1_03_Front_Top_Drills_0.75mm.gcode",
+          "svg_file": "Bed_Sheet01_Op05_Step1_03_top_front_0.75mm_Carbide_Drill.svg",
           "depth_mm": -1.8,
           "feed_mm_min": 150.0,
           "spindle_rpm": 10000,
-          "stats_label": "14 holes @ 0.70mm",
+          "stats_label": "6 holes @ 0.75mm",
           "bounds_x": [
-            45.2,
-            119.25
+            76.0,
+            76.0
           ],
           "bounds_y": [
-            22.5,
-            127.5
+            53.0,
+            76.54
           ]
         },
         {
@@ -328,29 +328,29 @@
           "sheet_num": 1,
           "seq": 6,
           "step_code": "Step1_04",
-          "step_title": "Step 1 Drilling (0.75mm)",
+          "step_title": "Step 1 Drilling (0.80mm)",
           "work_type": "CNC Drilling",
-          "tool_name": "0.75mm Carbide Drill",
-          "tool_dia_mm": 0.75,
+          "tool_name": "0.80mm Carbide Drill",
+          "tool_dia_mm": 0.8,
           "board_side": "top",
           "mirrored": false,
-          "bed_half": "back",
-          "y_shift_mm": 145.0,
-          "started_back_same_tool": true,
-          "shift_action": "Stay at BACK HALF & change drill to 0.75mm (Serpentine: same work, no Y-shift needed!)",
-          "gcode_file": "Sheet01_Step1_04_Back_Top_Drills_0.75mm.gcode",
-          "svg_file": "Bed_Sheet01_Op06_Step1_04_top_back_0.75mm_Carbide_Drill.svg",
+          "bed_half": "front",
+          "y_shift_mm": 0.0,
+          "started_back_same_tool": false,
+          "shift_action": "Stay at FRONT HALF & change drill to 0.80mm (Serpentine: same work, no Y-shift needed!)",
+          "gcode_file": "Sheet01_Step1_04_Front_Top_Drills_0.80mm.gcode",
+          "svg_file": "Bed_Sheet01_Op06_Step1_04_top_front_0.80mm_Carbide_Drill.svg",
           "depth_mm": -1.8,
           "feed_mm_min": 150.0,
           "spindle_rpm": 10000,
-          "stats_label": "6 holes @ 0.75mm",
+          "stats_label": "30 holes @ 0.80mm",
           "bounds_x": [
-            34.16,
-            57.7
+            82.0,
+            166.06
           ],
           "bounds_y": [
-            63.0,
-            63.0
+            22.18,
+            75.0
           ]
         },
         {
@@ -358,66 +358,6 @@
           "sheet_num": 1,
           "seq": 7,
           "step_code": "Step1_05",
-          "step_title": "Step 1 Drilling (0.80mm)",
-          "work_type": "CNC Drilling",
-          "tool_name": "0.80mm Carbide Drill",
-          "tool_dia_mm": 0.8,
-          "board_side": "top",
-          "mirrored": false,
-          "bed_half": "back",
-          "y_shift_mm": 145.0,
-          "started_back_same_tool": true,
-          "shift_action": "Stay at BACK HALF & change drill to 0.80mm (Serpentine: same work, no Y-shift needed!)",
-          "gcode_file": "Sheet01_Step1_05_Back_Top_Drills_0.80mm.gcode",
-          "svg_file": "Bed_Sheet01_Op07_Step1_05_top_back_0.80mm_Carbide_Drill.svg",
-          "depth_mm": -1.8,
-          "feed_mm_min": 150.0,
-          "spindle_rpm": 10000,
-          "stats_label": "30 holes @ 0.80mm",
-          "bounds_x": [
-            35.7,
-            118.56
-          ],
-          "bounds_y": [
-            56.69,
-            117.78
-          ]
-        },
-        {
-          "op_id": "S01-OP08",
-          "sheet_num": 1,
-          "seq": 8,
-          "step_code": "Step1_06",
-          "step_title": "Step 1 Drilling (0.90mm)",
-          "work_type": "CNC Drilling",
-          "tool_name": "0.90mm Carbide Drill",
-          "tool_dia_mm": 0.9,
-          "board_side": "top",
-          "mirrored": false,
-          "bed_half": "back",
-          "y_shift_mm": 145.0,
-          "started_back_same_tool": true,
-          "shift_action": "Stay at BACK HALF & change drill to 0.90mm (Serpentine: same work, no Y-shift needed!)",
-          "gcode_file": "Sheet01_Step1_06_Back_Top_Drills_0.90mm.gcode",
-          "svg_file": "Bed_Sheet01_Op08_Step1_06_top_back_0.90mm_Carbide_Drill.svg",
-          "depth_mm": -1.8,
-          "feed_mm_min": 150.0,
-          "spindle_rpm": 10000,
-          "stats_label": "4 holes @ 0.90mm",
-          "bounds_x": [
-            68.2,
-            106.25
-          ],
-          "bounds_y": [
-            67.96,
-            127.5
-          ]
-        },
-        {
-          "op_id": "S01-OP09",
-          "sheet_num": 1,
-          "seq": 9,
-          "step_code": "Step1_07",
           "step_title": "Step 1 Drilling (0.90mm)",
           "work_type": "CNC Drilling",
           "tool_name": "0.90mm Carbide Drill",
@@ -427,27 +367,27 @@
           "bed_half": "front",
           "y_shift_mm": 0.0,
           "started_back_same_tool": false,
-          "shift_action": "Slide sheet +145.0mm back along Y-axis ONLY -> FRONT HALF",
-          "gcode_file": "Sheet01_Step1_07_Front_Top_Drills_0.90mm.gcode",
-          "svg_file": "Bed_Sheet01_Op09_Step1_07_top_front_0.90mm_Carbide_Drill.svg",
+          "shift_action": "Stay at FRONT HALF & change drill to 0.90mm (Serpentine: same work, no Y-shift needed!)",
+          "gcode_file": "Sheet01_Step1_05_Front_Top_Drills_0.90mm.gcode",
+          "svg_file": "Bed_Sheet01_Op07_Step1_05_top_front_0.90mm_Carbide_Drill.svg",
           "depth_mm": -1.8,
           "feed_mm_min": 150.0,
           "spindle_rpm": 10000,
-          "stats_label": "16 holes @ 0.90mm",
+          "stats_label": "20 holes @ 0.90mm",
           "bounds_x": [
-            31.95,
-            148.26
+            27.95,
+            153.75
           ],
           "bounds_y": [
-            18.42,
-            58.27
+            39.96,
+            138.97
           ]
         },
         {
-          "op_id": "S01-OP10",
+          "op_id": "S01-OP08",
           "sheet_num": 1,
-          "seq": 10,
-          "step_code": "Step1_08",
+          "seq": 8,
+          "step_code": "Step1_06",
           "step_title": "Step 1 Drilling (1.00mm)",
           "work_type": "CNC Drilling",
           "tool_name": "1.00mm Carbide Drill",
@@ -458,26 +398,26 @@
           "y_shift_mm": 0.0,
           "started_back_same_tool": false,
           "shift_action": "Stay at FRONT HALF & change drill to 1.00mm (Serpentine: same work, no Y-shift needed!)",
-          "gcode_file": "Sheet01_Step1_08_Front_Top_Drills_1.00mm.gcode",
-          "svg_file": "Bed_Sheet01_Op10_Step1_08_top_front_1.00mm_Carbide_Drill.svg",
+          "gcode_file": "Sheet01_Step1_06_Front_Top_Drills_1.00mm.gcode",
+          "svg_file": "Bed_Sheet01_Op08_Step1_06_top_front_1.00mm_Carbide_Drill.svg",
           "depth_mm": -1.8,
           "feed_mm_min": 150.0,
           "spindle_rpm": 10000,
-          "stats_label": "29 holes @ 1.00mm",
+          "stats_label": "49 holes @ 1.00mm",
           "bounds_x": [
-            43.26,
-            68.66
+            15.5,
+            184.5
           ],
           "bounds_y": [
-            19.16,
-            54.72
+            16.5,
+            135.42
           ]
         },
         {
-          "op_id": "S01-OP11",
+          "op_id": "S01-OP09",
           "sheet_num": 1,
-          "seq": 11,
-          "step_code": "Step1_09",
+          "seq": 9,
+          "step_code": "Step1_07",
           "step_title": "Step 1 Drilling (1.00mm)",
           "work_type": "CNC Drilling",
           "tool_name": "1.00mm Carbide Drill",
@@ -485,89 +425,59 @@
           "board_side": "top",
           "mirrored": false,
           "bed_half": "back",
-          "y_shift_mm": 145.0,
+          "y_shift_mm": 165.0,
           "started_back_same_tool": false,
-          "shift_action": "Slide sheet -145.0mm along Y-axis ONLY -> BACK HALF",
-          "gcode_file": "Sheet01_Step1_09_Back_Top_Drills_1.00mm.gcode",
-          "svg_file": "Bed_Sheet01_Op11_Step1_09_top_back_1.00mm_Carbide_Drill.svg",
+          "shift_action": "Slide sheet -165.0mm along Y-axis ONLY -> BACK HALF",
+          "gcode_file": "Sheet01_Step1_07_Back_Top_Drills_1.00mm.gcode",
+          "svg_file": "Bed_Sheet01_Op09_Step1_07_top_back_1.00mm_Carbide_Drill.svg",
           "depth_mm": -1.8,
           "feed_mm_min": 150.0,
           "spindle_rpm": 10000,
-          "stats_label": "18 holes @ 1.00mm",
+          "stats_label": "2 holes @ 1.00mm",
           "bounds_x": [
-            42.66,
-            125.38
+            15.5,
+            184.5
           ],
           "bounds_y": [
-            17.5,
-            124.5
+            30.0,
+            30.0
           ]
         },
         {
-          "op_id": "S01-OP12",
+          "op_id": "S01-OP10",
           "sheet_num": 1,
-          "seq": 12,
-          "step_code": "Step1_10",
+          "seq": 10,
+          "step_code": "Step1_08",
           "step_title": "Step 1 Drilling (1.10mm)",
           "work_type": "CNC Drilling",
           "tool_name": "1.10mm Carbide Drill",
           "tool_dia_mm": 1.1,
           "board_side": "top",
           "mirrored": false,
-          "bed_half": "back",
-          "y_shift_mm": 145.0,
-          "started_back_same_tool": true,
-          "shift_action": "Stay at BACK HALF & change drill to 1.10mm (Serpentine: same work, no Y-shift needed!)",
-          "gcode_file": "Sheet01_Step1_10_Back_Top_Drills_1.10mm.gcode",
-          "svg_file": "Bed_Sheet01_Op12_Step1_10_top_back_1.10mm_Carbide_Drill.svg",
+          "bed_half": "front",
+          "y_shift_mm": 0.0,
+          "started_back_same_tool": false,
+          "shift_action": "Slide sheet +165.0mm back along Y-axis ONLY -> FRONT HALF",
+          "gcode_file": "Sheet01_Step1_08_Front_Top_Drills_1.10mm.gcode",
+          "svg_file": "Bed_Sheet01_Op10_Step1_08_top_front_1.10mm_Carbide_Drill.svg",
           "depth_mm": -1.8,
           "feed_mm_min": 150.0,
           "spindle_rpm": 10000,
           "stats_label": "14 holes @ 1.10mm",
           "bounds_x": [
-            30.45,
-            91.7
+            66.34,
+            126.25
           ],
           "bounds_y": [
-            53.34,
-            113.25
+            19.0,
+            80.25
           ]
         },
         {
-          "op_id": "S01-OP13",
+          "op_id": "S01-OP11",
           "sheet_num": 1,
-          "seq": 13,
-          "step_code": "Step1_11",
-          "step_title": "Step 1 Drilling (1.20mm)",
-          "work_type": "CNC Drilling",
-          "tool_name": "1.20mm Carbide Drill",
-          "tool_dia_mm": 1.2,
-          "board_side": "top",
-          "mirrored": false,
-          "bed_half": "back",
-          "y_shift_mm": 145.0,
-          "started_back_same_tool": true,
-          "shift_action": "Stay at BACK HALF & change drill to 1.20mm (Serpentine: same work, no Y-shift needed!)",
-          "gcode_file": "Sheet01_Step1_11_Back_Top_Drills_1.20mm.gcode",
-          "svg_file": "Bed_Sheet01_Op13_Step1_11_top_back_1.20mm_Carbide_Drill.svg",
-          "depth_mm": -1.8,
-          "feed_mm_min": 150.0,
-          "spindle_rpm": 10000,
-          "stats_label": "2 holes @ 1.20mm",
-          "bounds_x": [
-            113.25,
-            118.25
-          ],
-          "bounds_y": [
-            46.5,
-            46.5
-          ]
-        },
-        {
-          "op_id": "S01-OP14",
-          "sheet_num": 1,
-          "seq": 14,
-          "step_code": "Step1_12",
+          "seq": 11,
+          "step_code": "Step1_09",
           "step_title": "Step 1 Drilling (1.20mm)",
           "work_type": "CNC Drilling",
           "tool_name": "1.20mm Carbide Drill",
@@ -577,87 +487,87 @@
           "bed_half": "front",
           "y_shift_mm": 0.0,
           "started_back_same_tool": false,
-          "shift_action": "Slide sheet +145.0mm back along Y-axis ONLY -> FRONT HALF",
-          "gcode_file": "Sheet01_Step1_12_Front_Top_Drills_1.20mm.gcode",
-          "svg_file": "Bed_Sheet01_Op14_Step1_12_top_front_1.20mm_Carbide_Drill.svg",
+          "shift_action": "Stay at FRONT HALF & change drill to 1.20mm (Serpentine: same work, no Y-shift needed!)",
+          "gcode_file": "Sheet01_Step1_09_Front_Top_Drills_1.20mm.gcode",
+          "svg_file": "Bed_Sheet01_Op11_Step1_09_top_front_1.20mm_Carbide_Drill.svg",
           "depth_mm": -1.8,
           "feed_mm_min": 150.0,
           "spindle_rpm": 10000,
-          "stats_label": "10 holes @ 1.20mm",
+          "stats_label": "12 holes @ 1.20mm",
           "bounds_x": [
-            86.3,
-            141.37
+            82.3,
+            165.75
           ],
           "bounds_y": [
-            12.59,
-            57.67
+            50.0,
+            138.37
           ]
         },
         {
-          "op_id": "S01-OP15",
+          "op_id": "S01-OP12",
           "sheet_num": 1,
-          "seq": 15,
-          "step_code": "Step1_13",
+          "seq": 12,
+          "step_code": "Step1_10",
           "step_title": "Step 1 Drilling (1.30mm)",
           "work_type": "CNC Drilling",
           "tool_name": "1.30mm Carbide Drill",
           "tool_dia_mm": 1.3,
           "board_side": "top",
           "mirrored": false,
-          "bed_half": "back",
-          "y_shift_mm": 145.0,
+          "bed_half": "front",
+          "y_shift_mm": 0.0,
           "started_back_same_tool": false,
-          "shift_action": "Slide sheet -145.0mm along Y-axis ONLY -> BACK HALF",
-          "gcode_file": "Sheet01_Step1_13_Back_Top_Drills_1.30mm.gcode",
-          "svg_file": "Bed_Sheet01_Op15_Step1_13_top_back_1.30mm_Carbide_Drill.svg",
+          "shift_action": "Stay at FRONT HALF & change drill to 1.30mm (Serpentine: same work, no Y-shift needed!)",
+          "gcode_file": "Sheet01_Step1_10_Front_Top_Drills_1.30mm.gcode",
+          "svg_file": "Bed_Sheet01_Op12_Step1_10_top_front_1.30mm_Carbide_Drill.svg",
           "depth_mm": -1.8,
           "feed_mm_min": 150.0,
           "spindle_rpm": 10000,
           "stats_label": "6 holes @ 1.30mm",
           "bounds_x": [
-            30.7,
-            87.67
+            34.47,
+            36.5
           ],
           "bounds_y": [
-            21.47,
-            23.5
+            23.02,
+            80.0
           ]
         },
         {
-          "op_id": "S01-OP16",
+          "op_id": "S01-OP13",
           "sheet_num": 1,
-          "seq": 16,
-          "step_code": "Step1_14",
+          "seq": 13,
+          "step_code": "Step1_11",
           "step_title": "Step 1 Drilling (1.50mm)",
           "work_type": "CNC Drilling",
           "tool_name": "1.50mm Carbide Drill",
           "tool_dia_mm": 1.5,
           "board_side": "top",
           "mirrored": false,
-          "bed_half": "back",
-          "y_shift_mm": 145.0,
-          "started_back_same_tool": true,
-          "shift_action": "Stay at BACK HALF & change drill to 1.50mm (Serpentine: same work, no Y-shift needed!)",
-          "gcode_file": "Sheet01_Step1_14_Back_Top_Drills_1.50mm.gcode",
-          "svg_file": "Bed_Sheet01_Op16_Step1_14_top_back_1.50mm_Carbide_Drill.svg",
+          "bed_half": "front",
+          "y_shift_mm": 0.0,
+          "started_back_same_tool": false,
+          "shift_action": "Stay at FRONT HALF & change drill to 1.50mm (Serpentine: same work, no Y-shift needed!)",
+          "gcode_file": "Sheet01_Step1_11_Front_Top_Drills_1.50mm.gcode",
+          "svg_file": "Bed_Sheet01_Op13_Step1_11_top_front_1.50mm_Carbide_Drill.svg",
           "depth_mm": -1.8,
           "feed_mm_min": 150.0,
           "spindle_rpm": 10000,
           "stats_label": "10 holes @ 1.50mm",
           "bounds_x": [
-            30.7,
-            64.7
+            45.9,
+            61.1
           ],
           "bounds_y": [
-            32.9,
-            48.1
+            46.0,
+            80.0
           ]
         },
         {
-          "op_id": "S01-OP17",
+          "op_id": "S01-OP14",
           "sheet_num": 1,
-          "seq": 17,
-          "step_code": "Step1_15",
+          "seq": 14,
+          "step_code": "Step1_12",
           "step_title": "Step 1 Drilling (1.80mm)",
           "work_type": "CNC Drilling",
           "tool_name": "1.80mm Carbide Drill",
@@ -667,27 +577,27 @@
           "bed_half": "front",
           "y_shift_mm": 0.0,
           "started_back_same_tool": false,
-          "shift_action": "Slide sheet +145.0mm back along Y-axis ONLY -> FRONT HALF",
-          "gcode_file": "Sheet01_Step1_15_Front_Top_Drills_1.80mm.gcode",
-          "svg_file": "Bed_Sheet01_Op17_Step1_15_top_front_1.80mm_Carbide_Drill.svg",
+          "shift_action": "Stay at FRONT HALF & change drill to 1.80mm (Serpentine: same work, no Y-shift needed!)",
+          "gcode_file": "Sheet01_Step1_12_Front_Top_Drills_1.80mm.gcode",
+          "svg_file": "Bed_Sheet01_Op14_Step1_12_top_front_1.80mm_Carbide_Drill.svg",
           "depth_mm": -1.8,
           "feed_mm_min": 150.0,
           "spindle_rpm": 10000,
           "stats_label": "4 holes @ 1.80mm",
           "bounds_x": [
-            87.3,
-            102.54
+            83.3,
+            98.54
           ],
           "bounds_y": [
-            14.67,
-            14.67
+            95.37,
+            95.37
           ]
         },
         {
-          "op_id": "S01-OP18",
+          "op_id": "S01-OP15",
           "sheet_num": 1,
-          "seq": 18,
-          "step_code": "Step1_16",
+          "seq": 15,
+          "step_code": "Step1_13",
           "step_title": "Step 1 Drilling (3.00mm)",
           "work_type": "CNC Drilling",
           "tool_name": "3.00mm Carbide Drill",
@@ -698,55 +608,25 @@
           "y_shift_mm": 0.0,
           "started_back_same_tool": false,
           "shift_action": "Stay at FRONT HALF & change drill to 3.00mm (Serpentine: same work, no Y-shift needed!)",
-          "gcode_file": "Sheet01_Step1_16_Front_Top_Drills_3.00mm.gcode",
-          "svg_file": "Bed_Sheet01_Op18_Step1_16_top_front_3.00mm_Carbide_Drill.svg",
+          "gcode_file": "Sheet01_Step1_13_Front_Top_Drills_3.00mm.gcode",
+          "svg_file": "Bed_Sheet01_Op15_Step1_13_top_front_3.00mm_Carbide_Drill.svg",
           "depth_mm": -1.8,
           "feed_mm_min": 150.0,
           "spindle_rpm": 10000,
-          "stats_label": "4 holes @ 3.00mm",
+          "stats_label": "7 holes @ 3.00mm",
           "bounds_x": [
-            79.8,
-            120.8
+            75.8,
+            175.75
           ],
           "bounds_y": [
-            15.17,
-            56.17
+            18.0,
+            136.87
           ]
         },
         {
-          "op_id": "S01-OP19",
+          "op_id": "S01-OP16",
           "sheet_num": 1,
-          "seq": 19,
-          "step_code": "Step1_17",
-          "step_title": "Step 1 Drilling (3.00mm)",
-          "work_type": "CNC Drilling",
-          "tool_name": "3.00mm Carbide Drill",
-          "tool_dia_mm": 3.0,
-          "board_side": "top",
-          "mirrored": false,
-          "bed_half": "back",
-          "y_shift_mm": 145.0,
-          "started_back_same_tool": false,
-          "shift_action": "Slide sheet -145.0mm along Y-axis ONLY -> BACK HALF",
-          "gcode_file": "Sheet01_Step1_17_Back_Top_Drills_3.00mm.gcode",
-          "svg_file": "Bed_Sheet01_Op19_Step1_17_top_back_3.00mm_Carbide_Drill.svg",
-          "depth_mm": -1.8,
-          "feed_mm_min": 150.0,
-          "spindle_rpm": 10000,
-          "stats_label": "3 holes @ 3.00mm",
-          "bounds_x": [
-            106.25,
-            128.25
-          ],
-          "bounds_y": [
-            14.5,
-            70.5
-          ]
-        },
-        {
-          "op_id": "S01-OP20",
-          "sheet_num": 1,
-          "seq": 20,
+          "seq": 16,
           "step_code": "Step3A",
           "step_title": "Step 3A: Top Copper Isolation",
           "work_type": "Top Isolation",
@@ -759,54 +639,24 @@
           "started_back_same_tool": false,
           "shift_action": "Mount sheet Top-Side Up at G54 (0,0) FRONT HALF",
           "gcode_file": "Sheet01_Step3A_Front_Top_Copper_Isolation.gcode",
-          "svg_file": "Bed_Sheet01_Op20_Step3A_top_front_30deg_0.2mm_V-Bit.svg",
+          "svg_file": "Bed_Sheet01_Op16_Step3A_top_front_30deg_0.2mm_V-Bit.svg",
           "depth_mm": -0.04,
           "feed_mm_min": 300.0,
           "spindle_rpm": 10000,
-          "stats_label": "68 toolpaths",
+          "stats_label": "291 toolpaths",
           "bounds_x": [
-            23.0,
-            149.46
+            19.0,
+            179.35
           ],
           "bounds_y": [
-            11.24,
-            60.86
+            9.5,
+            141.56
           ]
         },
         {
-          "op_id": "S01-OP21",
+          "op_id": "S01-OP17",
           "sheet_num": 1,
-          "seq": 21,
-          "step_code": "Step3B",
-          "step_title": "Step 3B: Top Copper Isolation",
-          "work_type": "Top Isolation",
-          "tool_name": "30\u00b0 / 0.2mm V-Bit",
-          "tool_dia_mm": 0.2,
-          "board_side": "top",
-          "mirrored": false,
-          "bed_half": "back",
-          "y_shift_mm": 145.0,
-          "started_back_same_tool": false,
-          "shift_action": "Slide sheet -145.0mm along Y-axis ONLY -> BACK HALF",
-          "gcode_file": "Sheet01_Step3B_Back_Top_Copper_Isolation.gcode",
-          "svg_file": "Bed_Sheet01_Op21_Step3B_top_back_30deg_0.2mm_V-Bit.svg",
-          "depth_mm": -0.04,
-          "feed_mm_min": 300.0,
-          "spindle_rpm": 10000,
-          "stats_label": "223 toolpaths",
-          "bounds_x": [
-            24.8,
-            131.85
-          ],
-          "bounds_y": [
-            6.0,
-            133.1
-          ]
-        },
-        {
-          "op_id": "S01-OP22",
-          "sheet_num": 1,
-          "seq": 22,
+          "seq": 17,
           "step_code": "Step4A",
           "step_title": "Step 4A: Bottom Copper Isolation",
           "work_type": "Bottom Isolation",
@@ -819,54 +669,24 @@
           "started_back_same_tool": false,
           "shift_action": "FLIP board horizontally along Y-axis (Left <-> Right) -> FRONT HALF",
           "gcode_file": "Sheet01_Step4A_Front_Bottom_Copper_Isolation.gcode",
-          "svg_file": "Bed_Sheet01_Op22_Step4A_bottom_front_30deg_0.2mm_V-Bit.svg",
+          "svg_file": "Bed_Sheet01_Op17_Step4A_bottom_front_30deg_0.2mm_V-Bit.svg",
           "depth_mm": -0.04,
           "feed_mm_min": 300.0,
           "spindle_rpm": 10000,
-          "stats_label": "46 toolpaths",
+          "stats_label": "180 toolpaths",
           "bounds_x": [
-            60.54,
-            180.21
+            20.65,
+            175.6
           ],
           "bounds_y": [
-            9.93,
-            61.78
+            9.9,
+            142.48
           ]
         },
         {
-          "op_id": "S01-OP23",
+          "op_id": "S01-OP18",
           "sheet_num": 1,
-          "seq": 23,
-          "step_code": "Step4B",
-          "step_title": "Step 4B: Bottom Copper Isolation",
-          "work_type": "Bottom Isolation",
-          "tool_name": "30\u00b0 / 0.2mm V-Bit",
-          "tool_dia_mm": 0.2,
-          "board_side": "bottom",
-          "mirrored": true,
-          "bed_half": "back",
-          "y_shift_mm": 145.0,
-          "started_back_same_tool": false,
-          "shift_action": "Slide flipped sheet -145.0mm along Y-axis ONLY -> BACK HALF",
-          "gcode_file": "Sheet01_Step4B_Back_Bottom_Copper_Isolation.gcode",
-          "svg_file": "Bed_Sheet01_Op23_Step4B_bottom_back_30deg_0.2mm_V-Bit.svg",
-          "depth_mm": -0.04,
-          "feed_mm_min": 300.0,
-          "spindle_rpm": 10000,
-          "stats_label": "134 toolpaths",
-          "bounds_x": [
-            78.15,
-            185.2
-          ],
-          "bounds_y": [
-            10.9,
-            133.1
-          ]
-        },
-        {
-          "op_id": "S01-OP24",
-          "sheet_num": 1,
-          "seq": 24,
+          "seq": 18,
           "step_code": "Step5A",
           "step_title": "Step 5A: Top Mask Clear",
           "work_type": "Solder Mask Clear",
@@ -879,54 +699,24 @@
           "started_back_same_tool": false,
           "shift_action": "Mount sheet Top-Side Up at FRONT HALF & re-zero Z on cured mask (M0)",
           "gcode_file": "Sheet01_Step5A_Front_Top_Mask_Clear.gcode",
-          "svg_file": "Bed_Sheet01_Op24_Step5A_top_front_0.4mm_Flat_Endmill_V-Bit.svg",
+          "svg_file": "Bed_Sheet01_Op18_Step5A_top_front_0.4mm_Flat_Endmill_V-Bit.svg",
           "depth_mm": -0.06,
           "feed_mm_min": 300.0,
           "spindle_rpm": 10000,
-          "stats_label": "60 toolpaths",
+          "stats_label": "165 toolpaths",
           "bounds_x": [
-            31.04,
-            149.51
+            27.04,
+            173.99
           ],
           "bounds_y": [
-            11.14,
-            59.52
+            15.4,
+            140.22
           ]
         },
         {
-          "op_id": "S01-OP25",
+          "op_id": "S01-OP19",
           "sheet_num": 1,
-          "seq": 25,
-          "step_code": "Step5B",
-          "step_title": "Step 5B: Top Mask Clear",
-          "work_type": "Solder Mask Clear",
-          "tool_name": "0.4mm Flat Endmill / V-Bit",
-          "tool_dia_mm": 0.4,
-          "board_side": "top",
-          "mirrored": false,
-          "bed_half": "back",
-          "y_shift_mm": 145.0,
-          "started_back_same_tool": false,
-          "shift_action": "Slide sheet -145.0mm along Y-axis ONLY -> BACK HALF (Top Mask)",
-          "gcode_file": "Sheet01_Step5B_Back_Top_Mask_Clear.gcode",
-          "svg_file": "Bed_Sheet01_Op25_Step5B_top_back_0.4mm_Flat_Endmill_V-Bit.svg",
-          "depth_mm": -0.06,
-          "feed_mm_min": 300.0,
-          "spindle_rpm": 10000,
-          "stats_label": "105 toolpaths",
-          "bounds_x": [
-            29.2,
-            126.49
-          ],
-          "bounds_y": [
-            16.4,
-            128.5
-          ]
-        },
-        {
-          "op_id": "S01-OP26",
-          "sheet_num": 1,
-          "seq": 26,
+          "seq": 19,
           "step_code": "Step5C",
           "step_title": "Step 5C: Bottom Mask Clear",
           "work_type": "Solder Mask Clear",
@@ -939,54 +729,24 @@
           "started_back_same_tool": false,
           "shift_action": "FLIP board horizontally along Y-axis -> FRONT HALF & re-zero Z on bottom mask (M0)",
           "gcode_file": "Sheet01_Step5C_Front_Bottom_Mask_Clear.gcode",
-          "svg_file": "Bed_Sheet01_Op26_Step5C_bottom_front_0.4mm_Flat_Endmill_V-Bit.svg",
+          "svg_file": "Bed_Sheet01_Op19_Step5C_bottom_front_0.4mm_Flat_Endmill_V-Bit.svg",
           "depth_mm": -0.06,
           "feed_mm_min": 300.0,
           "spindle_rpm": 10000,
-          "stats_label": "60 toolpaths",
+          "stats_label": "161 toolpaths",
           "bounds_x": [
-            60.49,
-            178.96
+            26.01,
+            172.96
           ],
           "bounds_y": [
-            11.14,
-            59.52
+            15.4,
+            140.22
           ]
         },
         {
-          "op_id": "S01-OP27",
+          "op_id": "S01-OP20",
           "sheet_num": 1,
-          "seq": 27,
-          "step_code": "Step5D",
-          "step_title": "Step 5D: Bottom Mask Clear",
-          "work_type": "Solder Mask Clear",
-          "tool_name": "0.4mm Flat Endmill / V-Bit",
-          "tool_dia_mm": 0.4,
-          "board_side": "bottom",
-          "mirrored": true,
-          "bed_half": "back",
-          "y_shift_mm": 145.0,
-          "started_back_same_tool": false,
-          "shift_action": "Slide flipped sheet -145.0mm along Y-axis ONLY -> BACK HALF (Bottom Mask)",
-          "gcode_file": "Sheet01_Step5D_Back_Bottom_Mask_Clear.gcode",
-          "svg_file": "Bed_Sheet01_Op27_Step5D_bottom_back_0.4mm_Flat_Endmill_V-Bit.svg",
-          "depth_mm": -0.06,
-          "feed_mm_min": 300.0,
-          "spindle_rpm": 10000,
-          "stats_label": "101 toolpaths",
-          "bounds_x": [
-            83.51,
-            180.8
-          ],
-          "bounds_y": [
-            16.4,
-            128.5
-          ]
-        },
-        {
-          "op_id": "S01-OP28",
-          "sheet_num": 1,
-          "seq": 28,
+          "seq": 20,
           "step_code": "Step6A",
           "step_title": "Step 6A: Top Silkscreen (Front)",
           "work_type": "Inkjet Silkscreen",
@@ -999,54 +759,24 @@
           "started_back_same_tool": false,
           "shift_action": "Load sheet TOP side up (FRONT half) on flatbed printer",
           "gcode_file": "Sheet01_Step6A_Front_Top_Silkscreen_Inkjet.json",
-          "svg_file": "Bed_Sheet01_Op28_Step6A_top_front_STM32_UV_Inkjet_600_DPI.svg",
+          "svg_file": "Bed_Sheet01_Op20_Step6A_top_front_STM32_UV_Inkjet_600_DPI.svg",
           "depth_mm": 0.0,
           "feed_mm_min": 2400.0,
           "spindle_rpm": 85,
-          "stats_label": "161 silkscreen paths @ 600 DPI",
+          "stats_label": "301 silkscreen paths @ 600 DPI",
           "bounds_x": [
-            30.56,
-            150.14
+            26.56,
+            176.33
           ],
           "bounds_y": [
-            7.13,
-            62.4
+            9.84,
+            143.1
           ]
         },
         {
-          "op_id": "S01-OP29",
+          "op_id": "S01-OP21",
           "sheet_num": 1,
-          "seq": 29,
-          "step_code": "Step6B",
-          "step_title": "Step 6B: Top Silkscreen (Back)",
-          "work_type": "Inkjet Silkscreen",
-          "tool_name": "STM32 UV Inkjet (600 DPI)",
-          "tool_dia_mm": 0.05,
-          "board_side": "top",
-          "mirrored": false,
-          "bed_half": "back",
-          "y_shift_mm": 145.0,
-          "started_back_same_tool": false,
-          "shift_action": "Load sheet TOP side up (BACK half) on flatbed printer",
-          "gcode_file": "Sheet01_Step6B_Back_Top_Silkscreen_Inkjet.json",
-          "svg_file": "Bed_Sheet01_Op29_Step6B_top_back_STM32_UV_Inkjet_600_DPI.svg",
-          "depth_mm": 0.0,
-          "feed_mm_min": 2400.0,
-          "spindle_rpm": 85,
-          "stats_label": "140 silkscreen paths @ 600 DPI",
-          "bounds_x": [
-            27.52,
-            128.84
-          ],
-          "bounds_y": [
-            14.83,
-            131.99
-          ]
-        },
-        {
-          "op_id": "S01-OP30",
-          "sheet_num": 1,
-          "seq": 30,
+          "seq": 21,
           "step_code": "Step7A",
           "step_title": "Step 7A: Top Endmill Cutout",
           "work_type": "Cutout & Breakaway",
@@ -1059,54 +789,24 @@
           "started_back_same_tool": false,
           "shift_action": "Mount Top-Side Up at FRONT HALF (Y=0 datum) with 1.0mm Endmill",
           "gcode_file": "Sheet01_Step7A_Front_Top_Snap_Cutout.gcode",
-          "svg_file": "Bed_Sheet01_Op30_Step7A_top_front_1.0mm_Corn_Endmill.svg",
+          "svg_file": "Bed_Sheet01_Op21_Step7A_top_front_1.0mm_Corn_Endmill.svg",
           "depth_mm": -0.85,
           "feed_mm_min": 200.0,
           "spindle_rpm": 10000,
-          "stats_label": "11 cut segments",
+          "stats_label": "33 cut segments",
           "bounds_x": [
-            22.0,
-            154.25
+            18.0,
+            179.75
           ],
           "bounds_y": [
             8.5,
-            64.75
+            145.45
           ]
         },
         {
-          "op_id": "S01-OP31",
+          "op_id": "S01-OP22",
           "sheet_num": 1,
-          "seq": 31,
-          "step_code": "Step7B",
-          "step_title": "Step 7B: Top Endmill Cutout",
-          "work_type": "Cutout & Breakaway",
-          "tool_name": "1.0mm Corn Endmill",
-          "tool_dia_mm": 1.0,
-          "board_side": "top",
-          "mirrored": false,
-          "bed_half": "back",
-          "y_shift_mm": 145.0,
-          "started_back_same_tool": false,
-          "shift_action": "Slide sheet -145.0mm along Y-axis ONLY -> BACK HALF",
-          "gcode_file": "Sheet01_Step7B_Back_Top_Snap_Cutout.gcode",
-          "svg_file": "Bed_Sheet01_Op31_Step7B_top_back_1.0mm_Corn_Endmill.svg",
-          "depth_mm": -0.85,
-          "feed_mm_min": 200.0,
-          "spindle_rpm": 10000,
-          "stats_label": "18 cut segments",
-          "bounds_x": [
-            24.0,
-            132.25
-          ],
-          "bounds_y": [
-            5.0,
-            134.2
-          ]
-        },
-        {
-          "op_id": "S01-OP32",
-          "sheet_num": 1,
-          "seq": 32,
+          "seq": 22,
           "step_code": "Step7C",
           "step_title": "Step 7C: Top V-Bit Breakaway Score",
           "work_type": "Cutout & Breakaway",
@@ -1119,54 +819,24 @@
           "started_back_same_tool": false,
           "shift_action": "Mount 30\u00b0 V-Bit & return to FRONT HALF (Y=0 datum)",
           "gcode_file": "Sheet01_Step7C_Front_Top_VBit_Score.gcode",
-          "svg_file": "Bed_Sheet01_Op32_Step7C_top_front_30deg_V-Bit_Score.svg",
+          "svg_file": "Bed_Sheet01_Op22_Step7C_top_front_30deg_V-Bit_Score.svg",
           "depth_mm": -0.85,
           "feed_mm_min": 220.0,
           "spindle_rpm": 10000,
-          "stats_label": "2 cut segments",
+          "stats_label": "6 cut segments",
           "bounds_x": [
-            27.0,
-            27.0
+            23.0,
+            171.23
           ],
           "bounds_y": [
-            25.75,
-            47.5
+            13.5,
+            128.2
           ]
         },
         {
-          "op_id": "S01-OP33",
+          "op_id": "S01-OP23",
           "sheet_num": 1,
-          "seq": 33,
-          "step_code": "Step7D",
-          "step_title": "Step 7D: Top V-Bit Breakaway Score",
-          "work_type": "Cutout & Breakaway",
-          "tool_name": "30\u00b0 V-Bit (Score)",
-          "tool_dia_mm": 0.2,
-          "board_side": "top",
-          "mirrored": false,
-          "bed_half": "back",
-          "y_shift_mm": 145.0,
-          "started_back_same_tool": false,
-          "shift_action": "Slide sheet -145.0mm along Y-axis ONLY -> BACK HALF",
-          "gcode_file": "Sheet01_Step7D_Back_Top_VBit_Score.gcode",
-          "svg_file": "Bed_Sheet01_Op33_Step7D_top_back_30deg_V-Bit_Score.svg",
-          "depth_mm": -0.85,
-          "feed_mm_min": 220.0,
-          "spindle_rpm": 10000,
-          "stats_label": "4 cut segments",
-          "bounds_x": [
-            48.57,
-            123.73
-          ],
-          "bounds_y": [
-            10.0,
-            10.0
-          ]
-        },
-        {
-          "op_id": "S01-OP34",
-          "sheet_num": 1,
-          "seq": 34,
+          "seq": 23,
           "step_code": "Step7E",
           "step_title": "Step 7E: Bottom Endmill Cutout (Mirrored)",
           "work_type": "Cutout & Breakaway",
@@ -1179,54 +849,24 @@
           "started_back_same_tool": false,
           "shift_action": "FLIP board horizontally along Y-axis -> FRONT HALF (Mirrored X) with 1.0mm Endmill",
           "gcode_file": "Sheet01_Step7E_Front_Bottom_Snap_Cutout.gcode",
-          "svg_file": "Bed_Sheet01_Op34_Step7E_bottom_front_1.0mm_Corn_Endmill.svg",
+          "svg_file": "Bed_Sheet01_Op23_Step7E_bottom_front_1.0mm_Corn_Endmill.svg",
           "depth_mm": -0.85,
           "feed_mm_min": 200.0,
           "spindle_rpm": 10000,
-          "stats_label": "11 cut segments",
+          "stats_label": "33 cut segments",
           "bounds_x": [
-            55.75,
-            188.0
+            20.25,
+            182.0
           ],
           "bounds_y": [
             8.5,
-            64.75
+            145.45
           ]
         },
         {
-          "op_id": "S01-OP35",
+          "op_id": "S01-OP24",
           "sheet_num": 1,
-          "seq": 35,
-          "step_code": "Step7F",
-          "step_title": "Step 7F: Bottom Endmill Cutout (Mirrored)",
-          "work_type": "Cutout & Breakaway",
-          "tool_name": "1.0mm Corn Endmill",
-          "tool_dia_mm": 1.0,
-          "board_side": "bottom",
-          "mirrored": true,
-          "bed_half": "back",
-          "y_shift_mm": 145.0,
-          "started_back_same_tool": false,
-          "shift_action": "Slide flipped sheet -145.0mm along Y-axis ONLY -> BACK HALF (Mirrored X)",
-          "gcode_file": "Sheet01_Step7F_Back_Bottom_Snap_Cutout.gcode",
-          "svg_file": "Bed_Sheet01_Op35_Step7F_bottom_back_1.0mm_Corn_Endmill.svg",
-          "depth_mm": -0.85,
-          "feed_mm_min": 200.0,
-          "spindle_rpm": 10000,
-          "stats_label": "18 cut segments",
-          "bounds_x": [
-            77.75,
-            186.0
-          ],
-          "bounds_y": [
-            5.0,
-            134.2
-          ]
-        },
-        {
-          "op_id": "S01-OP36",
-          "sheet_num": 1,
-          "seq": 36,
+          "seq": 24,
           "step_code": "Step7G",
           "step_title": "Step 7G: Bottom V-Bit Score (Mirrored)",
           "work_type": "Cutout & Breakaway",
@@ -1239,52 +879,22 @@
           "started_back_same_tool": false,
           "shift_action": "Mount 30\u00b0 V-Bit at FRONT HALF (Bottom Side Mirrored X)",
           "gcode_file": "Sheet01_Step7G_Front_Bottom_VBit_Score.gcode",
-          "svg_file": "Bed_Sheet01_Op36_Step7G_bottom_front_30deg_V-Bit_Score.svg",
+          "svg_file": "Bed_Sheet01_Op24_Step7G_bottom_front_30deg_V-Bit_Score.svg",
           "depth_mm": -0.85,
           "feed_mm_min": 220.0,
           "spindle_rpm": 10000,
-          "stats_label": "2 cut segments",
+          "stats_label": "6 cut segments",
           "bounds_x": [
-            183.0,
-            183.0
+            28.77,
+            177.0
           ],
           "bounds_y": [
-            25.75,
-            47.5
-          ]
-        },
-        {
-          "op_id": "S01-OP37",
-          "sheet_num": 1,
-          "seq": 37,
-          "step_code": "Step7H",
-          "step_title": "Step 7H: Bottom V-Bit Score (Mirrored)",
-          "work_type": "Cutout & Breakaway",
-          "tool_name": "30\u00b0 V-Bit (Score)",
-          "tool_dia_mm": 0.2,
-          "board_side": "bottom",
-          "mirrored": true,
-          "bed_half": "back",
-          "y_shift_mm": 145.0,
-          "started_back_same_tool": false,
-          "shift_action": "Slide flipped sheet -145.0mm along Y-axis ONLY -> BACK HALF (Mirrored X)",
-          "gcode_file": "Sheet01_Step7H_Back_Bottom_VBit_Score.gcode",
-          "svg_file": "Bed_Sheet01_Op37_Step7H_bottom_back_30deg_V-Bit_Score.svg",
-          "depth_mm": -0.85,
-          "feed_mm_min": 220.0,
-          "spindle_rpm": 10000,
-          "stats_label": "4 cut segments",
-          "bounds_x": [
-            86.27,
-            161.43
-          ],
-          "bounds_y": [
-            10.0,
-            10.0
+            13.5,
+            128.2
           ]
         }
       ]
     }
   ],
-  "generated_files_count": 39
+  "generated_files_count": 26
 }

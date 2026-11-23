@@ -49,6 +49,12 @@ import email
 import email.policy
 import uuid
 import time
+import socket
+import base64
+import hashlib
+import struct
+import queue
+import threading
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape as svg_escape
 from dataclasses import dataclass
@@ -1120,24 +1126,28 @@ class A4Panelizer:
         self.bed_travel_x = float(cnc.get("bed_travel_x_mm", 275.0))
         self.bed_milling_x = float(cnc.get("bed_milling_x_mm", 260.0))
         self.bed_travel_y = float(cnc.get("bed_travel_y_mm", 170.0))
+        self.bed_milling_y = float(cnc.get("bed_milling_y_mm", 165.0))
+        self.auto_y_split = bool(cnc.get("auto_y_split", True))
         self.left_margin = float(cnc.get("left_margin_guide_width_mm", 18.0))
         self.right_margin = float(cnc.get("right_margin_mm", 5.0))
 
-        # Clamp y_split safely to machine bed travel for Y-only shifting
+        # Clamp y_split safely to machine milling Y travel (0..165mm) for Y-only shifting
         raw_split = float(cnc.get("y_split_threshold_mm", y_split))
-        if self.sheet_h > self.bed_travel_y:
-            max_safe_split = self.bed_travel_y - 5.0
-            min_safe_split = max(0.0, self.sheet_h - self.bed_travel_y)
-            self.y_split = max(min_safe_split, min(raw_split, max_safe_split))
+        if self.sheet_h > self.bed_milling_y:
+            self.max_safe_split = self.bed_milling_y
+            self.min_safe_split = max(0.0, self.sheet_h - self.bed_milling_y)
+            self.y_split = max(self.min_safe_split, min(raw_split, self.max_safe_split))
         else:
+            self.max_safe_split = self.sheet_h
+            self.min_safe_split = 0.0
             self.y_split = raw_split
 
         self.front_min_y = float(cnc.get("front_half_min_y_mm", 8.5))
-        self.front_max_y = min(float(cnc.get("front_half_max_y_mm", 141.5)), self.y_split - 3.0)
-        self.back_min_y = max(float(cnc.get("back_half_min_y_mm", 150.0)), self.y_split + 4.0)
+        self.front_max_y = min(float(cnc.get("front_half_max_y_mm", 160.0)), self.bed_milling_y - 3.0)
+        self.back_min_y = max(float(cnc.get("back_half_min_y_mm", 135.0)), self.y_split + 3.0)
         self.back_max_y = min(
             float(cnc.get("back_half_max_y_mm", self.sheet_h - 5.0)),
-            self.y_split + self.bed_travel_y - 5.0,
+            self.y_split + self.bed_milling_y - 3.0,
             self.sheet_h - 5.0,
         )
 
@@ -1180,12 +1190,27 @@ class A4Panelizer:
 
     def _pack_half(self, units_to_pack: List[Dict], start_idx: int, active_color: str,
                    y_min: float, y_max: float, sheet_idx: int) -> Tuple[List[PlacedUnit], int]:
+        """2D Bottom-Left-Fill (BLF) packer: minimizes copper waste while enforcing board_gap_mm & clamps."""
         placed: List[PlacedUnit] = []
         idx = start_idx
         max_x = min(self.sheet_w - self.right_margin, self.bed_milling_x)
-        curr_x = self.left_margin
-        curr_y = y_min
-        row_h = 0.0
+        gap = self.board_gap
+
+        def _overlaps_placed(x: float, y: float, w: float, h: float) -> bool:
+            for u in placed:
+                if not (x + w + gap <= u.x + 1e-4 or u.x + u.w + gap <= x + 1e-4 or
+                        y + h + gap <= u.y + 1e-4 or u.y + u.h + gap <= y + 1e-4):
+                    return True
+            return False
+
+        front_span = max(0.0, self.y_split - self.front_min_y)
+        back_span = max(0.0, self.back_max_y - self.y_split)
+
+        def _valid_y_split(y: float, h: float, allow_straddle: bool) -> bool:
+            if allow_straddle:
+                return True
+            # Must sit strictly in Front Position (<= y_split) OR strictly in Back Position (>= y_split)
+            return (y + h <= self.y_split + 1e-6) or (y >= self.y_split - 1e-6)
 
         while idx < len(units_to_pack):
             item = units_to_pack[idx]
@@ -1193,68 +1218,72 @@ class A4Panelizer:
             if self.strict_color and p.solder_mask_color != active_color:
                 break
 
-            chosen = None
             cands = self._candidate_rotations(p)
-
-            # 1. Try current cursor (curr_x, curr_y), and if blocked, scan X on current row
             min_cand_w = min(self._get_dims_for_rot(p, r)[0] for r in cands)
             min_cand_h = min(self._get_dims_for_rot(p, r)[1] for r in cands)
-            scan_x = curr_x
-            while scan_x + min_cand_w <= max_x + 1e-6:
-                for rot in cands:
-                    u_w, u_h = self._get_dims_for_rot(p, rot)
-                    if self._fits_at(scan_x, curr_y, u_w, u_h, max_x, y_max):
-                        curr_x = scan_x
-                        chosen = (rot, u_w, u_h)
-                        break
-                if chosen is not None:
+            # Only allow straddling y_split if the individual PCB cannot fit in a single portion
+            can_fit_single = any(
+                self._get_dims_for_rot(p, r)[1] <= max(front_span, back_span) + 1e-6
+                for r in cands
+            )
+            allow_straddle = not can_fit_single
+
+            # Candidate coordinates: exact edges of placed boards + y_split + clamp-bypass grid
+            xs_set = {round(self.left_margin, 3)}
+            ys_set = {round(y_min, 3), round(self.y_split, 3)}
+            for u in placed:
+                xs_set.add(round(u.x + u.w + gap, 3))
+                ys_set.add(round(u.y + u.h + gap, 3))
+            # Add 4mm coarse fallback points so boards can jump past corner clamps
+            gx = self.left_margin
+            while gx + min_cand_w <= max_x + 1e-6:
+                xs_set.add(round(gx, 3))
+                gx += 4.0
+            gy = y_min
+            while gy + min_cand_h <= y_max + 1e-6:
+                ys_set.add(round(gy, 3))
+                gy += 4.0
+
+            cand_xs = sorted(x for x in xs_set if self.left_margin - 1e-6 <= x <= max_x - min_cand_w + 1e-6)
+            cand_ys = sorted(y for y in ys_set if y_min - 1e-6 <= y <= y_max - min_cand_h + 1e-6)
+
+            best = None  # (score_tuple, x, y, rot, u_w, u_h)
+            for cy in cand_ys:
+                if best is not None and cy > best[0][0] + 1e-3:
                     break
-                scan_x += 2.0
+                for cx in cand_xs:
+                    for rot in cands:
+                        u_w, u_h = self._get_dims_for_rot(p, rot)
+                        if (
+                            _valid_y_split(cy, u_h, allow_straddle)
+                            and not _overlaps_placed(cx, cy, u_w, u_h)
+                            and self._fits_at(cx, cy, u_w, u_h, max_x, y_max)
+                        ):
+                            score = (round(cy, 3), round(cy + u_h, 3), round(cx, 3))
+                            if best is None or score < best[0]:
+                                best = (score, cx, cy, rot, u_w, u_h)
 
-            # 2. Wrap to next shelf row(s) inside the same half, scanning Y & X around any clamps
-            if chosen is None:
-                next_y = curr_y + (row_h if row_h > 0.0 else 2.0) + self.board_gap
-                while next_y + min_cand_h <= y_max + 1e-6:
-                    scan_x = self.left_margin
-                    while scan_x + min_cand_w <= max_x + 1e-6:
-                        for rot in cands:
-                            u_w, u_h = self._get_dims_for_rot(p, rot)
-                            if self._fits_at(scan_x, next_y, u_w, u_h, max_x, y_max):
-                                curr_x = scan_x
-                                curr_y = next_y
-                                row_h = 0.0
-                                chosen = (rot, u_w, u_h)
-                                break
-                        if chosen is not None:
-                            break
-                        scan_x += 2.0
-                    if chosen is not None:
-                        break
-                    next_y += 2.0
-
-            if chosen is None:
+            if best is None:
                 break
 
-            rot, u_w, u_h = chosen
+            _, bx, by, rot, u_w, u_h = best
             u = PlacedUnit(
                 project=p, unit_id=item["unit_id"],
-                x=curr_x, y=curr_y, w=u_w, h=u_h,
+                x=bx, y=by, w=u_w, h=u_h,
                 rotation_deg=rot, tab_w=self.tab_w, sheet_idx=sheet_idx,
                 engrave_both_sides=self.engrave_both, engrave_arrow=self.engrave_arrow,
                 breakaway_cfg=self.breakaway_cfg,
             )
             placed.append(u)
-            curr_x += u_w + self.board_gap
-            row_h = max(row_h, u_h)
             idx += 1
 
         return placed, idx
 
     def pack_projects(self, projects: List[ProjectInfo], layer_cache: LayerGeometryCache) -> List[List[PlacedUnit]]:
         if self.group_by_color:
-            projects_sorted = sorted(projects, key=lambda p: (p.solder_mask_color, -p.quantity))
+            projects_sorted = sorted(projects, key=lambda p: (p.solder_mask_color, -(p.width * p.height)))
         else:
-            projects_sorted = sorted(projects, key=lambda p: -p.quantity)
+            projects_sorted = sorted(projects, key=lambda p: -(p.width * p.height))
 
         units_to_pack = []
         for p in projects_sorted:
@@ -1268,16 +1297,12 @@ class A4Panelizer:
             sheet_idx = len(sheets)
             active_color = units_to_pack[idx]["project"].solder_mask_color
 
-            # 1. Always pack & route Front Half first
-            front_units, idx = self._pack_half(
-                units_to_pack, idx, active_color, self.front_min_y, self.front_max_y, sheet_idx
-            )
-            # 2. Then pack Back Half (reached by Y-axis-only sheet shift)
-            back_units, idx = self._pack_half(
-                units_to_pack, idx, active_color, self.back_min_y, self.back_max_y, sheet_idx
+            # Pack across full sheet [front_min_y, back_max_y]; designs may span across y_split
+            # since every G-code step splits polylines & drills cleanly at y = y_split (0..165mm bed travel).
+            sheet_units, idx = self._pack_half(
+                units_to_pack, idx, active_color, self.front_min_y, self.back_max_y, sheet_idx
             )
 
-            sheet_units = front_units + back_units
             if sheet_units:
                 sheets.append(sheet_units)
             else:
@@ -1293,12 +1318,19 @@ class A4Panelizer:
 # Left Alignment Guides & Front-Corner Sheet Tag Generator
 # ---------------------------------------------------------------------------
 
+def _make_cal_circle_poly(cx: float, cy: float, radius: float = 1.0, segs: int = 20) -> List[Tuple[float, float]]:
+    return [
+        (round(cx + radius * math.cos(2.0 * math.pi * i / segs), 3),
+         round(cy + radius * math.sin(2.0 * math.pi * i / segs), 3))
+        for i in range(segs + 1)
+    ]
+
+
 def generate_left_guides(sheet_w=210.0, sheet_h=297.0, margin_w=18.0, y_shift=145.0,
                          enable_dowel_pins: bool = False, mirrored_x: bool = False):
     """
-    Step 0: Margin Alignment Guides, Millimeter Scale & Shift Datum Line.
-    - When enable_dowel_pins=False (default per config), zero 3mm dowel pin holes are emitted.
-    - When mirrored_x=True, geometry sits on the opposite X margin while keeping all labels UPRIGHT.
+    Step 0: Simplified Fast Alignment Arrows (Both Left & Right edges facing OUTSIDE at y_shift)
+    + 4-Side Calibration Circles + 2x Left & 2x Right Alignment Drill Points.
     """
     front_lines = []
     front_texts = []
@@ -1308,38 +1340,37 @@ def generate_left_guides(sheet_w=210.0, sheet_h=297.0, margin_w=18.0, y_shift=14
     back_texts = []
     back_pins = []
 
-    x_guide = (sheet_w - 12.0) if mirrored_x else 12.0
-    tick_dir = 1.0 if mirrored_x else -1.0
+    # 1. Alignment Arrows at y = y_shift on BOTH Left & Right edges facing OUTSIDE (-X on left, +X on right)
+    # Left arrow (x=18.0 -> 13.5, clear of 13.0mm clamp keep-out)
+    lx_tail, lx_tip = 18.0, 13.5
+    front_lines.append([(lx_tail, y_shift), (lx_tip, y_shift)])
+    front_lines.append([(lx_tip + 1.5, y_shift + 1.4), (lx_tip, y_shift), (lx_tip + 1.5, y_shift - 1.4)])
 
-    front_lines.append([(x_guide, 0.0), (x_guide, y_shift)])
-    back_lines.append([(x_guide, y_shift), (x_guide, sheet_h)])
+    # Right arrow (x=sheet_w-18.0 -> sheet_w-13.5, facing +X outside)
+    rx_tail, rx_tip = sheet_w - 18.0, sheet_w - 13.5
+    front_lines.append([(rx_tail, y_shift), (rx_tip, y_shift)])
+    front_lines.append([(rx_tip - 1.5, y_shift + 1.4), (rx_tip, y_shift), (rx_tip - 1.5, y_shift - 1.4)])
 
-    for y in range(0, int(sheet_h) + 1, 5):
-        tick_len = 5.0 if (y % 50 == 0) else (3.5 if (y % 10 == 0) else 2.0)
-        seg = [(x_guide, float(y)), (x_guide + tick_dir * tick_len, float(y))]
-        txt_x = (x_guide + 4.2) if mirrored_x else 2.0
-        if y <= y_shift:
-            front_lines.append(seg)
-            if y % 50 == 0 and y > 0:
-                front_texts.extend(text_to_polylines(f"{y}", txt_x, float(y) - 1.0, char_h=2.0, char_w=1.2))
-        else:
-            back_lines.append(seg)
-            if y % 50 == 0:
-                back_texts.extend(text_to_polylines(f"{y}", txt_x, float(y) - 1.0, char_h=2.0, char_w=1.2))
+    # 2. 4-Side Calibration Circles (2.0mm dia) at safe clamp-free positions (Front-L, Front-R, Back-L, Back-R)
+    front_cal_pts = [(16.0, 28.0), (sheet_w - 16.0, 28.0)]
+    for cx, cy in front_cal_pts:
+        px = (sheet_w - cx) if mirrored_x else cx
+        front_lines.append(_make_cal_circle_poly(px, cy, radius=1.0))
 
-    # Y-Shift Datum Line (at y_shift, engraved in front setup)
-    if mirrored_x:
-        front_lines.append([(sheet_w - margin_w, y_shift), (sheet_w, y_shift)])
-        front_texts.extend(text_to_polylines(f"Y{int(round(y_shift))} SHIFT", sheet_w - margin_w + 1.0, y_shift - 4.0, char_h=2.2, char_w=1.2))
-    else:
-        front_lines.append([(0.0, y_shift), (margin_w, y_shift)])
-        front_texts.extend(text_to_polylines(f"Y{int(round(y_shift))} SHIFT", 1.5, y_shift - 4.0, char_h=2.2, char_w=1.2))
+    back_cal_pts = [(16.0, y_shift + 22.0), (sheet_w - 16.0, y_shift + 22.0)]
+    for cx, cy in back_cal_pts:
+        px = (sheet_w - cx) if mirrored_x else cx
+        back_lines.append(_make_cal_circle_poly(px, cy, radius=1.0))
 
-    # Optional Reference Dowel Pin Holes (only generated when enable_dowel_pin_lock=true in config)
-    if enable_dowel_pins:
-        px_pin = (sheet_w - 6.0) if mirrored_x else 6.0
-        front_pins.append((px_pin, 25.0))
-        back_pins.append((px_pin, y_shift + 25.0))
+    # 3. 2 Alignment Drill Points on BOTH Left & Right sides (Front & Back)
+    front_align_drills = [(15.5, 36.0), (sheet_w - 15.5, 36.0)]
+    back_align_drills = [(15.5, y_shift + 30.0), (sheet_w - 15.5, y_shift + 30.0)]
+    for cx, cy in front_align_drills:
+        px = (sheet_w - cx) if mirrored_x else cx
+        front_pins.append((px, cy))
+    for cx, cy in back_align_drills:
+        px = (sheet_w - cx) if mirrored_x else cx
+        back_pins.append((px, cy))
 
     return {
         "lines": front_lines + back_lines,
@@ -1351,7 +1382,7 @@ def generate_left_guides(sheet_w=210.0, sheet_h=297.0, margin_w=18.0, y_shift=14
         "back_lines": back_lines,
         "back_texts": back_texts,
         "back_pin_holes": back_pins,
-        "pin_dia": 3.0 if enable_dowel_pins else 0.0,
+        "pin_dia": 1.0,
         "enable_dowel_pins": enable_dowel_pins,
     }
 
@@ -2752,10 +2783,11 @@ class ManufacturingPipeline:
         cnc = config.get("cnc_limits", {})
         self.bed_travel_x = float(cnc.get("bed_travel_x_mm", 275.0))
         self.bed_travel_y = float(cnc.get("bed_travel_y_mm", 170.0))
+        self.bed_milling_y = float(cnc.get("bed_milling_y_mm", 165.0))
         self.left_margin = float(cnc.get("left_margin_guide_width_mm", 18.0))
         raw_split = float(cnc.get("y_split_threshold_mm", 145.0))
-        if self.sheet_h > self.bed_travel_y:
-            self.y_split = max(max(0.0, self.sheet_h - self.bed_travel_y), min(raw_split, self.bed_travel_y - 5.0))
+        if self.sheet_h > self.bed_milling_y:
+            self.y_split = max(max(0.0, self.sheet_h - self.bed_milling_y), min(raw_split, self.bed_milling_y))
         else:
             self.y_split = raw_split
 
@@ -3219,6 +3251,17 @@ class ManufacturingPipeline:
                 else:
                     tool_drills_back.setdefault(mb_dia, []).append((bx, by - self.y_split))
 
+        # Add 2 alignment drill points on both Left & Right sides (Front & Back)
+        align_guides = generate_left_guides(
+            self.sheet_w, self.sheet_h, margin_w=self.left_margin, y_shift=self.y_split,
+            enable_dowel_pins=self.enable_dowel_pin_lock, mirrored_x=False,
+        )
+        align_dia = float(align_guides.get("pin_dia", 1.0) or 1.0)
+        for (ax, ay) in align_guides.get("front_pin_holes", []):
+            tool_drills_front.setdefault(align_dia, []).append((ax, ay))
+        for (ax, ay) in align_guides.get("back_pin_holes", []):
+            tool_drills_back.setdefault(align_dia, []).append((ax, ay - self.y_split))
+
         all_tools = sorted(list(set(list(tool_drills_front.keys()) + list(tool_drills_back.keys()))))
         all_front_flat = [pt for d_pts in tool_drills_front.values() for pt in d_pts]
         all_back_flat = [pt for d_pts in tool_drills_back.values() for pt in d_pts]
@@ -3599,39 +3642,34 @@ class ManufacturingPipeline:
     def _generate_step7_snapable_cutout(self, sheet_num, units):
         """
         Step 7: Dual-Sided Snapable Perimeter & Breakaway Cutouts.
-        Executes ENTIRE Top Side (Endmill Front -> Back, then V-Bit Score Front -> Back)
-        before flipping once horizontally along Y-axis for Bottom Side (Endmill & V-Bit Score).
+        Splits all perimeter edges, slots, and V-bit scores across y = y_split so
+        PCBs shared across Front and Back positions are cut cleanly in both setups.
         """
         depth_per_side = self.breakaway_cfg.milling_cut_depth_per_side_mm
-        front_units = [u for u in units if u.y + u.h <= self.y_split + 1e-6]
-        back_units = [u for u in units if u.y >= self.y_split - 1e-6]
+        front_mill: List[Tuple[List[Tuple[float, float]], float]] = []
+        back_mill: List[Tuple[List[Tuple[float, float]], float]] = []
+        front_vbit: List[Tuple[List[Tuple[float, float]], float]] = []
+        back_vbit: List[Tuple[List[Tuple[float, float]], float]] = []
 
-        def collect_half_ops(half_units: List[PlacedUnit], is_back: bool) -> Tuple[List[Tuple[List[Tuple[float, float]], float]], List[Tuple[List[Tuple[float, float]], float]]]:
-            y_off = self.y_split if is_back else 0.0
-            mill_ops: List[Tuple[List[Tuple[float, float]], float]] = []
-            vbit_ops: List[Tuple[List[Tuple[float, float]], float]] = []
-            if not half_units:
-                return mill_ops, vbit_ops
+        def _route_seg(seg: List[Tuple[float, float]], z_d: float, f_dst, b_dst):
+            f_segs, b_segs = _split_polyline_by_y(seg, self.y_split)
+            for fs in f_segs:
+                f_dst.append((fs, z_d))
+            for bs in b_segs:
+                b_dst.append((bs, z_d))
 
-            perim_segs = _deduplicate_and_tab_perimeter_edges(half_units, y_off, bridge_tab_len=3.0)
+        perim_segs = _deduplicate_and_tab_perimeter_edges(units, 0.0, bridge_tab_len=3.0)
+        for seg in perim_segs:
             if self.breakaway_cfg.mode == "v_bit_only":
-                for seg in perim_segs:
-                    vbit_ops.append((seg, depth_per_side))
+                _route_seg(seg, depth_per_side, front_vbit, back_vbit)
             else:
-                for seg in perim_segs:
-                    mill_ops.append((seg, depth_per_side))
+                _route_seg(seg, depth_per_side, front_mill, back_mill)
 
-            for u in half_units:
-                for sl in u.milling_slot_segs:
-                    pts = [(p[0], p[1] - y_off) for p in sl["pts"]]
-                    mill_ops.append((pts, sl["depth"]))
-                for vs in u.vbit_score_segs:
-                    pts = [(p[0], p[1] - y_off) for p in vs["pts"]]
-                    vbit_ops.append((pts, vs["depth"]))
-            return mill_ops, vbit_ops
-
-        front_mill, front_vbit = collect_half_ops(front_units, is_back=False)
-        back_mill, back_vbit = collect_half_ops(back_units, is_back=True)
+        for u in units:
+            for sl in u.milling_slot_segs:
+                _route_seg(sl["pts"], sl["depth"], front_mill, back_mill)
+            for vs in u.vbit_score_segs:
+                _route_seg(vs["pts"], vs["depth"], front_vbit, back_vbit)
 
         def mirror_ops(ops_list):
             return [([(self.sheet_w - p[0], p[1]) for p in seg], z_d) for seg, z_d in ops_list]
@@ -4961,7 +4999,9 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       if (frameLink) frameLink.href = `http://${{fluidncTargetIp}}`;
       const ipLabel = document.getElementById('fluidnc-embedded-ip-label');
       if (ipLabel) ipLabel.innerText = fluidncTargetIp;
-      testFluidNCConnection();
+      const mode = document.getElementById('cnc-transport-select')?.value || 'auto';
+      if (mode === 'ws' || mode === 'auto') connectCNCBridge('connect');
+      else testFluidNCConnection();
     }}
 
     let fluidncMachineState = 'Unknown';
@@ -4969,6 +5009,179 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
     let fluidncSdMounted = false;
     let activeStreamWs = null;
     let streamAborted = false;
+    let bridgeEventSource = null;
+
+    function applyFluidNCStatusPayload(data) {{
+      if (!data) return;
+      lastLiveToolPos = data;
+      const badge = document.getElementById('fluidnc-status-badge');
+      const dot = document.getElementById('fluidnc-status-dot');
+      const text = document.getElementById('fluidnc-status-text');
+      const sdIndicator = document.getElementById('fluidnc-sd-indicator');
+      const connectBtn = document.getElementById('btn-cnc-connect');
+      const macroLbl = document.getElementById('macro-live-pos-lbl');
+
+      if (data.sd_mounted === true) fluidncSdMounted = true;
+      else if (data.sd_mounted === false) fluidncSdMounted = false;
+
+      const via = (data.transport_active || 'none').toLowerCase();
+      const viaTag = via === 'usb' ? `USB ${{data.usb_port || ''}}`
+        : via === 'ws' ? 'WS Proxy'
+        : via === 'http' ? 'HTTP/Telnet'
+        : 'Offline';
+
+      if (data.online) {{
+        fluidncMachineState = data.state || 'Online';
+        const pos = data.wpos || data.mpos;
+        if (pos) {{
+          fluidncMPos = `X:${{pos[0].toFixed(2)}} Y:${{pos[1].toFixed(2)}} Z:${{pos[2].toFixed(2)}}`;
+        }}
+        if (dot && text && badge) {{
+          dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+          const posTxt = pos ? ` | X:${{pos[0].toFixed(2)}} Y:${{pos[1].toFixed(2)}} Z:${{pos[2].toFixed(2)}}` : '';
+          text.innerText = `${{fluidncMachineState}}${{posTxt}}`;
+          badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-950/40 border border-emerald-500/40 text-[11px] font-mono text-emerald-300';
+        }}
+        if (sdIndicator) {{
+          const col = via === 'usb' ? 'text-cyan-400' : (via === 'ws' ? 'text-emerald-400' : 'text-amber-300');
+          sdIndicator.innerHTML = `<span class="${{col}}">${{viaTag}} Ready</span>`;
+        }}
+        if (connectBtn) {{
+          connectBtn.innerText = (via === 'usb' || via === 'ws') ? 'Disconnect' : 'Connect';
+          connectBtn.dataset.connected = (via === 'usb' || via === 'ws') ? '1' : '0';
+        }}
+        if (macroLbl) {{
+          macroLbl.innerText = pos ? `${{fluidncMachineState}} | ${{fluidncMPos}}` : fluidncMachineState;
+        }}
+        if (typeof drawLiveBedToolCanvas === 'function') drawLiveBedToolCanvas(data);
+      }} else {{
+        fluidncMachineState = 'Offline';
+        if (dot && text && badge) {{
+          dot.className = 'w-2 h-2 rounded-full bg-red-400';
+          const tgt = (data.transport_configured === 'usb') ? (data.usb_port || 'USB') : fluidncTargetIp;
+          text.innerText = `Offline (${{tgt}})`;
+          badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-950/40 border border-red-500/40 text-[11px] font-mono text-red-300';
+        }}
+        if (sdIndicator) sdIndicator.innerHTML = `<span class="text-slate-400">${{data.transport_configured ? data.transport_configured.toUpperCase() : 'Disconnected'}}</span>`;
+        if (connectBtn) {{
+          connectBtn.innerText = 'Connect';
+          connectBtn.dataset.connected = '0';
+        }}
+      }}
+    }}
+
+    function appendBridgeConsoleLine(via, line, ts) {{
+      const box = document.getElementById('cnc-console-log');
+      if (!box || !line) return;
+      const row = document.createElement('div');
+      const viaCol = via === 'usb' ? 'text-cyan-400' : (via === 'ws' ? 'text-emerald-400' : 'text-slate-400');
+      row.className = 'leading-relaxed break-all';
+      row.innerHTML = `<span class="text-slate-600 mr-1.5">${{ts || ''}}</span><span class="${{viaCol}} mr-1.5">[${{(via || 'cnc').toUpperCase()}}]</span><span class="text-slate-200"></span>`;
+      row.lastChild.textContent = line;
+      box.appendChild(row);
+      while (box.children.length > 80) box.removeChild(box.firstChild);
+      box.scrollTop = box.scrollHeight;
+    }}
+
+    function initBridgeEventStream() {{
+      if (!window.location.protocol.startsWith('http') || typeof EventSource === 'undefined') return;
+      if (bridgeEventSource) {{
+        try {{ bridgeEventSource.close(); }} catch (e) {{}}
+      }}
+      bridgeEventSource = new EventSource(`${{getApiBase()}}/api/fluidnc_events`);
+      bridgeEventSource.addEventListener('status', (evt) => {{
+        try {{ applyFluidNCStatusPayload(JSON.parse(evt.data)); }} catch (e) {{}}
+      }});
+      bridgeEventSource.addEventListener('console', (evt) => {{
+        try {{
+          const d = JSON.parse(evt.data);
+          appendBridgeConsoleLine(d.via, d.line, d.ts);
+        }} catch (e) {{}}
+      }});
+      bridgeEventSource.addEventListener('stream', (evt) => {{
+        try {{
+          const s = JSON.parse(evt.data);
+          const stText = document.getElementById('fluidnc-status-text');
+          if (stText && s.total && s.active) stText.innerText = `${{s.state}} (${{s.sent}}/${{s.total}})`;
+        }} catch (e) {{}}
+      }});
+    }}
+
+    async function scanCNCUsbPorts() {{
+      try {{
+        const res = await fetch(`${{getApiBase()}}/api/cnc_ports`, {{ cache: 'no-store' }});
+        if (!res.ok) return;
+        const data = await res.json();
+        const sel = document.getElementById('cnc-usb-port-select');
+        if (sel) {{
+          const cur = (uiConfigState && uiConfigState.cnc_serial_port) || sel.value || 'auto';
+          let opts = `<option value="auto" ${{cur === 'auto' ? 'selected' : ''}}>Auto CNC USB</option>`;
+          (data.ports || []).forEach(p => {{
+            const tag = p.is_cnc ? ' [CNC]' : (p.is_stm32 ? ' [STM32]' : '');
+            opts += `<option value="${{p.device}}" ${{cur === p.device ? 'selected' : ''}}>${{p.device}} (${{p.label}})${{tag}}</option>`;
+          }});
+          sel.innerHTML = opts;
+        }}
+        if (data.bridge) applyFluidNCStatusPayload(data.bridge);
+      }} catch (e) {{}}
+    }}
+
+    function updateBridgeControlVisibility(mode) {{
+      const usbWrap = document.getElementById('cnc-usb-controls');
+      const ipWrap = document.getElementById('cnc-ip-wrap');
+      if (usbWrap) usbWrap.classList.toggle('hidden', mode !== 'usb' && mode !== 'auto');
+      if (ipWrap) ipWrap.classList.toggle('hidden', mode === 'usb');
+    }}
+
+    async function onTransportModeChange(mode) {{
+      updateBridgeControlVisibility(mode);
+      await saveUIConfigPartial({{ cnc_transport: mode }});
+      await connectCNCBridge('connect');
+    }}
+
+    async function connectCNCBridge(forceAction) {{
+      const btn = document.getElementById('btn-cnc-connect');
+      const isConn = btn && btn.dataset.connected === '1';
+      const action = forceAction || (isConn ? 'disconnect' : 'connect');
+      const transport = document.getElementById('cnc-transport-select')?.value || 'auto';
+      const port = document.getElementById('cnc-usb-port-select')?.value || 'auto';
+      const baudrate = Number(document.getElementById('cnc-usb-baud-select')?.value || 115200);
+      if (btn) {{ btn.disabled = true; btn.classList.add('opacity-50'); }}
+      try {{
+        const res = await fetch(`${{getApiBase()}}/api/cnc_connect`, {{
+          method: 'POST',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ transport, ip: fluidncTargetIp, port, baudrate, action }})
+        }});
+        const d = await res.json();
+        if (d.bridge) applyFluidNCStatusPayload(d.bridge);
+        appendBridgeConsoleLine(transport, d.message || (d.success ? 'Connected' : 'Failed'), '');
+        if (!d.success && action === 'connect' && d.message) {{
+          const sdIndicator = document.getElementById('fluidnc-sd-indicator');
+          if (sdIndicator) sdIndicator.innerHTML = `<span class="text-red-400" data-tip="${{d.message}}">${{d.message.slice(0, 36)}}</span>`;
+        }}
+      }} catch (e) {{
+        appendBridgeConsoleLine('bridge', 'Connect error: ' + e, '');
+      }} finally {{
+        if (btn) {{ btn.disabled = false; btn.classList.remove('opacity-50'); }}
+      }}
+    }}
+
+    function toggleCNCConsole() {{
+      const p = document.getElementById('cnc-console-panel');
+      if (p) p.classList.toggle('hidden');
+    }}
+
+    async function sendConsoleMDI(e) {{
+      if (e) e.preventDefault();
+      const inp = document.getElementById('cnc-mdi-input');
+      if (!inp) return;
+      const cmd = inp.value.trim();
+      if (!cmd) return;
+      inp.value = '';
+      appendBridgeConsoleLine('tx', `> ${{cmd}}`, '');
+      await sendFluidNCRealtime(cmd);
+    }}
 
     async function testFluidNCConnection() {{
       const badge = document.getElementById('fluidnc-status-badge');
@@ -4980,7 +5193,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       dot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-ping';
       text.innerText = `Checking ${{fluidncTargetIp}}...`;
 
-      // 1. Primary: Query local Python bridge /api/fluidnc_status (no WebSocket conflict or CORS hang)
+      // 1. Primary: Query local Python bridge /api/fluidnc_status (USB Serial / WS Proxy / HTTP)
       if (window.location.protocol.startsWith('http')) {{
         try {{
           const ctrl = new AbortController();
@@ -4989,15 +5202,8 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
           clearTimeout(tid);
           if (res.ok) {{
             const data = await res.json();
-            if (data.online) {{
-              dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
-              const st = (data.status || 'Online').replace(/^<|>$/g, '');
-              const shortSt = st.split('|').slice(0, 2).join(' | ');
-              text.innerText = shortSt || `Online (${{fluidncTargetIp}})`;
-              badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-950/40 border border-emerald-500/40 text-[11px] font-mono text-emerald-300';
-              if (sdIndicator) sdIndicator.innerHTML = `<span class="text-emerald-400">Telnet/HTTP Ready</span>`;
-              return;
-            }}
+            applyFluidNCStatusPayload(data);
+            return;
           }}
         }} catch (e) {{}}
       }}
@@ -5107,7 +5313,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
     }}
 
     async function streamGCodeToFluidNC(filename, buttonEl) {{
-      return confirmAndStream(filename, buttonEl, false);
+      return _executeStreamStart(filename, buttonEl);
     }}
 
     async function _executeStreamStart(filename, buttonEl) {{
@@ -6320,7 +6526,8 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       }}
 
       let html = '';
-      ops.forEach(op => {{
+      ops.forEach((op, idx) => {{
+        const rowNum = String(idx + 1).padStart(2, '0');
         const isSent = fluidncSentFiles.has(op.gcode_file);
         const isDone = dispatchDoneSet.has(op.gcode_file);
         const btnClass = isSent
@@ -6329,8 +6536,8 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         const btnTip = isSent ? 'Uploaded to /sd/ (click to re-upload)' : 'Upload to FluidNC';
 
         const halfBadge = op.bed_half === 'front'
-          ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/25" data-tip="Front Bed Half (Y 0-145mm)">Front</span>'
-          : '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-amber-500/15 text-amber-300 border border-amber-500/25" data-tip="Back Bed Half (Y-Shift -145mm)">Back</span>';
+          ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/25" data-tip="Front Bed Half (Y 0-{y_split:.0f}mm)">Front</span>'
+          : '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-amber-500/15 text-amber-300 border border-amber-500/25" data-tip="Back Bed Half (Y-Shift -{y_split:.0f}mm)">Back</span>';
 
         const mirrorBadge = op.mirrored
           ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-violet-500/20 text-violet-300 border border-violet-500/30" data-tip="Horizontally mirrored for Bottom Side">Flip</span>'
@@ -6339,6 +6546,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         html += `
           <div class="p-2.5 rounded-xl border ${{isDone ? 'border-emerald-500/30 bg-emerald-950/15 opacity-70' : 'border-slate-800/90 bg-[#0b101b]/90'}} hover:border-slate-700 transition flex items-center justify-between gap-3 text-xs">
             <div class="flex items-center gap-2.5 min-w-0">
+              <span class="text-xs font-mono font-bold ${{isDone ? 'text-emerald-400/70' : 'text-cyan-400'}} w-6 text-right shrink-0 select-none" data-tip="File #${{idx + 1}} (Op #${{String(op.seq).padStart(2, '0')}})">${{rowNum}}.</span>
               <input type="checkbox" ${{isDone ? 'checked' : ''}}
                      onchange="toggleDispatchDone('${{op.gcode_file}}', this.checked)"
                      class="w-4 h-4 rounded accent-emerald-500 bg-slate-900 border-slate-600 cursor-pointer shrink-0"
@@ -6434,6 +6642,8 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         }}
       }} catch (e) {{}}
 
+      scanCNCUsbPorts();
+      initBridgeEventStream();
       testFluidNCConnection();
       renderFluidNCDispatcher();
     }}
@@ -6562,7 +6772,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
     }}
 
     async function runMacroOnCNC(fname, btn) {{
-      return confirmAndStream(fname, btn, true);
+      return _executeStreamStart(fname, btn);
     }}
 
     let jogStepMm = 1.0;
@@ -6632,6 +6842,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       setChk('cfg-enable-homing', u.enable_homing_btn);
       setChk('cfg-enable-unlock', u.enable_unlock_btn);
       setChk('cfg-enable-zero', u.enable_zero_work_btn);
+      setChk('cfg-enable-hmap', u.enable_heightmap_leveling);
       const tIn = document.getElementById('cfg-pcb-thickness');
       if (tIn) tIn.value = Number(u.pcb_thickness_mm ?? 1.6).toFixed(2);
 
@@ -6655,6 +6866,15 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
           ? 'Run G38.2 Touch Probe'
           : 'Touch Probe disabled in ui_config.json');
       }});
+
+      // Sync CNC Bridge Transport controls
+      const trSel = document.getElementById('cnc-transport-select');
+      if (trSel && u.cnc_transport) trSel.value = u.cnc_transport;
+      const baudSel = document.getElementById('cnc-usb-baud-select');
+      if (baudSel && u.cnc_baudrate) baudSel.value = String(u.cnc_baudrate);
+      const portSel = document.getElementById('cnc-usb-port-select');
+      if (portSel && u.cnc_serial_port) portSel.value = u.cnc_serial_port;
+      updateBridgeControlVisibility(u.cnc_transport || 'auto');
 
       // Show/hide Quick Macros strip in Dispatch
       const dBar = document.getElementById('dispatch-macros-bar');
@@ -6696,15 +6916,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       try {{
         const res = await fetch(`${{getApiBase()}}/api/fluidnc_status?ip=${{encodeURIComponent(fluidncTargetIp)}}`, {{ cache: 'no-store' }});
         const d = await res.json();
-        lastLiveToolPos = d;
-        const lbl = document.getElementById('macro-live-pos-lbl');
-        if (lbl) {{
-          const p = d.wpos || d.mpos;
-          lbl.innerText = (d.online && p)
-            ? `${{d.state}} | X:${{p[0].toFixed(2)}} Y:${{p[1].toFixed(2)}} Z:${{p[2].toFixed(2)}}`
-            : (d.online ? d.state : 'Offline');
-        }}
-        drawLiveBedToolCanvas(d);
+        applyFluidNCStatusPayload(d);
       }} catch (e) {{}}
     }}
 
@@ -6735,11 +6947,11 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       ctx.strokeRect(tx(0), ty(cncBedTravelY), cncBedMillingX * sc, cncBedTravelY * sc);
       ctx.setLineDash([]);
 
-      // A4 Front Half outline (0..210 x 0..145)
+      // Front Half outline (0..{sheet_w:.0f} x 0..{y_split:.0f})
       ctx.fillStyle = 'rgba(16, 185, 129, 0.08)';
-      ctx.fillRect(tx(0), ty(145), 210 * sc, 145 * sc);
+      ctx.fillRect(tx(0), ty({y_split:.1f}), {sheet_w:.1f} * sc, {y_split:.1f} * sc);
       ctx.strokeStyle = 'rgba(16, 185, 129, 0.45)';
-      ctx.strokeRect(tx(0), ty(145), 210 * sc, 145 * sc);
+      ctx.strokeRect(tx(0), ty({y_split:.1f}), {sheet_w:.1f} * sc, {y_split:.1f} * sc);
 
       // Bed clamps
       (bedHoldersList || []).forEach(h => {{
@@ -7140,8 +7352,14 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
           <button type="button" id="btn-dispatch-zero" onclick="sendFluidNCRealtime('G10 L20 P1 X0 Y0 Z0')" class="p-2 rounded-lg bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 transition cursor-pointer" data-tip="Zero Work XYZ (G10 L20)" aria-label="Zero Work">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/></svg>
           </button>
+          <button type="button" id="btn-dispatch-change-tool" onclick="runMacroOnCNC('change_tool.gcode', this)" class="p-2 rounded-lg bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 transition cursor-pointer" data-tip="Change Tool (M5 + X Max, Z Max, Y Min)" aria-label="Change Tool">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+          </button>
           <button type="button" onclick="togglePrinterPanel()" class="p-2 rounded-lg bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 transition cursor-pointer" data-tip="STM32 Inkjet Printer Settings" aria-label="Inkjet Printer Settings">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          </button>
+          <button type="button" onclick="toggleCNCConsole()" class="p-2 rounded-lg bg-teal-600/20 hover:bg-teal-600 text-teal-300 hover:text-white border border-teal-500/30 transition cursor-pointer" data-tip="Toggle Live CNC Bridge Console &amp; MDI" aria-label="CNC Bridge Console">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
           </button>
           <button type="button" onclick="toggleFluidNCFrame()" id="btn-toggle-fluidnc-frame" class="p-2 rounded-lg bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 transition cursor-pointer" data-tip="Toggle Embedded FluidNC UI" aria-label="Embedded View">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
@@ -7207,10 +7425,35 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       <!-- Compact Controls Strip -->
       <div class="flex flex-wrap items-center justify-between gap-2.5 mb-4 text-xs">
         <div class="flex flex-wrap items-center gap-2">
-          <div class="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-1" data-tip="FluidNC Controller IP">
+          <div class="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 rounded-lg px-2 py-1" data-tip="CNC Bridge Mode: Option A (WS Proxy), Option 1 (USB Serial), or Auto">
+            <span class="text-slate-500 font-mono text-[11px]">LINK</span>
+            <select id="cnc-transport-select" onchange="onTransportModeChange(this.value)"
+                    class="bg-transparent text-cyan-300 font-mono text-xs font-semibold focus:outline-none cursor-pointer">
+              <option value="auto" class="bg-slate-950 text-slate-100">Auto (WS / USB)</option>
+              <option value="ws" class="bg-slate-950 text-slate-100">WS Proxy (Wi-Fi)</option>
+              <option value="usb" class="bg-slate-950 text-slate-100">USB Serial</option>
+              <option value="telnet" class="bg-slate-950 text-slate-100">HTTP / Telnet</option>
+            </select>
+          </div>
+          <div id="cnc-ip-wrap" class="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-1" data-tip="FluidNC Controller IP">
             <span class="text-slate-500 font-mono text-[11px]">IP</span>
             <input type="text" id="fluidnc-ip-input" value="{svg_escape(fluidnc_ip)}" onchange="updateFluidNCIp(this.value)"
                    class="w-28 bg-transparent text-slate-100 font-mono text-xs focus:outline-none">
+          </div>
+          <div id="cnc-usb-controls" class="flex items-center gap-1.5 bg-slate-900/90 border border-cyan-500/30 rounded-lg px-2 py-1">
+            <select id="cnc-usb-port-select" onchange="saveUIConfigPartial({{ cnc_serial_port: this.value }})" data-tip="CNC USB Serial Port (/dev/ttyUSB* or /dev/ttyACM*)"
+                    class="bg-transparent text-slate-100 font-mono text-xs focus:outline-none max-w-[170px] cursor-pointer">
+              <option value="auto" class="bg-slate-950">Auto CNC USB</option>
+            </select>
+            <select id="cnc-usb-baud-select" onchange="saveUIConfigPartial({{ cnc_baudrate: Number(this.value) }})" data-tip="USB Serial Baudrate"
+                    class="bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 text-slate-200 font-mono text-[11px] cursor-pointer">
+              <option value="115200" selected>115200</option>
+              <option value="230400">230400</option>
+              <option value="57600">57600</option>
+              <option value="9600">9600</option>
+            </select>
+            <button type="button" onclick="scanCNCUsbPorts()" class="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] cursor-pointer" data-tip="Rescan USB ports">Scan</button>
+            <button type="button" id="btn-cnc-connect" data-connected="0" onclick="connectCNCBridge()" class="px-2 py-0.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-[11px] cursor-pointer" data-tip="Connect or Disconnect Python CNC Bridge">Connect</button>
           </div>
           <select id="fluidnc-target-select" data-tip="Target Storage" class="bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 font-mono text-xs focus:outline-none">
             <option value="sd" selected>SD (/upload)</option>
@@ -7218,7 +7461,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
           </select>
           <div class="relative">
             <input type="text" id="fluidnc-search-input" placeholder="Filter files..." oninput="filterFluidNCSearch(this.value)"
-                   class="w-40 bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-100 font-mono text-xs focus:outline-none focus:border-blue-500">
+                   class="w-36 bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-100 font-mono text-xs focus:outline-none focus:border-blue-500">
           </div>
         </div>
 
@@ -7229,6 +7472,25 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
           <span>Batch Upload</span>
           <span id="fluidnc-batch-sheet-lbl" class="font-mono text-[10px] opacity-80"></span>
         </button>
+      </div>
+
+      <!-- Collapsible Live Bridge Console & MDI -->
+      <div id="cnc-console-panel" class="hidden mb-4 p-3 rounded-xl bg-slate-950/90 border border-teal-500/30 text-xs space-y-2">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-1.5">
+          <span class="font-semibold text-teal-300 font-mono text-[11px]">Live CNC Bridge Console (WS Proxy / USB Serial SSE)</span>
+          <div class="flex items-center gap-1.5">
+            <button type="button" onclick="sendFluidNCRealtime('?')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-[11px] cursor-pointer">?</button>
+            <button type="button" onclick="sendFluidNCRealtime('$I')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-[11px] cursor-pointer">$I</button>
+            <button type="button" onclick="sendFluidNCRealtime('$$')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-[11px] cursor-pointer">$$</button>
+            <button type="button" onclick="document.getElementById('cnc-console-log').innerHTML=''" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 text-[11px] cursor-pointer">Clear</button>
+          </div>
+        </div>
+        <div id="cnc-console-log" class="font-mono text-[11px] h-32 overflow-y-auto bg-[#070a10] p-2 rounded-lg border border-slate-800/80 space-y-0.5"></div>
+        <form onsubmit="sendConsoleMDI(event)" class="flex gap-2">
+          <input type="text" id="cnc-mdi-input" placeholder="Send MDI / Grbl command (e.g. G0 X10 Y10 F600, $H, $X)..."
+                 class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 font-mono text-xs text-slate-100 focus:outline-none focus:border-teal-500">
+          <button type="submit" class="px-3 py-1 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-semibold cursor-pointer">Send</button>
+        </form>
       </div>
 
       <!-- Batch Transfer Progress Strip -->
@@ -7280,7 +7542,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         <div id="dispatch-macros-list" class="flex flex-wrap items-center gap-1.5"></div>
       </div>
 
-      <div id="fluidnc-dispatcher-table" class="space-y-1.5 max-h-[580px] overflow-y-auto pr-1"></div>
+      <div id="fluidnc-dispatcher-table" class="space-y-1.5"></div>
     </section>
 
     <!-- TAB 2: GERBER STEP-BY-STEP -->
@@ -7394,16 +7656,16 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         </div>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         <aside class="lg:col-span-4 bg-[#0b101b] rounded-xl border border-slate-800 p-3 flex flex-col">
           <div class="flex items-center justify-between px-1 pb-2 mb-2 border-b border-slate-800/80">
             <span class="text-xs font-semibold text-slate-300">Instances</span>
             <span id="unit-submenu-count" class="text-[11px] font-mono text-slate-400"></span>
           </div>
-          <div id="unit-submenu-list" class="space-y-1.5 max-h-[520px] overflow-y-auto pr-1"></div>
+          <div id="unit-submenu-list" class="space-y-1.5"></div>
         </aside>
 
-        <div class="lg:col-span-8 bg-[#0b101b] rounded-xl border border-slate-800 p-4 flex flex-col justify-between">
+        <div class="lg:col-span-8 lg:sticky lg:top-4 bg-[#0b101b] rounded-xl border border-slate-800 p-4 flex flex-col justify-between">
           <div class="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-800/80">
             <div class="flex flex-wrap items-center gap-2">
               <span id="unit-stage-pcb" class="px-2 py-0.5 text-xs font-mono font-bold rounded bg-amber-500/20 text-amber-300">-</span>
@@ -7514,16 +7776,16 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         </div>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         <aside class="lg:col-span-4 bg-[#0b101b] rounded-xl border border-slate-800 p-3 flex flex-col">
           <div class="flex items-center justify-between px-1 pb-2 mb-2 border-b border-slate-800/80">
             <span class="text-xs font-semibold text-slate-300">Timeline</span>
             <span id="bed-ops-count" class="text-[11px] font-mono text-slate-400"></span>
           </div>
-          <div id="bed-ops-submenu" class="space-y-1.5 max-h-[540px] overflow-y-auto pr-1"></div>
+          <div id="bed-ops-submenu" class="space-y-1.5"></div>
         </aside>
 
-        <div class="lg:col-span-8 bg-[#0b101b] rounded-xl border border-slate-800 p-4 flex flex-col justify-between gap-4">
+        <div class="lg:col-span-8 lg:sticky lg:top-4 bg-[#0b101b] rounded-xl border border-slate-800 p-4 flex flex-col justify-between gap-4">
           <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-800/80">
             <div>
               <h3 id="bed-op-title" class="text-sm font-bold text-slate-100">-</h3>
@@ -7583,7 +7845,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         <div id="chk-progress-bar" class="bg-gradient-to-r from-blue-500 to-emerald-400 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-[560px] overflow-y-auto pr-1">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
         {"".join(chk_rows_html)}
       </div>
     </section>
@@ -7687,6 +7949,10 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
               <label class="flex items-center gap-1.5 cursor-pointer text-slate-300">
                 <input type="checkbox" id="cfg-enable-zero" onchange="saveUIConfigPartial({{ enable_zero_work_btn: this.checked }})" class="accent-purple-500">
                 <span>Zero Controls</span>
+              </label>
+              <label class="flex items-center gap-1.5 cursor-pointer text-slate-300" data-tip="Apply saved Bed Height Map Z-offset when streaming">
+                <input type="checkbox" id="cfg-enable-hmap" onchange="saveUIConfigPartial({{ enable_heightmap_leveling: this.checked }})" class="accent-cyan-500">
+                <span>Height Map</span>
               </label>
             </div>
           </div>
@@ -7961,8 +8227,660 @@ def parse_fluidnc_status_line(text: str, ip: str = "192.168.8.109") -> Dict[str,
     return info
 
 
-def check_fluidnc_online(ip: str, timeout: float = 2.0) -> Tuple[bool, str]:
-    """Test HTTP connection to FluidNC controller using /command?plain=? (no WebSocket needed)."""
+def _read_sysfs_text(path: str) -> str:
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read().strip()
+    except Exception:
+        return ""
+
+
+def list_usb_serial_ports() -> List[Dict[str, Any]]:
+    """Discover USB serial ports (/dev/ttyUSB*, /dev/ttyACM*) with USB metadata and role hints."""
+    ports: List[Dict[str, Any]] = []
+    seen = set()
+    try:
+        import serial.tools.list_ports
+        for p in serial.tools.list_ports.comports():
+            seen.add(p.device)
+            desc = f"{p.description or ''} {p.manufacturer or ''}".strip()
+            vid = p.vid
+            pid = p.pid
+            up = desc.upper()
+            is_stm = ("STM" in up) or (vid == 0x0483) or ("ttyACM" in p.device and "ESP" not in up)
+            is_cnc = (vid in (0x1A86, 0x10C4, 0x0403, 0x303A)) or any(
+                k in up for k in ("CH340", "CP210", "FTDI", "ESP32", "UART", "FLUIDNC", "USB2.0-SERIAL")
+            ) or ("ttyUSB" in p.device)
+            ports.append({
+                "device": p.device,
+                "label": desc or os.path.basename(p.device),
+                "is_stm32": bool(is_stm),
+                "is_cnc": bool(is_cnc),
+                "vid": f"{vid:04x}" if vid is not None else "",
+                "pid": f"{pid:04x}" if pid is not None else "",
+            })
+    except Exception:
+        pass
+
+    for pat in ("/dev/ttyUSB*", "/dev/ttyACM*"):
+        for dev in sorted(glob.glob(pat)):
+            if dev in seen:
+                continue
+            seen.add(dev)
+            tty_name = os.path.basename(dev)
+            sys_dev = f"/sys/class/tty/{tty_name}/device"
+            usb_dir = os.path.realpath(os.path.join(sys_dev, "..")) if os.path.exists(sys_dev) else ""
+            if usb_dir and not os.path.exists(os.path.join(usb_dir, "idVendor")):
+                usb_dir = os.path.realpath(os.path.join(usb_dir, ".."))
+            vid = _read_sysfs_text(os.path.join(usb_dir, "idVendor")) if usb_dir else ""
+            pid = _read_sysfs_text(os.path.join(usb_dir, "idProduct")) if usb_dir else ""
+            mfg = _read_sysfs_text(os.path.join(usb_dir, "manufacturer")) if usb_dir else ""
+            prod = _read_sysfs_text(os.path.join(usb_dir, "product")) if usb_dir else ""
+            label = " ".join(x for x in (mfg, prod) if x).strip() or tty_name
+            up = label.upper()
+            is_stm = ("STM" in up) or (vid.lower() == "0483") or ("ttyACM" in tty_name and "ESP" not in up and vid.lower() != "303a")
+            is_cnc = (vid.lower() in ("1a86", "10c4", "0403", "303a")) or any(
+                k in up for k in ("CH340", "CP210", "FTDI", "ESP32", "UART", "FLUIDNC")
+            ) or ("ttyUSB" in tty_name)
+            ports.append({
+                "device": dev,
+                "label": label,
+                "is_stm32": bool(is_stm),
+                "is_cnc": bool(is_cnc),
+                "vid": vid.lower(),
+                "pid": pid.lower(),
+            })
+    return ports
+
+
+def list_stm32_usb_ports() -> List[Dict[str, Any]]:
+    """Alias preserved for STM32 inkjet printer UI."""
+    return list_usb_serial_ports()
+
+
+def list_cnc_usb_ports() -> List[Dict[str, Any]]:
+    """Return USB serial ports sorted with likely CNC controllers first."""
+    ports = list_usb_serial_ports()
+    return sorted(ports, key=lambda p: (0 if p.get("is_cnc") else 1, p.get("device", "")))
+
+
+class _RawSerialPort:
+    """Serial transport using pyserial when available, or pure Linux termios fallback."""
+
+    def __init__(self, device: str, baudrate: int = 115200, timeout: float = 0.1):
+        self.device = device
+        self.baudrate = int(baudrate)
+        self.timeout = timeout
+        self._ser = None
+        self._fd: Optional[int] = None
+        self._lock = threading.Lock()
+        self._open()
+
+    def _open(self):
+        try:
+            import serial
+            ser = serial.Serial()
+            ser.port = self.device
+            ser.baudrate = self.baudrate
+            ser.timeout = self.timeout
+            ser.write_timeout = 2.0
+            ser.rtscts = False
+            ser.dsrdtr = False
+            ser.dtr = False
+            ser.rts = False
+            ser.open()
+            self._ser = ser
+            return
+        except ImportError:
+            pass
+
+        import termios
+        baud_map = {
+            9600: termios.B9600,
+            19200: termios.B19200,
+            38400: termios.B38400,
+            57600: termios.B57600,
+            115200: termios.B115200,
+            230400: termios.B230400,
+        }
+        fd = os.open(self.device, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+        try:
+            attrs = termios.tcgetattr(fd)
+            attrs[0] = 0  # iflag: raw
+            attrs[1] = 0  # oflag: raw
+            attrs[2] = (termios.CS8 | termios.CREAD | termios.CLOCAL) & ~termios.HUPCL
+            attrs[3] = 0  # lflag: non-canonical
+            spd = baud_map.get(self.baudrate, termios.B115200)
+            attrs[4] = spd
+            attrs[5] = spd
+            attrs[6][termios.VMIN] = 0
+            attrs[6][termios.VTIME] = 0
+            termios.tcsetattr(fd, termios.TCSANOW, attrs)
+            termios.tcflush(fd, termios.TCIOFLUSH)
+            self._fd = fd
+        except Exception:
+            os.close(fd)
+            raise
+
+    @property
+    def is_open(self) -> bool:
+        return (self._ser is not None and self._ser.is_open) or (self._fd is not None)
+
+    def write(self, data: bytes):
+        with self._lock:
+            if self._ser is not None:
+                self._ser.write(data)
+                self._ser.flush()
+            elif self._fd is not None:
+                view = memoryview(data)
+                total = 0
+                while total < len(data):
+                    try:
+                        n = os.write(self._fd, view[total:])
+                        total += n
+                    except BlockingIOError:
+                        import select
+                        select.select([], [self._fd], [], 0.2)
+
+    def read(self, size: int = 1024, timeout: float = 0.15) -> bytes:
+        if self._ser is not None:
+            return self._ser.read(size)
+        if self._fd is not None:
+            import select
+            rlist, _, _ = select.select([self._fd], [], [], timeout)
+            if not rlist:
+                return b""
+            try:
+                return os.read(self._fd, size)
+            except BlockingIOError:
+                return b""
+        return b""
+
+    def close(self):
+        with self._lock:
+            if self._ser is not None:
+                try:
+                    self._ser.close()
+                except Exception:
+                    pass
+                self._ser = None
+            if self._fd is not None:
+                try:
+                    os.close(self._fd)
+                except Exception:
+                    pass
+                self._fd = None
+
+
+_GRBL_REALTIME_CMDS = {"?", "!", "~", "\x18", "\x85"}
+
+
+class _BaseGrblLink:
+    """Shared Grbl/FluidNC line parser, status cache, and synchronized command queue."""
+
+    link_name = "base"
+
+    def __init__(self, on_event=None):
+        self._on_event = on_event
+        self._lock = threading.Lock()
+        self._cmd_lock = threading.Lock()
+        self._rx_buf = ""
+        self._reply_q: queue.Queue = queue.Queue()
+        self.connected = False
+        self.connecting = False
+        self.last_error = ""
+        self.last_status_ts = 0.0
+        self.status_text = ""
+        self.state = "Offline"
+        self.mpos: Optional[List[float]] = None
+        self.wpos: Optional[List[float]] = None
+        self.sd_mounted: Optional[bool] = None
+        self._stop_ev = threading.Event()
+
+    def _emit(self, event_type: str, payload: Dict[str, Any]):
+        if self._on_event:
+            try:
+                self._on_event(event_type, payload)
+            except Exception:
+                pass
+
+    def _write_raw(self, payload: bytes):
+        raise NotImplementedError
+
+    def _feed_text(self, text: str, key_ip: str = "192.168.8.109"):
+        if not text:
+            return
+        with self._lock:
+            self._rx_buf += text.replace("\r", "\n")
+            lines = self._rx_buf.split("\n")
+            self._rx_buf = lines.pop()
+
+        for raw in lines:
+            line = raw.strip()
+            if not line:
+                continue
+            if line.startswith("<") and line.endswith(">"):
+                parsed = parse_fluidnc_status_line(line, ip=key_ip)
+                with self._lock:
+                    self.status_text = line
+                    self.state = parsed["state"]
+                    if parsed["mpos"] is not None:
+                        self.mpos = parsed["mpos"]
+                    if parsed["wpos"] is not None:
+                        self.wpos = parsed["wpos"]
+                    self.last_status_ts = time.time()
+                self._emit("status_tick", {
+                    "via": self.link_name,
+                    "status": line,
+                    "state": self.state,
+                    "mpos": self.mpos,
+                    "wpos": self.wpos,
+                })
+                # Also push status if someone explicitly asked '?'
+                self._reply_q.put(("status", line))
+            else:
+                if "No SD" in line or "SD card" in line:
+                    self.sd_mounted = ("No SD" not in line)
+                self._emit("console", {"via": self.link_name, "line": line, "ts": time.strftime("%H:%M:%S")})
+                self._reply_q.put(("line", line))
+
+    def _drain_reply_q(self):
+        while True:
+            try:
+                self._reply_q.get_nowait()
+            except queue.Empty:
+                break
+
+    def send_realtime(self, rt_cmd: str) -> Tuple[bool, str]:
+        if not self.connected:
+            return False, f"{self.link_name} not connected"
+        try:
+            self._write_raw(rt_cmd.encode("utf-8"))
+            if rt_cmd == "?":
+                t0 = time.time()
+                while time.time() - t0 < 1.2:
+                    try:
+                        kind, val = self._reply_q.get(timeout=0.15)
+                        if kind == "status":
+                            return True, val
+                    except queue.Empty:
+                        if time.time() - self.last_status_ts < 0.8 and self.status_text:
+                            return True, self.status_text
+                return (True, self.status_text) if self.status_text else (False, "Status timeout")
+            return True, f"Sent realtime {repr(rt_cmd)} via {self.link_name}"
+        except Exception as e:
+            return False, str(e)
+
+    def send_command(self, cmd: str, timeout: float = 8.0, expect_probe: bool = False) -> Tuple[bool, str]:
+        cmd_clean = (cmd or "").strip()
+        if not cmd_clean:
+            return True, "ok"
+        if cmd_clean in _GRBL_REALTIME_CMDS:
+            return self.send_realtime(cmd_clean)
+        if not self.connected:
+            return False, f"{self.link_name} not connected"
+
+        is_long = cmd_clean.upper().startswith("$H") or "G38." in cmd_clean.upper()
+        eff_timeout = max(timeout, 45.0 if is_long else 8.0)
+
+        with self._cmd_lock:
+            self._drain_reply_q()
+            try:
+                self._write_raw((cmd_clean + "\n").encode("utf-8"))
+            except Exception as e:
+                return False, f"{self.link_name} write error: {e}"
+
+            collected: List[str] = []
+            t0 = time.time()
+            while time.time() - t0 < eff_timeout:
+                try:
+                    kind, val = self._reply_q.get(timeout=0.15)
+                except queue.Empty:
+                    if not self.connected:
+                        return False, f"{self.link_name} disconnected"
+                    continue
+                if kind == "status":
+                    continue
+                collected.append(val)
+                if val.startswith("error:") or val.startswith("ALARM:"):
+                    return False, "\n".join(collected)
+                if val == "ok":
+                    if expect_probe and not any("[PRB:" in x for x in collected):
+                        # Brief settle in case [PRB:] arrives just around ok
+                        continue
+                    return True, "\n".join(collected)
+            return False, f"Timed out waiting for ok on '{cmd_clean}' via {self.link_name}"
+
+
+class CNCWebSocketBridge(_BaseGrblLink):
+    """Option A: Persistent RFC 6455 WebSocket bridge proxy to FluidNC ESP32."""
+
+    link_name = "ws"
+
+    def __init__(self, on_event=None):
+        super().__init__(on_event=on_event)
+        self.ip = "192.168.8.109"
+        self.port = 80
+        self.endpoint = "/?independent_session=1"
+        self._sock: Optional[socket.socket] = None
+        self._tx_lock = threading.Lock()
+        self._rx_thread: Optional[threading.Thread] = None
+        self._poll_thread: Optional[threading.Thread] = None
+        self._extra_bytes = bytearray()
+
+    @staticmethod
+    def _encode_client_frame(payload: bytes, opcode: int = 0x1) -> bytes:
+        mask = os.urandom(4)
+        n = len(payload)
+        b0 = 0x80 | (opcode & 0x0F)
+        if n < 126:
+            header = bytes([b0, 0x80 | n]) + mask
+        elif n < 65536:
+            header = struct.pack("!BBH", b0, 0x80 | 126, n) + mask
+        else:
+            header = struct.pack("!BBQ", b0, 0x80 | 127, n) + mask
+        masked = bytes(b ^ mask[i & 3] for i, b in enumerate(payload))
+        return header + masked
+
+    def _recv_exact(self, n: int) -> Optional[bytes]:
+        buf = bytearray()
+        if self._extra_bytes:
+            take = min(n, len(self._extra_bytes))
+            buf.extend(self._extra_bytes[:take])
+            del self._extra_bytes[:take]
+        while len(buf) < n:
+            if not self._sock:
+                return None
+            chunk = self._sock.recv(n - len(buf))
+            if not chunk:
+                return None
+            buf.extend(chunk)
+        return bytes(buf)
+
+    def _read_ws_frame(self) -> Optional[Tuple[int, bytes]]:
+        hdr = self._recv_exact(2)
+        if not hdr:
+            return None
+        b0, b1 = hdr[0], hdr[1]
+        fin = (b0 & 0x80) != 0
+        opcode = b0 & 0x0F
+        masked = (b1 & 0x80) != 0
+        length = b1 & 0x7F
+        if length == 126:
+            ext = self._recv_exact(2)
+            if not ext:
+                return None
+            length = struct.unpack("!H", ext)[0]
+        elif length == 127:
+            ext = self._recv_exact(8)
+            if not ext:
+                return None
+            length = struct.unpack("!Q", ext)[0]
+        mask_key = self._recv_exact(4) if masked else None
+        payload = self._recv_exact(length) if length > 0 else b""
+        if payload is None:
+            return None
+        if masked and mask_key:
+            payload = bytes(b ^ mask_key[i & 3] for i, b in enumerate(payload))
+
+        if not fin and opcode in (0x1, 0x2):
+            acc = bytearray(payload)
+            while True:
+                nxt = self._read_ws_frame()
+                if nxt is None:
+                    return None
+                nop, npay = nxt
+                acc.extend(npay)
+                if nop == 0x0:
+                    # Wait until FIN handled cleanly; simplified for text fragments
+                    if len(npay) == 0:
+                        break
+                    break
+            return opcode, bytes(acc)
+        return opcode, payload
+
+    def _write_raw(self, payload: bytes):
+        with self._tx_lock:
+            if not self._sock or not self.connected:
+                raise ConnectionError("WebSocket proxy not connected")
+            self._sock.sendall(self._encode_client_frame(payload, opcode=0x1))
+
+    def connect(self, ip: str, timeout: float = 2.5) -> Tuple[bool, str]:
+        ip = (ip or "192.168.8.109").strip()
+        if self.connected and self.ip == ip:
+            return True, f"WebSocket proxy already connected to {ip}:{self.port}"
+        self.disconnect()
+        self.ip = ip
+        self.connecting = True
+        self._stop_ev.clear()
+
+        candidates = [
+            (80, "/?independent_session=1", "arduino"),
+            (81, "/", "arduino"),
+            (80, "/ws", "arduino"),
+            (80, "/", None),
+        ]
+        last_err = "Connection failed"
+        for port, path, proto in candidates:
+            sock = None
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(timeout)
+                sock.connect((ip, port))
+                key = base64.b64encode(os.urandom(16)).decode("ascii")
+                headers = [
+                    f"GET {path} HTTP/1.1",
+                    f"Host: {ip}:{port}",
+                    "Upgrade: websocket",
+                    "Connection: Upgrade",
+                    f"Sec-WebSocket-Key: {key}",
+                    "Sec-WebSocket-Version: 13",
+                ]
+                if proto:
+                    headers.append(f"Sec-WebSocket-Protocol: {proto}")
+                req = ("\r\n".join(headers) + "\r\n\r\n").encode("utf-8")
+                sock.sendall(req)
+
+                raw_hdr = bytearray()
+                while b"\r\n\r\n" not in raw_hdr and len(raw_hdr) < 8192:
+                    chunk = sock.recv(2048)
+                    if not chunk:
+                        break
+                    raw_hdr.extend(chunk)
+                idx = raw_hdr.find(b"\r\n\r\n")
+                if idx < 0:
+                    raise RuntimeError("Incomplete HTTP upgrade response")
+                hdr_txt = raw_hdr[:idx].decode("latin1", errors="replace")
+                trailing = raw_hdr[idx + 4:]
+                if "101" not in hdr_txt.splitlines()[0]:
+                    raise RuntimeError(f"Handshake rejected ({hdr_txt.splitlines()[0]})")
+
+                expected_acc = base64.b64encode(
+                    hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")).digest()
+                ).decode("ascii")
+                m_acc = re.search(r"Sec-WebSocket-Accept:\s*([^\r\n]+)", hdr_txt, re.IGNORECASE)
+                if m_acc and m_acc.group(1).strip() != expected_acc:
+                    raise RuntimeError("Sec-WebSocket-Accept mismatch")
+
+                sock.settimeout(1.0)
+                self._sock = sock
+                self.port = port
+                self.endpoint = path
+                self._extra_bytes = bytearray(trailing)
+                self.connected = True
+                self.connecting = False
+                self.last_error = ""
+                self._rx_thread = threading.Thread(target=self._rx_loop, daemon=True)
+                self._rx_thread.start()
+                self._poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
+                self._poll_thread.start()
+                self._emit("console", {"via": "ws", "line": f"[WS Proxy] Connected ws://{ip}:{port}{path}", "ts": time.strftime("%H:%M:%S")})
+                try:
+                    self._write_raw(b"?")
+                except Exception:
+                    pass
+                return True, f"Connected WS Proxy ws://{ip}:{port}{path}"
+            except Exception as e:
+                last_err = str(e)
+                if sock:
+                    try:
+                        sock.close()
+                    except Exception:
+                        pass
+
+        self.connecting = False
+        self.connected = False
+        self.last_error = last_err
+        return False, f"WebSocket proxy error ({ip}): {last_err}"
+
+    def _rx_loop(self):
+        while not self._stop_ev.is_set() and self._sock:
+            try:
+                frame = self._read_ws_frame()
+                if frame is None:
+                    break
+                opcode, payload = frame
+                if opcode == 0x8:  # Close
+                    break
+                elif opcode == 0x9:  # Ping -> Pong
+                    with self._tx_lock:
+                        if self._sock:
+                            self._sock.sendall(self._encode_client_frame(payload, opcode=0xA))
+                elif opcode in (0x1, 0x2, 0x0):
+                    txt = payload.decode("utf-8", errors="replace")
+                    self._feed_text(txt, key_ip=self.ip)
+            except socket.timeout:
+                continue
+            except Exception as e:
+                self.last_error = str(e)
+                break
+        self.connected = False
+        self.state = "Offline"
+        self._emit("console", {"via": "ws", "line": "[WS Proxy] Disconnected", "ts": time.strftime("%H:%M:%S")})
+        self._emit("status_tick", {"via": "ws", "state": "Offline", "online": False})
+
+    def _poll_loop(self):
+        while not self._stop_ev.is_set() and self.connected:
+            try:
+                self._write_raw(b"?")
+            except Exception:
+                break
+            self._stop_ev.wait(0.45)
+
+    def disconnect(self):
+        self._stop_ev.set()
+        self.connected = False
+        with self._tx_lock:
+            if self._sock:
+                try:
+                    self._sock.sendall(self._encode_client_frame(b"", opcode=0x8))
+                except Exception:
+                    pass
+                try:
+                    self._sock.close()
+                except Exception:
+                    pass
+                self._sock = None
+        self.state = "Offline"
+
+
+class CNCSerialBridge(_BaseGrblLink):
+    """Option 1: Persistent Python USB Serial bridge to FluidNC / Grbl controller."""
+
+    link_name = "usb"
+
+    def __init__(self, on_event=None):
+        super().__init__(on_event=on_event)
+        self.port_path = ""
+        self.baudrate = 115200
+        self._serial: Optional[_RawSerialPort] = None
+        self._rx_thread: Optional[threading.Thread] = None
+        self._poll_thread: Optional[threading.Thread] = None
+
+    def _write_raw(self, payload: bytes):
+        if not self._serial or not self._serial.is_open:
+            raise ConnectionError("USB Serial port not open")
+        self._serial.write(payload)
+
+    @staticmethod
+    def resolve_cnc_port(requested: str = "auto") -> Optional[str]:
+        if requested and requested != "auto":
+            return requested if os.path.exists(requested) else None
+        ports = list_cnc_usb_ports()
+        for p in ports:
+            if p.get("is_cnc"):
+                return p["device"]
+        return ports[0]["device"] if ports else None
+
+    def connect(self, port: str = "auto", baudrate: int = 115200) -> Tuple[bool, str]:
+        resolved = self.resolve_cnc_port(port)
+        if not resolved:
+            self.last_error = "No CNC USB serial port found (/dev/ttyUSB* or /dev/ttyACM*)"
+            return False, self.last_error
+
+        baud = int(baudrate or 115200)
+        if self.connected and self.port_path == resolved and self.baudrate == baud:
+            return True, f"USB Serial already connected on {resolved} @ {baud}"
+
+        self.disconnect()
+        self.connecting = True
+        self._stop_ev.clear()
+        try:
+            self._serial = _RawSerialPort(resolved, baudrate=baud, timeout=0.12)
+            self.port_path = resolved
+            self.baudrate = baud
+            self.connected = True
+            self.connecting = False
+            self.last_error = ""
+            self._rx_thread = threading.Thread(target=self._rx_loop, daemon=True)
+            self._rx_thread.start()
+            self._poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
+            self._poll_thread.start()
+            self._emit("console", {"via": "usb", "line": f"[USB Bridge] Opened {resolved} @ {baud}", "ts": time.strftime("%H:%M:%S")})
+            time.sleep(0.15)
+            try:
+                self._write_raw(b"\r\n?")
+            except Exception:
+                pass
+            return True, f"Connected USB Serial {resolved} @ {baud}"
+        except Exception as e:
+            self.connecting = False
+            self.connected = False
+            self.last_error = str(e)
+            return False, f"USB Serial failed on {resolved}: {e}"
+
+    def _rx_loop(self):
+        while not self._stop_ev.is_set() and self._serial and self._serial.is_open:
+            try:
+                data = self._serial.read(1024, timeout=0.12)
+                if data:
+                    self._feed_text(data.decode("utf-8", errors="replace"), key_ip="usb")
+            except Exception as e:
+                self.last_error = str(e)
+                break
+        self.connected = False
+        self.state = "Offline"
+        self._emit("console", {"via": "usb", "line": "[USB Bridge] Disconnected", "ts": time.strftime("%H:%M:%S")})
+        self._emit("status_tick", {"via": "usb", "state": "Offline", "online": False})
+
+    def _poll_loop(self):
+        while not self._stop_ev.is_set() and self.connected:
+            try:
+                self._write_raw(b"?")
+            except Exception:
+                break
+            self._stop_ev.wait(0.30)
+
+    def disconnect(self):
+        self._stop_ev.set()
+        self.connected = False
+        if self._serial:
+            self._serial.close()
+            self._serial = None
+        self.state = "Offline"
+
+
+def _http_probe_fluidnc(ip: str, timeout: float = 1.6) -> Tuple[bool, str]:
     try:
         url = f"http://{ip}/command?plain=%3F"
         req = urllib.request.Request(url, headers={"User-Agent": "PCBPanelizer/2.0"})
@@ -7978,400 +8896,476 @@ def check_fluidnc_online(ip: str, timeout: float = 2.0) -> Tuple[bool, str]:
             return False, str(e)
 
 
-def send_fluidnc_plain_cmd(ip: str, cmd: str, timeout: float = 3.0) -> Tuple[bool, str]:
-    """Send a single GRBL/FluidNC command via HTTP /command?plain=... with Telnet :23 fallback."""
-    import socket
-    cmd_clean = cmd.strip()
-    is_long = cmd_clean.upper().startswith("$H") or "G38." in cmd_clean.upper()
-    eff_timeout = max(timeout, 45.0 if is_long else 5.0)
-    encoded = urllib.parse.quote(cmd_clean)
-    try:
-        url = f"http://{ip}/command?plain={encoded}"
-        req = urllib.request.Request(url, headers={"User-Agent": "PCBPanelizer/2.0"})
-        with urllib.request.urlopen(req, timeout=eff_timeout) as resp:
-            return True, resp.read().decode("utf-8", errors="replace").strip()
-    except Exception:
+class CNCBridgeManager:
+    """Unified controller bridge supporting Option 1 (USB Serial) + Option A (WS Proxy) + SSE fan-out."""
+
+    def __init__(self):
+        self.transport_mode = "auto"  # auto | ws | usb | telnet
+        self.ip = "192.168.8.109"
+        self.serial_port = "auto"
+        self.baudrate = 115200
+        self.ws_bridge = CNCWebSocketBridge(on_event=self._on_link_event)
+        self.usb_bridge = CNCSerialBridge(on_event=self._on_link_event)
+        self._sse_lock = threading.Lock()
+        self._sse_clients: List[queue.Queue] = []
+        self._console_tail: List[Dict[str, str]] = []
+        self._stream_lock = threading.RLock()
+        self._stream_session: Dict[str, Any] = {
+            "active": False,
+            "state": "idle",  # idle | running | waiting_confirm | done | aborted | error
+            "ip": "192.168.8.109",
+            "via": "none",
+            "filename": "",
+            "sent": 0,
+            "total": 0,
+            "prompt": "",
+            "message": "",
+            "abort": False,
+            "event": None,
+        }
+
+    def load_from_ui_config(self):
+        ucfg = load_ui_config()
+        self.transport_mode = str(ucfg.get("cnc_transport", "auto") or "auto").lower()
+        self.serial_port = str(ucfg.get("cnc_serial_port", "auto") or "auto")
+        self.baudrate = int(ucfg.get("cnc_baudrate", 115200) or 115200)
+
+    def subscribe_sse(self) -> queue.Queue:
+        q: queue.Queue = queue.Queue(maxsize=64)
+        with self._sse_lock:
+            self._sse_clients.append(q)
+        return q
+
+    def unsubscribe_sse(self, q: queue.Queue):
+        with self._sse_lock:
+            if q in self._sse_clients:
+                self._sse_clients.remove(q)
+
+    def _broadcast(self, event_name: str, payload: Dict[str, Any]):
+        msg = (event_name, json.dumps(payload))
+        with self._sse_lock:
+            dead = []
+            for q in self._sse_clients:
+                try:
+                    if q.full():
+                        try:
+                            q.get_nowait()
+                        except queue.Empty:
+                            pass
+                    q.put_nowait(msg)
+                except Exception:
+                    dead.append(q)
+            for q in dead:
+                if q in self._sse_clients:
+                    self._sse_clients.remove(q)
+
+    def _on_link_event(self, event_type: str, payload: Dict[str, Any]):
+        if event_type == "console":
+            self._console_tail.append(payload)
+            if len(self._console_tail) > 60:
+                self._console_tail = self._console_tail[-60:]
+            self._broadcast("console", payload)
+        elif event_type == "status_tick":
+            self._broadcast("status", self.get_status_snapshot(probe_if_idle=False))
+
+    def disconnect(self) -> Tuple[bool, str, Dict[str, Any]]:
+        return self.connect(action="disconnect")
+
+    def _resolve_active_link(self) -> Optional[_BaseGrblLink]:
+        mode = self.transport_mode
+        if mode == "usb":
+            return self.usb_bridge if self.usb_bridge.connected else None
+        if mode == "ws":
+            return self.ws_bridge if self.ws_bridge.connected else None
+        if mode == "telnet":
+            return None
+        # auto mode: prefer connected USB serial, else connected WS proxy
+        if self.usb_bridge.connected:
+            return self.usb_bridge
+        if self.ws_bridge.connected:
+            return self.ws_bridge
+        return None
+
+    def connect(
+        self,
+        transport: Optional[str] = None,
+        ip: Optional[str] = None,
+        serial_port: Optional[str] = None,
+        baudrate: Optional[int] = None,
+        action: str = "connect",
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        if transport is not None:
+            self.transport_mode = str(transport).lower().strip() or "auto"
+        if ip is not None and ip.strip():
+            self.ip = ip.strip()
+        if serial_port is not None and serial_port.strip():
+            self.serial_port = serial_port.strip()
+        if baudrate is not None:
+            self.baudrate = int(baudrate)
+
+        if action == "disconnect":
+            self.usb_bridge.disconnect()
+            self.ws_bridge.disconnect()
+            snap = self.get_status_snapshot(probe_if_idle=False)
+            self._broadcast("status", snap)
+            return True, "Disconnected bridges", snap
+
+        ok, msg = True, f"Configured mode: {self.transport_mode}"
+        if self.transport_mode == "usb":
+            self.ws_bridge.disconnect()
+            ok, msg = self.usb_bridge.connect(self.serial_port, self.baudrate)
+        elif self.transport_mode == "ws":
+            self.usb_bridge.disconnect()
+            ok, msg = self.ws_bridge.connect(self.ip)
+        elif self.transport_mode == "telnet":
+            self.usb_bridge.disconnect()
+            self.ws_bridge.disconnect()
+            ok, msg = _http_probe_fluidnc(self.ip)
+        else:
+            # auto: try WS proxy if IP configured, or USB if selected explicitly
+            if self.serial_port and self.serial_port != "auto" and os.path.exists(self.serial_port):
+                ok, msg = self.usb_bridge.connect(self.serial_port, self.baudrate)
+            else:
+                ok, msg = self.ws_bridge.connect(self.ip)
+                if not ok and self.usb_bridge.resolve_cnc_port("auto"):
+                    ok, msg = self.usb_bridge.connect("auto", self.baudrate)
+
+        snap = self.get_status_snapshot(probe_if_idle=False)
+        self._broadcast("status", snap)
+        return ok, msg, snap
+
+    def get_status_snapshot(self, probe_if_idle: bool = True, ip: Optional[str] = None) -> Dict[str, Any]:
+        if ip and ip.strip():
+            self.ip = ip.strip()
+        link = self._resolve_active_link()
+        if link is not None:
+            return {
+                "online": link.connected,
+                "status": link.status_text or f"Connected ({link.link_name.upper()})",
+                "ip": self.ip,
+                "state": link.state,
+                "mpos": link.mpos,
+                "wpos": link.wpos,
+                "transport_configured": self.transport_mode,
+                "transport_active": link.link_name,
+                "ws_connected": self.ws_bridge.connected,
+                "usb_connected": self.usb_bridge.connected,
+                "usb_port": self.usb_bridge.port_path or self.serial_port,
+                "baudrate": self.baudrate,
+                "sd_mounted": link.sd_mounted,
+                "last_error": link.last_error,
+                "console_tail": self._console_tail[-12:],
+            }
+
+        # Not actively bridged yet: try auto-connecting or lightweight HTTP probe when requested
+        if probe_if_idle and self.transport_mode in ("auto", "ws", "telnet"):
+            if self.transport_mode in ("ws", "auto") and not self.ws_bridge.connected:
+                self.ws_bridge.connect(self.ip, timeout=1.5)
+                if self.ws_bridge.connected:
+                    return self.get_status_snapshot(probe_if_idle=False)
+            ok, st = _http_probe_fluidnc(self.ip, timeout=1.5)
+            parsed = parse_fluidnc_status_line(st, ip=self.ip) if ok else {"state": "Offline", "mpos": None, "wpos": None}
+            return {
+                "online": ok,
+                "status": st,
+                "ip": self.ip,
+                "state": parsed["state"],
+                "mpos": parsed["mpos"],
+                "wpos": parsed["wpos"],
+                "transport_configured": self.transport_mode,
+                "transport_active": "http" if ok else "none",
+                "ws_connected": False,
+                "usb_connected": False,
+                "usb_port": self.serial_port,
+                "baudrate": self.baudrate,
+                "sd_mounted": None,
+                "last_error": "" if ok else st,
+                "console_tail": self._console_tail[-12:],
+            }
+
+        return {
+            "online": False,
+            "status": "Offline",
+            "ip": self.ip,
+            "state": "Offline",
+            "mpos": None,
+            "wpos": None,
+            "transport_configured": self.transport_mode,
+            "transport_active": "none",
+            "ws_connected": self.ws_bridge.connected,
+            "usb_connected": self.usb_bridge.connected,
+            "usb_port": self.usb_bridge.port_path or self.serial_port,
+            "baudrate": self.baudrate,
+            "sd_mounted": None,
+            "last_error": (self.usb_bridge.last_error if self.transport_mode == "usb" else self.ws_bridge.last_error),
+            "console_tail": self._console_tail[-12:],
+        }
+
+    def send_command(self, ip: str, cmd: str, timeout: float = 5.0, expect_probe: bool = False) -> Tuple[bool, str]:
+        if ip and ip.strip():
+            self.ip = ip.strip()
+        cmd_clean = (cmd or "").strip()
+        link = self._resolve_active_link()
+        if link is None and self.transport_mode == "usb":
+            self.usb_bridge.connect(self.serial_port, self.baudrate)
+            link = self._resolve_active_link()
+        elif link is None and self.transport_mode in ("ws", "auto"):
+            self.ws_bridge.connect(self.ip, timeout=2.0)
+            link = self._resolve_active_link()
+
+        if link is not None:
+            return link.send_command(cmd_clean, timeout=timeout, expect_probe=expect_probe)
+
+        if self.transport_mode == "usb":
+            return False, self.usb_bridge.last_error or "USB Serial not connected"
+
+        # HTTP /command?plain=... then Telnet :23 fallback
+        is_long = cmd_clean.upper().startswith("$H") or "G38." in cmd_clean.upper()
+        eff_timeout = max(timeout, 45.0 if is_long else 5.0)
+        encoded = urllib.parse.quote(cmd_clean)
         try:
-            with socket.create_connection((ip, 23), timeout=eff_timeout) as s:
-                s.settimeout(eff_timeout)
-                s.sendall((cmd_clean + "\n").encode("utf-8"))
-                buf = ""
-                t0 = time.time()
-                while time.time() - t0 < eff_timeout:
-                    chunk = s.recv(1024).decode("utf-8", errors="replace")
-                    if not chunk:
-                        break
-                    buf += chunk
-                    if "ok" in buf or "error:" in buf or "ALARM:" in buf:
-                        break
-                if "error:" in buf or "ALARM:" in buf:
-                    return False, buf.strip()
-                return True, buf.strip() or "ok"
-        except Exception as e:
-            return False, str(e)
+            url = f"http://{self.ip}/command?plain={encoded}"
+            req = urllib.request.Request(url, headers={"User-Agent": "PCBPanelizer/2.0"})
+            with urllib.request.urlopen(req, timeout=eff_timeout) as resp:
+                return True, resp.read().decode("utf-8", errors="replace").strip()
+        except Exception:
+            try:
+                with socket.create_connection((self.ip, 23), timeout=eff_timeout) as s:
+                    s.settimeout(eff_timeout)
+                    s.sendall((cmd_clean + "\n").encode("utf-8"))
+                    buf = ""
+                    t0 = time.time()
+                    while time.time() - t0 < eff_timeout:
+                        chunk = s.recv(1024).decode("utf-8", errors="replace")
+                        if not chunk:
+                            break
+                        buf += chunk
+                        if "ok" in buf or "error:" in buf or "ALARM:" in buf:
+                            break
+                    if "error:" in buf or "ALARM:" in buf:
+                        return False, buf.strip()
+                    return True, buf.strip() or "ok"
+            except Exception as e:
+                return False, str(e)
+
+    def get_stream_snapshot(self) -> Dict[str, Any]:
+        with self._stream_lock:
+            return {k: v for k, v in self._stream_session.items() if k != "event"}
+
+    def start_stream_session(self, ip: str, gcode_text: str, filename: str = "") -> Dict[str, Any]:
+        if ip and ip.strip():
+            self.ip = ip.strip()
+        parsed_lines: List[Tuple[str, str]] = []
+        pending_msg = ""
+        for raw in gcode_text.splitlines():
+            code = raw.split(";")[0].strip()
+            if not code:
+                continue
+            m_msg = re.match(r"^\(\s*MSG\s*,\s*(.+?)\s*\)$", code, re.IGNORECASE)
+            if m_msg:
+                pending_msg = m_msg.group(1).strip()
+                continue
+            if code.startswith("(") and code.endswith(")"):
+                continue
+            base_cmd = re.sub(r"\([^)]*\)", "", code).strip().upper()
+            if base_cmd in ("M0", "M1"):
+                m_inline = re.search(r"\(([^)]+)\)", code)
+                if m_inline and not pending_msg:
+                    pending_msg = m_inline.group(1).strip()
+                parsed_lines.append((base_cmd, pending_msg))
+                pending_msg = ""
+            else:
+                parsed_lines.append((code, pending_msg))
+
+        if not parsed_lines:
+            return {"success": False, "error": "No executable G-code lines found"}
+
+        link = self._resolve_active_link()
+        if link is None and self.transport_mode == "usb":
+            self.usb_bridge.connect(self.serial_port, self.baudrate)
+            link = self._resolve_active_link()
+        elif link is None and self.transport_mode in ("ws", "auto"):
+            self.ws_bridge.connect(self.ip, timeout=2.0)
+            link = self._resolve_active_link()
+
+        via = link.link_name if link is not None else "telnet"
+        if self.transport_mode == "usb" and link is None:
+            return {"success": False, "error": self.usb_bridge.last_error or "USB Serial not connected"}
+
+        ev = threading.Event()
+        with self._stream_lock:
+            if self._stream_session.get("active") and self._stream_session.get("event"):
+                self._stream_session["abort"] = True
+                self._stream_session["event"].set()
+            self._stream_session.update({
+                "active": True,
+                "state": "running",
+                "ip": self.ip,
+                "via": via,
+                "filename": filename,
+                "sent": 0,
+                "total": len(parsed_lines),
+                "prompt": "",
+                "message": f"Streaming {filename or 'G-code'} via {via.upper()}...",
+                "abort": False,
+                "event": ev,
+            })
+        self._broadcast("stream", self.get_stream_snapshot())
+
+        def _worker():
+            telnet_sock = None
+            try:
+                if link is None:
+                    telnet_sock = socket.create_connection((self.ip, 23), timeout=15.0)
+                    telnet_sock.settimeout(20.0)
+
+                def _send_one(line_cmd: str) -> Tuple[bool, str]:
+                    if link is not None:
+                        return link.send_command(line_cmd, timeout=25.0)
+                    assert telnet_sock is not None
+                    telnet_sock.sendall((line_cmd + "\n").encode("utf-8"))
+                    buf = ""
+                    t0 = time.time()
+                    while time.time() - t0 < 25.0:
+                        chunk = telnet_sock.recv(1024).decode("utf-8", errors="replace")
+                        if not chunk:
+                            break
+                        buf += chunk
+                        if "error:" in buf or "ALARM:" in buf:
+                            return False, buf.strip()
+                        if "ok" in buf:
+                            return True, buf.strip()
+                    return False, "Telnet timeout waiting for ok"
+
+                for idx, (cmd, msg_txt) in enumerate(parsed_lines):
+                    with self._stream_lock:
+                        if self._stream_session["abort"]:
+                            break
+                    ok, reply = _send_one(cmd)
+                    if not ok:
+                        with self._stream_lock:
+                            self._stream_session["state"] = "error"
+                            self._stream_session["message"] = f"Error at line {idx+1} ({cmd}): {reply}"
+                            self._stream_session["active"] = False
+                        self._broadcast("stream", self.get_stream_snapshot())
+                        return
+
+                    with self._stream_lock:
+                        self._stream_session["sent"] = idx + 1
+                    if (idx + 1) % 5 == 0 or (idx + 1) == len(parsed_lines):
+                        self._broadcast("stream", self.get_stream_snapshot())
+
+                    if cmd.upper() in ("M0", "M1"):
+                        ev.clear()
+                        with self._stream_lock:
+                            self._stream_session["state"] = "waiting_confirm"
+                            self._stream_session["prompt"] = msg_txt or "Operator pause (M0). Verify tool position & clamps to continue."
+                            self._stream_session["message"] = "Paused at M0 — awaiting operator confirmation"
+                        self._broadcast("stream", self.get_stream_snapshot())
+                        ev.wait()
+                        with self._stream_lock:
+                            if self._stream_session["abort"]:
+                                self.send_command(self.ip, "\x18")
+                                time.sleep(0.15)
+                                self.send_command(self.ip, "M5")
+                                self._stream_session["state"] = "aborted"
+                                self._stream_session["message"] = "Aborted by operator at M0"
+                                self._stream_session["active"] = False
+                                self._broadcast("stream", self.get_stream_snapshot())
+                                return
+                        self.send_command(self.ip, "~")
+                        time.sleep(0.2)
+                        with self._stream_lock:
+                            self._stream_session["state"] = "running"
+                            self._stream_session["prompt"] = ""
+                            self._stream_session["message"] = f"Resumed {filename or 'G-code'}..."
+                        self._broadcast("stream", self.get_stream_snapshot())
+
+                with self._stream_lock:
+                    if not self._stream_session["abort"]:
+                        self._stream_session["state"] = "done"
+                        self._stream_session["message"] = f"Completed {len(parsed_lines)} commands via {via.upper()}"
+                    self._stream_session["active"] = False
+                self._broadcast("stream", self.get_stream_snapshot())
+            except Exception as e:
+                with self._stream_lock:
+                    self._stream_session["state"] = "error"
+                    self._stream_session["message"] = f"Stream error: {e}"
+                    self._stream_session["active"] = False
+                self._broadcast("stream", self.get_stream_snapshot())
+            finally:
+                if telnet_sock:
+                    try:
+                        telnet_sock.close()
+                    except Exception:
+                        pass
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+        return {"success": True, "total": len(parsed_lines), "via": via}
+
+    def stream_action(self, action: str, ip: str = "192.168.8.109") -> Dict[str, Any]:
+        act = (action or "").lower().strip()
+        with self._stream_lock:
+            ev = self._stream_session.get("event")
+            active = self._stream_session.get("active", False)
+            target_ip = self._stream_session.get("ip") or ip
+            if active and ev is not None:
+                if act == "abort":
+                    self._stream_session["abort"] = True
+                    self._stream_session["state"] = "aborted"
+                    self._stream_session["message"] = "Aborted by operator"
+                    self._stream_session["active"] = False
+                else:
+                    self._stream_session["abort"] = False
+                ev.set()
+                self._broadcast("stream", self.get_stream_snapshot())
+                return {"success": True, "action": act}
+        cmd = "\x18" if act == "abort" else "~"
+        ok, msg = self.send_command(target_ip, cmd)
+        return {"success": ok, "action": act, "message": msg}
 
 
-def stream_gcode_to_fluidnc(ip: str, gcode_text: str, timeout: float = 10.0) -> Tuple[bool, str]:
-    """Stream G-code line-by-line to FluidNC over Telnet (port 23) with ok/error flow control."""
-    import socket
+CNC_BRIDGE = CNCBridgeManager()
+
+
+def check_fluidnc_online(ip: str, timeout: float = 2.0) -> Tuple[bool, str]:
+    """Check CNC controller online via active bridge (USB/WS Proxy) or HTTP ? probe."""
+    snap = CNC_BRIDGE.get_status_snapshot(probe_if_idle=True, ip=ip)
+    return bool(snap["online"]), str(snap.get("status", "Offline"))
+
+
+def send_fluidnc_plain_cmd(ip: str, cmd: str, timeout: float = 3.0) -> Tuple[bool, str]:
+    """Send a single GRBL/FluidNC command via active bridge (USB Serial / WS Proxy) or HTTP/Telnet fallback."""
+    return CNC_BRIDGE.send_command(ip, cmd, timeout=timeout)
+
+
+def stream_gcode_to_fluidnc(ip: str, gcode_text: str, timeout: float = 20.0) -> Tuple[bool, str]:
+    """Stream G-code line-by-line synchronously over active bridge (USB Serial / WS Proxy / Telnet :23)."""
     lines = []
     for raw in gcode_text.splitlines():
         line = raw.split(";")[0].strip()
-        if not line:
-            continue
-        # Strip inline parenthetical comments unless it's a MSG
-        if line.startswith("(") and line.endswith(")"):
+        if not line or (line.startswith("(") and line.endswith(")")):
             continue
         lines.append(line)
     if not lines:
         return False, "No executable G-code lines found"
-    try:
-        sent = 0
-        with socket.create_connection((ip, 23), timeout=timeout) as s:
-            s.settimeout(timeout)
-            for line in lines:
-                s.sendall((line + "\n").encode("utf-8"))
-                buf = ""
-                t0 = time.time()
-                while time.time() - t0 < timeout:
-                    chunk = s.recv(1024).decode("utf-8", errors="replace")
-                    if not chunk:
-                        break
-                    buf += chunk
-                    if "error:" in buf or "ALARM:" in buf:
-                        return False, f"Controller error at line {sent + 1} ({line}): {buf.strip()}"
-                    if "ok" in buf:
-                        break
-                sent += 1
-        return True, f"Streamed {sent} G-code command(s) via Telnet :23"
-    except Exception as e:
-        return False, f"Telnet stream failed: {e}"
-
-
-import threading
-
-_STREAM_LOCK = threading.Lock()
-_STREAM_SESSION: Dict[str, Any] = {
-    "active": False,
-    "state": "idle",  # idle | running | waiting_confirm | done | aborted | error
-    "ip": "192.168.8.109",
-    "filename": "",
-    "sent": 0,
-    "total": 0,
-    "prompt": "",
-    "message": "",
-    "abort": False,
-    "event": None,
-}
+    sent = 0
+    for line in lines:
+        ok, msg = CNC_BRIDGE.send_command(ip, line, timeout=timeout)
+        if not ok:
+            return False, f"Controller error at line {sent + 1} ({line}): {msg}"
+        sent += 1
+    via = CNC_BRIDGE.get_status_snapshot(probe_if_idle=False).get("transport_active", "telnet")
+    return True, f"Streamed {sent} G-code command(s) via {via.upper()}"
 
 
 def start_fluidnc_stream_session(ip: str, gcode_text: str, filename: str = "") -> Dict[str, Any]:
-    """Start background Telnet :23 streaming session that pauses at M0/M1 for UI confirmation."""
-    import socket
-    parsed_lines: List[Tuple[str, str]] = []
-    pending_msg = ""
-    for raw in gcode_text.splitlines():
-        code = raw.split(";")[0].strip()
-        if not code:
-            continue
-        m_msg = re.match(r"^\(\s*MSG\s*,\s*(.+?)\s*\)$", code, re.IGNORECASE)
-        if m_msg:
-            pending_msg = m_msg.group(1).strip()
-            continue
-        if code.startswith("(") and code.endswith(")"):
-            continue
-        base_cmd = re.sub(r"\([^)]*\)", "", code).strip().upper()
-        if base_cmd in ("M0", "M1"):
-            m_inline = re.search(r"\(([^)]+)\)", code)
-            if m_inline and not pending_msg:
-                pending_msg = m_inline.group(1).strip()
-            parsed_lines.append((base_cmd, pending_msg))
-            pending_msg = ""
-        else:
-            parsed_lines.append((code, pending_msg))
-
-    if not parsed_lines:
-        return {"success": False, "error": "No executable G-code lines found"}
-
-    ev = threading.Event()
-    with _STREAM_LOCK:
-        if _STREAM_SESSION.get("active") and _STREAM_SESSION.get("event"):
-            _STREAM_SESSION["abort"] = True
-            _STREAM_SESSION["event"].set()
-        _STREAM_SESSION.update({
-            "active": True,
-            "state": "running",
-            "ip": ip,
-            "filename": filename,
-            "sent": 0,
-            "total": len(parsed_lines),
-            "prompt": "",
-            "message": f"Streaming {filename or 'G-code'}...",
-            "abort": False,
-            "event": ev,
-        })
-
-    def _worker():
-        try:
-            with socket.create_connection((ip, 23), timeout=15.0) as s:
-                s.settimeout(15.0)
-                for idx, (cmd, msg_txt) in enumerate(parsed_lines):
-                    with _STREAM_LOCK:
-                        if _STREAM_SESSION["abort"]:
-                            break
-                    s.sendall((cmd + "\n").encode("utf-8"))
-                    buf = ""
-                    t0 = time.time()
-                    while time.time() - t0 < 20.0:
-                        chunk = s.recv(1024).decode("utf-8", errors="replace")
-                        if not chunk:
-                            break
-                        buf += chunk
-                        if "error:" in buf or "ALARM:" in buf:
-                            with _STREAM_LOCK:
-                                _STREAM_SESSION["state"] = "error"
-                                _STREAM_SESSION["message"] = f"Error at line {idx+1} ({cmd}): {buf.strip()}"
-                                _STREAM_SESSION["active"] = False
-                            return
-                        if "ok" in buf:
-                            break
-                    with _STREAM_LOCK:
-                        _STREAM_SESSION["sent"] = idx + 1
-
-                    if cmd.upper() in ("M0", "M1"):
-                        ev.clear()
-                        with _STREAM_LOCK:
-                            _STREAM_SESSION["state"] = "waiting_confirm"
-                            _STREAM_SESSION["prompt"] = msg_txt or "Operator pause (M0). Verify tool position & clamps to continue."
-                            _STREAM_SESSION["message"] = "Paused at M0 — awaiting operator confirmation"
-                        ev.wait()
-                        with _STREAM_LOCK:
-                            if _STREAM_SESSION["abort"]:
-                                s.sendall(b"\x18\nM5\n")
-                                _STREAM_SESSION["state"] = "aborted"
-                                _STREAM_SESSION["message"] = "Aborted by operator at M0"
-                                _STREAM_SESSION["active"] = False
-                                return
-                        s.sendall(b"~\n")
-                        time.sleep(0.2)
-                        with _STREAM_LOCK:
-                            _STREAM_SESSION["state"] = "running"
-                            _STREAM_SESSION["prompt"] = ""
-                            _STREAM_SESSION["message"] = f"Resumed {filename or 'G-code'}..."
-
-            with _STREAM_LOCK:
-                if not _STREAM_SESSION["abort"]:
-                    _STREAM_SESSION["state"] = "done"
-                    _STREAM_SESSION["message"] = f"Completed {len(parsed_lines)} commands"
-                _STREAM_SESSION["active"] = False
-        except Exception as e:
-            with _STREAM_LOCK:
-                _STREAM_SESSION["state"] = "error"
-                _STREAM_SESSION["message"] = f"Stream error: {e}"
-                _STREAM_SESSION["active"] = False
-
-    t = threading.Thread(target=_worker, daemon=True)
-    t.start()
-    return {"success": True, "total": len(parsed_lines)}
+    return CNC_BRIDGE.start_stream_session(ip, gcode_text, filename=filename)
 
 
 def fluidnc_stream_action(action: str, ip: str = "192.168.8.109") -> Dict[str, Any]:
-    """Handle operator Continue (~) or Abort (Ctrl-X) during M0 pause or Hold."""
-    act = (action or "").lower().strip()
-    with _STREAM_LOCK:
-        ev = _STREAM_SESSION.get("event")
-        active = _STREAM_SESSION.get("active", False)
-        target_ip = _STREAM_SESSION.get("ip") or ip
-        if active and ev is not None:
-            if act == "abort":
-                _STREAM_SESSION["abort"] = True
-                _STREAM_SESSION["state"] = "aborted"
-                _STREAM_SESSION["message"] = "Aborted by operator"
-                _STREAM_SESSION["active"] = False
-            else:
-                _STREAM_SESSION["abort"] = False
-            ev.set()
-            return {"success": True, "action": act}
-    # Fallback if Hold happened during SD card run
-    if act == "abort":
-        ok, msg = send_fluidnc_plain_cmd(target_ip, "\x18")
-    else:
-        ok, msg = send_fluidnc_plain_cmd(target_ip, "~")
-    return {"success": ok, "action": act, "message": msg}
-
-
-import threading
-
-_STREAM_LOCK = threading.Lock()
-_STREAM_SESSION: Dict[str, Any] = {
-    "active": False,
-    "state": "idle",  # idle | running | waiting_confirm | done | aborted | error
-    "ip": "192.168.8.109",
-    "filename": "",
-    "sent": 0,
-    "total": 0,
-    "prompt": "",
-    "message": "",
-    "abort": False,
-    "event": None,
-}
-
-
-def start_fluidnc_stream_session(ip: str, gcode_text: str, filename: str = "") -> Dict[str, Any]:
-    """Start background Telnet :23 streaming session that pauses at M0/M1 for UI confirmation."""
-    import socket
-    parsed_lines: List[Tuple[str, str]] = []
-    pending_msg = ""
-    for raw in gcode_text.splitlines():
-        code = raw.split(";")[0].strip()
-        if not code:
-            continue
-        m_msg = re.match(r"^\(\s*MSG\s*,\s*(.+?)\s*\)$", code, re.IGNORECASE)
-        if m_msg:
-            pending_msg = m_msg.group(1).strip()
-            continue
-        if code.startswith("(") and code.endswith(")"):
-            continue
-        base_cmd = re.sub(r"\([^)]*\)", "", code).strip().upper()
-        if base_cmd in ("M0", "M1"):
-            m_inline = re.search(r"\(([^)]+)\)", code)
-            if m_inline and not pending_msg:
-                pending_msg = m_inline.group(1).strip()
-            parsed_lines.append((base_cmd, pending_msg))
-            pending_msg = ""
-        else:
-            parsed_lines.append((code, pending_msg))
-
-    if not parsed_lines:
-        return {"success": False, "error": "No executable G-code lines found"}
-
-    ev = threading.Event()
-    with _STREAM_LOCK:
-        if _STREAM_SESSION.get("active") and _STREAM_SESSION.get("event"):
-            _STREAM_SESSION["abort"] = True
-            _STREAM_SESSION["event"].set()
-        _STREAM_SESSION.update({
-            "active": True,
-            "state": "running",
-            "ip": ip,
-            "filename": filename,
-            "sent": 0,
-            "total": len(parsed_lines),
-            "prompt": "",
-            "message": f"Streaming {filename or 'G-code'}...",
-            "abort": False,
-            "event": ev,
-        })
-
-    def _worker():
-        try:
-            with socket.create_connection((ip, 23), timeout=15.0) as s:
-                s.settimeout(15.0)
-                for idx, (cmd, msg_txt) in enumerate(parsed_lines):
-                    with _STREAM_LOCK:
-                        if _STREAM_SESSION["abort"]:
-                            break
-                    s.sendall((cmd + "\n").encode("utf-8"))
-                    buf = ""
-                    t0 = time.time()
-                    while time.time() - t0 < 20.0:
-                        chunk = s.recv(1024).decode("utf-8", errors="replace")
-                        if not chunk:
-                            break
-                        buf += chunk
-                        if "error:" in buf or "ALARM:" in buf:
-                            with _STREAM_LOCK:
-                                _STREAM_SESSION["state"] = "error"
-                                _STREAM_SESSION["message"] = f"Error at line {idx+1} ({cmd}): {buf.strip()}"
-                                _STREAM_SESSION["active"] = False
-                            return
-                        if "ok" in buf:
-                            break
-                    with _STREAM_LOCK:
-                        _STREAM_SESSION["sent"] = idx + 1
-
-                    if cmd.upper() in ("M0", "M1"):
-                        ev.clear()
-                        with _STREAM_LOCK:
-                            _STREAM_SESSION["state"] = "waiting_confirm"
-                            _STREAM_SESSION["prompt"] = msg_txt or "Operator pause (M0). Verify tool position & clamps to continue."
-                            _STREAM_SESSION["message"] = "Paused at M0 — awaiting operator confirmation"
-                        ev.wait()
-                        with _STREAM_LOCK:
-                            if _STREAM_SESSION["abort"]:
-                                s.sendall(b"\x18\nM5\n")
-                                _STREAM_SESSION["state"] = "aborted"
-                                _STREAM_SESSION["message"] = "Aborted by operator at M0"
-                                _STREAM_SESSION["active"] = False
-                                return
-                        s.sendall(b"~\n")
-                        time.sleep(0.2)
-                        with _STREAM_LOCK:
-                            _STREAM_SESSION["state"] = "running"
-                            _STREAM_SESSION["prompt"] = ""
-                            _STREAM_SESSION["message"] = f"Resumed {filename or 'G-code'}..."
-
-            with _STREAM_LOCK:
-                if not _STREAM_SESSION["abort"]:
-                    _STREAM_SESSION["state"] = "done"
-                    _STREAM_SESSION["message"] = f"Completed {len(parsed_lines)} commands"
-                _STREAM_SESSION["active"] = False
-        except Exception as e:
-            with _STREAM_LOCK:
-                _STREAM_SESSION["state"] = "error"
-                _STREAM_SESSION["message"] = f"Stream error: {e}"
-                _STREAM_SESSION["active"] = False
-
-    t = threading.Thread(target=_worker, daemon=True)
-    t.start()
-    return {"success": True, "total": len(parsed_lines)}
-
-
-def fluidnc_stream_action(action: str, ip: str = "192.168.8.109") -> Dict[str, Any]:
-    """Handle operator Continue (~) or Abort (Ctrl-X) during M0 pause or Hold."""
-    act = (action or "").lower().strip()
-    with _STREAM_LOCK:
-        ev = _STREAM_SESSION.get("event")
-        active = _STREAM_SESSION.get("active", False)
-        target_ip = _STREAM_SESSION.get("ip") or ip
-        if active and ev is not None:
-            if act == "abort":
-                _STREAM_SESSION["abort"] = True
-                _STREAM_SESSION["state"] = "aborted"
-                _STREAM_SESSION["message"] = "Aborted by operator"
-                _STREAM_SESSION["active"] = False
-            else:
-                _STREAM_SESSION["abort"] = False
-            ev.set()
-            return {"success": True, "action": act}
-    # Fallback if Hold happened during SD card run
-    if act == "abort":
-        ok, msg = send_fluidnc_plain_cmd(target_ip, "\x18")
-    else:
-        ok, msg = send_fluidnc_plain_cmd(target_ip, "~")
-    return {"success": ok, "action": act, "message": msg}
-
-
-def list_stm32_usb_ports() -> List[Dict[str, str]]:
-    """Discover USB CDC/ACM serial ports (STM32 custom inkjet controller)."""
-    ports: List[Dict[str, str]] = []
-    seen = set()
-    try:
-        import serial.tools.list_ports
-        for p in serial.tools.list_ports.comports():
-            seen.add(p.device)
-            desc = f"{p.description or ''} {p.manufacturer or ''}".strip()
-            is_stm = ("STM" in desc.upper()) or (p.vid == 0x0483) or ("ttyACM" in p.device)
-            ports.append({"device": p.device, "label": desc or p.device, "is_stm32": is_stm})
-    except Exception:
-        pass
-    for pat in ("/dev/ttyACM*", "/dev/ttyUSB*"):
-        for dev in sorted(glob.glob(pat)):
-            if dev in seen:
-                continue
-            seen.add(dev)
-            ports.append({"device": dev, "label": os.path.basename(dev), "is_stm32": ("ttyACM" in dev)})
-    return ports
+    return CNC_BRIDGE.stream_action(action, ip=ip)
 
 
 def _resolve_stm32_port(requested_port: str) -> Optional[str]:
@@ -8385,47 +9379,23 @@ def _resolve_stm32_port(requested_port: str) -> Optional[str]:
 
 
 def send_stm32_usb_payload(port: str, baudrate: int, lines: List[str], timeout: float = 2.0) -> Tuple[bool, str]:
-    """Send commands to STM32 USB CDC serial port using pyserial or pure-stdlib termios."""
+    """Send commands to STM32 USB CDC serial port using _RawSerialPort."""
     resolved = _resolve_stm32_port(port)
     if not resolved:
         return False, "No STM32 USB serial device found (/dev/ttyACM* or /dev/ttyUSB*)"
     payload = ("\n".join(lines) + "\n").encode("utf-8")
+    ser = None
     try:
-        import serial
-        with serial.Serial(resolved, int(baudrate), timeout=timeout) as ser:
-            ser.write(payload)
-            ser.flush()
-            time.sleep(0.15)
-            reply = ser.read_all().decode("utf-8", errors="replace").strip()
-            return True, f"Sent {len(lines)} cmd(s) to {resolved}" + (f" -> {reply}" if reply else "")
-    except ImportError:
-        import termios, select
-        baud_map = {
-            9600: termios.B9600, 19200: termios.B19200, 38400: termios.B38400,
-            57600: termios.B57600, 115200: termios.B115200, 230400: termios.B230400,
-        }
-        try:
-            fd = os.open(resolved, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
-            try:
-                attrs = termios.tcgetattr(fd)
-                attrs[0] = 0
-                attrs[1] = 0
-                attrs[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
-                attrs[3] = 0
-                spd = baud_map.get(int(baudrate), termios.B115200)
-                attrs[4] = spd
-                attrs[5] = spd
-                termios.tcsetattr(fd, termios.TCSANOW, attrs)
-                os.write(fd, payload)
-                rlist, _, _ = select.select([fd], [], [], 0.3)
-                reply = os.read(fd, 1024).decode("utf-8", errors="replace").strip() if rlist else ""
-                return True, f"Sent {len(lines)} cmd(s) to {resolved}" + (f" -> {reply}" if reply else "")
-            finally:
-                os.close(fd)
-        except Exception as e:
-            return False, f"Serial error on {resolved}: {e}"
+        ser = _RawSerialPort(resolved, baudrate=int(baudrate), timeout=timeout)
+        ser.write(payload)
+        time.sleep(0.15)
+        reply = ser.read(1024, timeout=0.3).decode("utf-8", errors="replace").strip()
+        return True, f"Sent {len(lines)} cmd(s) to {resolved}" + (f" -> {reply}" if reply else "")
     except Exception as e:
         return False, f"Serial error on {resolved}: {e}"
+    finally:
+        if ser:
+            ser.close()
 
 
 def _parse_macro_config_yaml(yaml_path: str) -> Dict[str, Any]:
@@ -8514,6 +9484,14 @@ def load_saved_heightmap(hm_path: str = os.path.join("macros", "bed_heightmap.js
     return None
 
 
+def _bridge_send_or_raise(ip: str, cmd: str, expect_probe: bool = False) -> str:
+    """Execute a controller command through CNC_BRIDGE and raise on controller errors."""
+    ok, reply = CNC_BRIDGE.send_command(ip, cmd, timeout=25.0, expect_probe=expect_probe)
+    if not ok:
+        raise RuntimeError(f"CNC error on '{cmd}': {reply}")
+    return reply
+
+
 def scan_bed_heightmap(
     ip: str,
     x_min: float = 25.0,
@@ -8528,8 +9506,7 @@ def scan_bed_heightmap(
     half: str = "front",
     hm_path: str = os.path.join("macros", "bed_heightmap.json"),
 ) -> Tuple[bool, Dict[str, Any]]:
-    """Probe a grid of points on the CNC bed via Telnet :23 (G38.2), skipping clamp keep-outs."""
-    import socket
+    """Probe a grid of points on the CNC bed via active bridge (USB Serial / WS Proxy / Telnet), skipping clamp keep-outs."""
     nx = max(2, min(20, int(nx)))
     ny = max(2, min(20, int(ny)))
     cfg = {}
@@ -8550,47 +9527,29 @@ def scan_bed_heightmap(
     valid_zs: List[float] = []
 
     try:
-        with socket.create_connection((ip, 23), timeout=15.0) as s:
-            s.settimeout(20.0)
+        _bridge_send_or_raise(ip, "G21")
+        _bridge_send_or_raise(ip, "G90")
+        _bridge_send_or_raise(ip, f"G0 Z{safe_z:.3f}")
 
-            def _send_wait(cmd: str) -> str:
-                s.sendall((cmd + "\n").encode("utf-8"))
-                buf = ""
-                t0 = time.time()
-                while time.time() - t0 < 20.0:
-                    chunk = s.recv(2048).decode("utf-8", errors="replace")
-                    if not chunk:
-                        break
-                    buf += chunk
-                    if "error:" in buf or "ALARM:" in buf:
-                        raise RuntimeError(f"CNC error on '{cmd}': {buf.strip()}")
-                    if "ok" in buf:
-                        break
-                return buf
+        for j, y in enumerate(ys):
+            row_xs = xs if (j % 2 == 0) else list(reversed(xs))
+            for x in row_xs:
+                is_corner_holder = (x <= 22.0 or x >= 186.0) and (y <= 22.0 or y >= 128.0)
+                if is_corner_holder or hmgr.is_bed_point_blocked(x, y, half=half, tool_radius=2.5):
+                    points.append({"x": x, "y": y, "z": None, "dz": None, "skipped": True})
+                    continue
+                _bridge_send_or_raise(ip, f"G0 X{x:.3f} Y{y:.3f}")
+                reply = _bridge_send_or_raise(ip, f"G38.2 Z{probe_min_z:.3f} F{feed:.1f}", expect_probe=True)
+                _bridge_send_or_raise(ip, f"G0 Z{safe_z:.3f}")
+                m = re.search(r"\[PRB:([-0-9.]+),([-0-9.]+),([-0-9.]+):(\d)\]", reply)
+                if m and m.group(4) == "1":
+                    pz = float(m.group(3))
+                    valid_zs.append(pz)
+                    points.append({"x": x, "y": y, "z": round(pz, 4), "dz": 0.0, "skipped": False})
+                else:
+                    points.append({"x": x, "y": y, "z": None, "dz": None, "skipped": False, "error": "No trigger"})
 
-            _send_wait("G21")
-            _send_wait("G90")
-            _send_wait(f"G0 Z{safe_z:.3f}")
-
-            for j, y in enumerate(ys):
-                row_xs = xs if (j % 2 == 0) else list(reversed(xs))
-                for x in row_xs:
-                    is_corner_holder = (x <= 22.0 or x >= 186.0) and (y <= 22.0 or y >= 128.0)
-                    if is_corner_holder or hmgr.is_bed_point_blocked(x, y, half=half, tool_radius=2.5):
-                        points.append({"x": x, "y": y, "z": None, "dz": None, "skipped": True})
-                        continue
-                    _send_wait(f"G0 X{x:.3f} Y{y:.3f}")
-                    reply = _send_wait(f"G38.2 Z{probe_min_z:.3f} F{feed:.1f}")
-                    _send_wait(f"G0 Z{safe_z:.3f}")
-                    m = re.search(r"\[PRB:([-0-9.]+),([-0-9.]+),([-0-9.]+):(\d)\]", reply)
-                    if m and m.group(4) == "1":
-                        pz = float(m.group(3))
-                        valid_zs.append(pz)
-                        points.append({"x": x, "y": y, "z": round(pz, 4), "dz": 0.0, "skipped": False})
-                    else:
-                        points.append({"x": x, "y": y, "z": None, "dz": None, "skipped": False, "error": "No trigger"})
-
-            _send_wait(f"G0 Z{safe_z:.3f}")
+        _bridge_send_or_raise(ip, f"G0 Z{safe_z:.3f}")
     except Exception as e:
         return False, {"error": str(e)}
 
@@ -8627,7 +9586,11 @@ def load_ui_config(cfg_path: str = "ui_config.json") -> Dict[str, Any]:
         "enable_unlock_btn": True,
         "enable_zero_work_btn": True,
         "enable_pcb_z_offset": True,
+        "enable_heightmap_leveling": True,
         "pcb_thickness_mm": 1.6,
+        "cnc_transport": "auto",
+        "cnc_serial_port": "auto",
+        "cnc_baudrate": 115200,
     }
     if os.path.isfile(cfg_path):
         try:
@@ -8642,11 +9605,20 @@ def load_ui_config(cfg_path: str = "ui_config.json") -> Dict[str, Any]:
 def save_ui_config(updates: Dict[str, Any], cfg_path: str = "ui_config.json") -> Dict[str, Any]:
     cur = load_ui_config(cfg_path)
     for k in ("touch_probe_enabled", "show_macros_in_dispatch", "enable_homing_btn",
-              "enable_unlock_btn", "enable_zero_work_btn", "enable_pcb_z_offset"):
+              "enable_unlock_btn", "enable_zero_work_btn", "enable_pcb_z_offset",
+              "enable_heightmap_leveling"):
         if k in updates:
             cur[k] = bool(updates[k])
     if "pcb_thickness_mm" in updates:
         cur["pcb_thickness_mm"] = round(float(updates["pcb_thickness_mm"]), 3)
+    if "cnc_transport" in updates:
+        t = str(updates["cnc_transport"]).lower().strip()
+        if t in ("auto", "ws", "usb", "telnet"):
+            cur["cnc_transport"] = t
+    if "cnc_serial_port" in updates:
+        cur["cnc_serial_port"] = str(updates["cnc_serial_port"]).strip() or "auto"
+    if "cnc_baudrate" in updates:
+        cur["cnc_baudrate"] = int(updates["cnc_baudrate"])
     with open(cfg_path, "w", encoding="utf-8") as f:
         json.dump(cur, f, indent=2)
     # Keep macros/pcb_z_zero_thickness.gcode synced to pcb_thickness_mm
@@ -8746,45 +9718,26 @@ def probe_4pt_edge_alignment(
     feed: float = 60.0,
     safe_z: float = 5.0,
 ) -> Tuple[bool, Dict[str, Any]]:
-    """Probe 4 copper board edge points (2 left-edge + 2 front-edge) via Telnet :23 G38.2."""
-    import socket
+    """Probe 4 copper board edge points (2 left-edge + 2 front-edge) via active CNC bridge (G38.2)."""
     try:
-        with socket.create_connection((ip, 23), timeout=15.0) as s:
-            s.settimeout(20.0)
+        def _probe_pt(start_x: float, start_y: float, target_cmd: str) -> Tuple[float, float]:
+            _bridge_send_or_raise(ip, f"G0 Z{safe_z:.3f}")
+            _bridge_send_or_raise(ip, f"G0 X{start_x:.3f} Y{start_y:.3f}")
+            _bridge_send_or_raise(ip, f"G0 Z{probe_z:.3f}")
+            rep = _bridge_send_or_raise(ip, target_cmd, expect_probe=True)
+            _bridge_send_or_raise(ip, f"G0 Z{safe_z:.3f}")
+            m = re.search(r"\[PRB:([-0-9.]+),([-0-9.]+),([-0-9.]+):(\d)\]", rep)
+            if not (m and m.group(4) == "1"):
+                raise RuntimeError(f"Edge probe did not trigger at ({start_x}, {start_y})")
+            return (float(m.group(1)), float(m.group(2)))
 
-            def _send_wait(cmd: str) -> str:
-                s.sendall((cmd + "\n").encode("utf-8"))
-                buf = ""
-                t0 = time.time()
-                while time.time() - t0 < 20.0:
-                    chunk = s.recv(2048).decode("utf-8", errors="replace")
-                    if not chunk:
-                        break
-                    buf += chunk
-                    if "error:" in buf or "ALARM:" in buf:
-                        raise RuntimeError(f"CNC error on '{cmd}': {buf.strip()}")
-                    if "ok" in buf:
-                        break
-                return buf
-
-            def _probe_pt(start_x: float, start_y: float, target_cmd: str) -> Tuple[float, float]:
-                _send_wait(f"G0 Z{safe_z:.3f}")
-                _send_wait(f"G0 X{start_x:.3f} Y{start_y:.3f}")
-                _send_wait(f"G0 Z{probe_z:.3f}")
-                rep = _send_wait(target_cmd)
-                _send_wait(f"G0 Z{safe_z:.3f}")
-                m = re.search(r"\[PRB:([-0-9.]+),([-0-9.]+),([-0-9.]+):(\d)\]", rep)
-                if not (m and m.group(4) == "1"):
-                    raise RuntimeError(f"Edge probe did not trigger at ({start_x}, {start_y})")
-                return (float(m.group(1)), float(m.group(2)))
-
-            _send_wait("G21")
-            _send_wait("G90")
-            l1 = _probe_pt(-5.0, 30.0, f"G38.2 X6.000 F{feed:.1f}")
-            l2 = _probe_pt(-5.0, 115.0, f"G38.2 X6.000 F{feed:.1f}")
-            f1 = _probe_pt(45.0, -5.0, f"G38.2 Y6.000 F{feed:.1f}")
-            f2 = _probe_pt(165.0, -5.0, f"G38.2 Y6.000 F{feed:.1f}")
-            _send_wait("G0 X0.000 Y0.000")
+        _bridge_send_or_raise(ip, "G21")
+        _bridge_send_or_raise(ip, "G90")
+        l1 = _probe_pt(-5.0, 30.0, f"G38.2 X6.000 F{feed:.1f}")
+        l2 = _probe_pt(-5.0, 115.0, f"G38.2 X6.000 F{feed:.1f}")
+        f1 = _probe_pt(45.0, -5.0, f"G38.2 Y6.000 F{feed:.1f}")
+        f2 = _probe_pt(165.0, -5.0, f"G38.2 Y6.000 F{feed:.1f}")
+        _bridge_send_or_raise(ip, "G0 X0.000 Y0.000")
 
         res = compute_4pt_edge_alignment(l1, l2, f1, f2, enabled=True)
         return True, res
@@ -8843,6 +9796,66 @@ def apply_alignment_to_gcode(gcode_text: str, align_data: Dict[str, Any]) -> str
         else:
             new_code += f" Y{ty:.3f}"
         out_lines.append(new_code)
+
+    return "\n".join(out_lines) + "\n"
+
+
+def apply_heightmap_to_gcode(gcode_text: str, hm_data: Optional[Dict[str, Any]], enabled: bool = True) -> str:
+    """Apply bilinear Z auto-leveling from saved bed_heightmap.json to G1 cutting moves."""
+    if not enabled or not hm_data:
+        return gcode_text
+    valid_pts = [p for p in hm_data.get("points", []) if p.get("dz") is not None and not p.get("skipped")]
+    if len(valid_pts) < 2:
+        return gcode_text
+
+    def _interp_dz(qx: float, qy: float) -> float:
+        # Inverse-distance weighted interpolation (handles skipped clamp corners cleanly)
+        num, den = 0.0, 0.0
+        for pt in valid_pts:
+            dx = qx - float(pt["x"])
+            dy = qy - float(pt["y"])
+            d2 = dx * dx + dy * dy
+            if d2 < 1e-6:
+                return float(pt["dz"])
+            w = 1.0 / d2
+            num += w * float(pt["dz"])
+            den += w
+        return num / den if den > 0 else 0.0
+
+    cur_x, cur_y, cur_z = 0.0, 0.0, 5.0
+    is_abs = True
+    out_lines: List[str] = []
+
+    for raw in gcode_text.splitlines():
+        code = raw.split(";")[0].strip()
+        up = code.upper()
+        if "G91" in up:
+            is_abs = False
+        elif "G90" in up:
+            is_abs = True
+
+        if not is_abs or "G53" in up or code.startswith("(") or not code:
+            out_lines.append(raw)
+            continue
+
+        mx = re.search(r"X([-0-9.]+)", code, re.IGNORECASE)
+        my = re.search(r"Y([-0-9.]+)", code, re.IGNORECASE)
+        mz = re.search(r"Z([-0-9.]+)", code, re.IGNORECASE)
+        nx = float(mx.group(1)) if mx else cur_x
+        ny = float(my.group(1)) if my else cur_y
+        nz = float(mz.group(1)) if mz else cur_z
+
+        if up.startswith("G1") and nz < 0.0:
+            dz = _interp_dz(nx, ny)
+            adj_z = nz + dz
+            if mz:
+                new_code = re.sub(r"Z[-0-9.]+", f"Z{adj_z:.3f}", code, count=1, flags=re.IGNORECASE)
+            else:
+                new_code = f"{code} Z{adj_z:.3f}"
+            out_lines.append(new_code)
+        else:
+            out_lines.append(raw)
+        cur_x, cur_y, cur_z = nx, ny, nz
 
     return "\n".join(out_lines) + "\n"
 
@@ -8959,12 +9972,8 @@ class ChecklistHandler(http.server.SimpleHTTPRequestHandler):
         if parsed.path == "/api/fluidnc_status":
             query = urllib.parse.parse_qs(parsed.query)
             ip = query.get("ip", ["192.168.8.109"])[0].strip() or "192.168.8.109"
-            online, status_text = check_fluidnc_online(ip)
-            parsed_pos = parse_fluidnc_status_line(status_text, ip=ip) if online else {"state": "Offline", "mpos": None, "wpos": None}
-            resp = json.dumps({
-                "online": online, "status": status_text, "ip": ip,
-                "state": parsed_pos["state"], "mpos": parsed_pos["mpos"], "wpos": parsed_pos["wpos"],
-            }).encode("utf-8")
+            snap = CNC_BRIDGE.get_status_snapshot(probe_if_idle=True, ip=ip)
+            resp = json.dumps(snap).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -8972,12 +9981,47 @@ class ChecklistHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         if parsed.path == "/api/fluidnc_stream_status":
-            with _STREAM_LOCK:
-                snap = {k: v for k, v in _STREAM_SESSION.items() if k != "event"}
+            snap = CNC_BRIDGE.get_stream_snapshot()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps(snap).encode("utf-8"))
+            return
+
+        if parsed.path == "/api/cnc_ports":
+            ports = list_cnc_usb_ports()
+            snap = CNC_BRIDGE.get_status_snapshot(probe_if_idle=False)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"ports": ports, "bridge": snap}).encode("utf-8"))
+            return
+
+        if parsed.path == "/api/fluidnc_events":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            q = CNC_BRIDGE.subscribe_sse()
+            try:
+                init_status = CNC_BRIDGE.get_status_snapshot(probe_if_idle=False)
+                init_stream = CNC_BRIDGE.get_stream_snapshot()
+                self.wfile.write(f"event: status\ndata: {json.dumps(init_status)}\n\n".encode("utf-8"))
+                self.wfile.write(f"event: stream\ndata: {json.dumps(init_stream)}\n\n".encode("utf-8"))
+                self.wfile.flush()
+                while True:
+                    try:
+                        ev_name, ev_json = q.get(timeout=12.0)
+                        pkt = f"event: {ev_name}\ndata: {ev_json}\n\n".encode("utf-8")
+                    except queue.Empty:
+                        pkt = b": keepalive\n\n"
+                    self.wfile.write(pkt)
+                    self.wfile.flush()
+            except Exception:
+                pass
+            finally:
+                CNC_BRIDGE.unsubscribe_sse(q)
             return
 
         if parsed.path == "/api/printer_ports":
@@ -9376,6 +10420,43 @@ class ChecklistHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
                 return
 
+        if parsed.path == "/api/cnc_connect":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                req_data = json.loads(self.rfile.read(content_length).decode("utf-8")) if content_length else {}
+                transport = req_data.get("transport")
+                ip = req_data.get("ip")
+                serial_port = req_data.get("port") or req_data.get("serial_port")
+                baudrate = req_data.get("baudrate")
+                action = req_data.get("action", "connect")
+
+                cfg_patch = {}
+                if transport is not None:
+                    cfg_patch["cnc_transport"] = transport
+                if serial_port is not None:
+                    cfg_patch["cnc_serial_port"] = serial_port
+                if baudrate is not None:
+                    cfg_patch["cnc_baudrate"] = int(baudrate)
+                if cfg_patch:
+                    save_ui_config(cfg_patch)
+
+                ok, msg, snap = CNC_BRIDGE.connect(
+                    transport=transport, ip=ip, serial_port=serial_port,
+                    baudrate=int(baudrate) if baudrate is not None else None,
+                    action=action,
+                )
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": ok, "message": msg, "bridge": snap}).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+                return
+
         if parsed.path == "/api/fluidnc_stream_start":
             try:
                 content_length = int(self.headers.get("Content-Length", 0))
@@ -9390,53 +10471,13 @@ class ChecklistHandler(http.server.SimpleHTTPRequestHandler):
                             with open(fpath, "r", encoding="utf-8", errors="replace") as gf:
                                 gcode_text = gf.read()
                             break
-                if fname not in ("edge_4pt_align.gcode", "z_tool_zero.gcode", "bed_height_scan.gcode"):
+                if fname not in ("edge_4pt_align.gcode", "z_tool_zero.gcode", "bed_height_scan.gcode", "pcb_z_zero_thickness.gcode"):
                     al = load_board_alignment()
                     gcode_text = apply_alignment_to_gcode(gcode_text, al)
-                res_obj = start_fluidnc_stream_session(ip, gcode_text, filename=fname)
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps(res_obj).encode("utf-8"))
-                return
-            except Exception as e:
-                self.send_response(500)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
-                return
-
-        if parsed.path == "/api/fluidnc_stream_action":
-            try:
-                content_length = int(self.headers.get("Content-Length", 0))
-                req_data = json.loads(self.rfile.read(content_length).decode("utf-8"))
-                res_obj = fluidnc_stream_action(req_data.get("action", "continue"), ip=req_data.get("ip", "192.168.8.109"))
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps(res_obj).encode("utf-8"))
-                return
-            except Exception as e:
-                self.send_response(500)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
-                return
-
-        if parsed.path == "/api/fluidnc_stream_start":
-            try:
-                content_length = int(self.headers.get("Content-Length", 0))
-                req_data = json.loads(self.rfile.read(content_length).decode("utf-8"))
-                ip = req_data.get("ip", "192.168.8.109").strip() or "192.168.8.109"
-                fname = os.path.basename(req_data.get("filename", ""))
-                gcode_text = req_data.get("gcode", "")
-                if not gcode_text and fname:
-                    for folder in ("manufacture_gcode", "macros"):
-                        fpath = os.path.join(folder, fname)
-                        if os.path.isfile(fpath):
-                            with open(fpath, "r", encoding="utf-8", errors="replace") as gf:
-                                gcode_text = gf.read()
-                            break
+                    ucfg = load_ui_config()
+                    if ucfg.get("enable_heightmap_leveling", True):
+                        hm = load_saved_heightmap()
+                        gcode_text = apply_heightmap_to_gcode(gcode_text, hm, enabled=True)
                 res_obj = start_fluidnc_stream_session(ip, gcode_text, filename=fname)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -9653,14 +10694,22 @@ class ChecklistHandler(http.server.SimpleHTTPRequestHandler):
 
 
 def serve_dashboard(port=8088):
-    """Run local HTTP server with automatic checklist JSON persistence."""
+    """Run local multi-threaded HTTP server with SSE bridge proxy, USB serial bridge, and checklist persistence."""
+    CNC_BRIDGE.load_from_ui_config()
+
+    class _DashboardHTTPServer(http.server.ThreadingHTTPServer):
+        daemon_threads = True
+        allow_reuse_address = True
+
     print(f"\n[SERVER] Serving Manufacturing Dashboard at: http://localhost:{port}/manufacture_guides/")
+    print("[SERVER] Active bridges: Option A (Python WS Proxy + SSE /api/fluidnc_events) & Option 1 (Python USB Serial /api/cnc_connect)")
     print(f"[SERVER] POST /api/save_checklist active -> writing to manufacture_guides/checklist_state.json")
     print("Press Ctrl+C to stop server.\n")
-    with socketserver.TCPServer(("", port), ChecklistHandler) as httpd:
+    with _DashboardHTTPServer(("", port), ChecklistHandler) as httpd:
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
+            CNC_BRIDGE.disconnect()
             print("\n[SERVER] Server stopped.")
 
 
@@ -9684,7 +10733,6 @@ def main():
     parser.add_argument("--serve", action="store_true", help="Run local web server on port 8088 to view dashboard and auto-sync checklist.")
     args = parser.parse_args()
 
-    # Load configuration
     cfg = {}
     if os.path.exists(args.config):
         try:
@@ -9711,7 +10759,6 @@ def main():
     print(f" Breakaway Mode: {b_cfg.label} | Shortest-Edge Stepping Tag")
     print("================================================================================\n")
 
-    # 1. Scan Projects (Check CLI argument or manufacture_config.json 'selected_projects')
     selected = args.projects
     if selected is None and "selected_projects" in cfg:
         cfg_selected = cfg.get("selected_projects")
@@ -9726,10 +10773,7 @@ def main():
     for p in projects:
         print(f"  - {p.pcb_id} ({p.project_name}) | Dims: {p.width:.1f}x{p.height:.1f}mm | Qty: {p.quantity} | Mask: {p.solder_mask_color}")
 
-    # 2. Load Holders (Single-Half Common Bed Locks & Z-Zero Limit Switch Danger Zone)
     holder_mgr = HolderManager(args.holders, y_split=y_split, bed_travel_y=bed_y, config=cfg)
-
-    # 3. Layer Cache & Panelization
     layer_cache = LayerGeometryCache()
     panelizer = A4Panelizer(
         sheet_w=sheet_w, sheet_h=sheet_h,
@@ -9738,7 +10782,6 @@ def main():
     )
     sheets = panelizer.pack_projects(projects, layer_cache)
 
-    # 4. Run Manufacturing Pipeline (G-code, SVGs, Metadata)
     pipeline = ManufacturingPipeline(
         sheets=sheets, layer_cache=layer_cache, holders_mgr=holder_mgr,
         config=cfg, out_gcode_dir=args.out_gcode, out_svg_dir=args.out_svg,
@@ -9746,7 +10789,6 @@ def main():
     )
     generated_files = pipeline.run()
 
-    # 5. Generate Interactive HTML Dashboard & Setup Checklist
     html_out = os.path.join(args.out_guides, "index.html")
     sync_root = (os.path.normpath(args.out_guides) == "manufacture_guides")
     generate_html_dashboard(
@@ -9756,17 +10798,10 @@ def main():
         sync_root_dashboard=sync_root,
     )
 
-    # 6. Direct Network Upload to FluidNC if requested
     if args.send_to_cnc:
-        import urllib.request
         print(f"\n[NETWORK] Connecting to FluidNC controller at http://{args.fluidnc_ip} ...")
-        try:
-            req = urllib.request.Request(f"http://{args.fluidnc_ip}/status", headers={"User-Agent": "PCBPanelizer/2.0"})
-            with urllib.request.urlopen(req, timeout=3.0) as resp:
-                status_text = resp.read().decode("utf-8")
-                print(f"[NETWORK] FluidNC is ONLINE! Status: {status_text.strip()}")
-        except Exception as e:
-            print(f"[WARN] FluidNC at {args.fluidnc_ip} unreachable: {e}")
+        online, st = check_fluidnc_online(args.fluidnc_ip)
+        print(f"[NETWORK] FluidNC status: {online} | {st}")
 
     print("\n[COMPLETE] Panelization and manufacturing workflow generated successfully.")
 

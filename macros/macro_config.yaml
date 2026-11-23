@@ -28,6 +28,13 @@ macros:
     color: blue
     description: Zero Z on top of copper board by offsetting from bed Z0 by board thickness.
 
+  - id: change_tool
+    name: Change Tool (M5 Park)
+    file: change_tool.gcode
+    category: toolchange
+    color: rose
+    description: Turn spindle OFF (M5) and move to X max, Z max, Y min for manual tool change.
+
 heightmap_defaults:
   x_min_mm: 25.0
   x_max_mm: 185.0

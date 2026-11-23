@@ -1,6 +1,5 @@
 ; === PCB Thickness Z-Zero Calibration Macro ===
-; Use when Z=0 is referenced to the CNC Bed (without a touch probe)
-; Raises Z by PCB thickness (1.600 mm) and sets that top copper surface as G54 Z=0
+; Raises Z by 1.600 mm from BED Z=0 and sets top copper surface as G54 Z=0
 G21 ; Millimeters
 G90 ; Absolute positioning
 M5 ; Ensure spindle is off

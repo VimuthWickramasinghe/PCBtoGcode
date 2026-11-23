@@ -98,14 +98,14 @@
   </style>
   <script>
     const imgPrefix = 'manufacture_svg/';
-    let currentProject = 'PCB-AC-02';
+    let currentProject = 'PCB-AC-01';
     let currentStep = 'Composite_Stackup';
     let circuitSide = 'front';          // 'front' | 'back' for Mask & Silkscreen
     let circuitMirrorEnabled = false;   // Optional Mirror View Enable / Disable toggle
 
-    const projectDrills = {"PCB-AC-02": {"total_holes": 67, "via_count": 4, "tools": [{"dia": 0.3, "count": 4, "color": "#22d3ee"}, {"dia": 0.9, "count": 16, "color": "#fbbf24"}, {"dia": 1.0, "count": 29, "color": "#f59e0b"}, {"dia": 1.2, "count": 10, "color": "#f97316"}, {"dia": 1.8, "count": 4, "color": "#e11d48"}, {"dia": 3.0, "count": 4, "color": "#34d399"}]}, "PCB-AC-01": {"total_holes": 78, "via_count": 1, "tools": [{"dia": 0.3, "count": 1, "color": "#22d3ee"}, {"dia": 0.7, "count": 4, "color": "#a78bfa"}, {"dia": 0.75, "count": 6, "color": "#c084fc"}, {"dia": 0.8, "count": 22, "color": "#d946ef"}, {"dia": 0.9, "count": 2, "color": "#fbbf24"}, {"dia": 1.0, "count": 13, "color": "#f59e0b"}, {"dia": 1.1, "count": 14, "color": "#fb923c"}, {"dia": 1.3, "count": 6, "color": "#ef4444"}, {"dia": 1.5, "count": 10, "color": "#f43f5e"}]}, "PCB-AC-03": {"total_holes": 30, "via_count": 0, "tools": [{"dia": 0.7, "count": 10, "color": "#a78bfa"}, {"dia": 0.8, "count": 8, "color": "#d946ef"}, {"dia": 0.9, "count": 2, "color": "#fbbf24"}, {"dia": 1.0, "count": 5, "color": "#f59e0b"}, {"dia": 1.2, "count": 2, "color": "#f97316"}, {"dia": 3.0, "count": 3, "color": "#34d399"}]}};
-    const allUnitRecords = [{"index": 1, "pcb_id": "PCB-AC-02", "project_name": "Board-01", "unit_id": "PCB-AC-02-001", "sheet_num": 1, "half": "front", "half_label": "Front Bed Half", "rotation_deg": 0, "pcb_w": 127.2, "pcb_h": 56.2, "x": 22.0, "y": 8.5, "attach_side": "LEFT", "shortest_edge": 56.2, "tab_summary": "2 x 2.0mm Tabs", "drill_holes": 67, "svg_front": "Unit_PCB-AC-02-001_FrontSide.svg", "svg_front_mirrored": "Unit_PCB-AC-02-001_FrontSide_Mirrored.svg", "svg_back": "Unit_PCB-AC-02-001_BackSide.svg", "svg_back_mirrored": "Unit_PCB-AC-02-001_BackSide_Mirrored.svg"}, {"index": 2, "pcb_id": "PCB-AC-01", "project_name": "AirCooler", "unit_id": "PCB-AC-01-001", "sheet_num": 1, "half": "back", "half_label": "Back Bed Half", "rotation_deg": 90, "pcb_w": 124.2, "pcb_h": 78.2, "x": 24.0, "y": 150.0, "attach_side": "BOTTOM", "shortest_edge": 78.2, "tab_summary": "2 x 2.0mm Tabs", "drill_holes": 78, "svg_front": "Unit_PCB-AC-01-001_FrontSide.svg", "svg_front_mirrored": "Unit_PCB-AC-01-001_FrontSide_Mirrored.svg", "svg_back": "Unit_PCB-AC-01-001_BackSide.svg", "svg_back_mirrored": "Unit_PCB-AC-01-001_BackSide_Mirrored.svg"}, {"index": 3, "pcb_id": "PCB-AC-03", "project_name": "Micro Probe", "unit_id": "PCB-AC-03-001", "sheet_num": 1, "half": "back", "half_label": "Back Bed Half", "rotation_deg": 90, "pcb_w": 64.5, "pcb_h": 30.1, "x": 102.2, "y": 150.0, "attach_side": "BOTTOM", "shortest_edge": 30.1, "tab_summary": "2 x 2.0mm Tabs", "drill_holes": 30, "svg_front": "Unit_PCB-AC-03-001_FrontSide.svg", "svg_front_mirrored": "Unit_PCB-AC-03-001_FrontSide_Mirrored.svg", "svg_back": "Unit_PCB-AC-03-001_BackSide.svg", "svg_back_mirrored": "Unit_PCB-AC-03-001_BackSide_Mirrored.svg"}];
-    const bedOperationsBySheet = {"1": [{"op_id": "S01-OP01", "sheet_num": 1, "seq": 1, "step_code": "Step0A", "step_title": "Step 0A: Sheet Data & Ref Marks", "work_type": "Alignment Guides", "tool_name": "30\u00b0 V-Bit", "tool_dia_mm": 0.1, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount A4 sheet Top-Side Up at G54 (0,0) FRONT HALF", "gcode_file": "Sheet01_Step0A_Front_Alignment_Guides.gcode", "svg_file": "Bed_Sheet01_Op01_Step0A_top_front_30deg_V-Bit.svg", "depth_mm": -0.04, "feed_mm_min": 250.0, "spindle_rpm": 10000, "stats_label": "90 strokes, 0 pins", "bounds_x": [1.53, 187.0], "bounds_y": [0.0, 145.0]}, {"op_id": "S01-OP02", "sheet_num": 1, "seq": 2, "step_code": "Step0B", "step_title": "Step 0B: Back Alignment Guides", "work_type": "Alignment Guides", "tool_name": "30\u00b0 V-Bit", "tool_dia_mm": 0.1, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": false, "shift_action": "Slide sheet -145.0mm along Y-axis ONLY -> BACK HALF", "gcode_file": "Sheet01_Step0B_Back_Alignment_Guides.gcode", "svg_file": "Bed_Sheet01_Op02_Step0B_top_back_30deg_V-Bit.svg", "depth_mm": -0.04, "feed_mm_min": 250.0, "spindle_rpm": 10000, "stats_label": "36 strokes, 0 pins", "bounds_x": [2.0, 12.0], "bounds_y": [0.0, 152.0]}, {"op_id": "S01-OP03", "sheet_num": 1, "seq": 3, "step_code": "Step1_01", "step_title": "Step 1 Drilling (0.30mm)", "work_type": "CNC Drilling", "tool_name": "0.30mm Carbide Drill", "tool_dia_mm": 0.3, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Set sheet Top-Side Up at FRONT HALF (Y=0 datum)", "gcode_file": "Sheet01_Step1_01_Front_Top_Drills_0.30mm.gcode", "svg_file": "Bed_Sheet01_Op03_Step1_01_top_front_0.30mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "4 holes @ 0.30mm", "bounds_x": [46.71, 63.5], "bounds_y": [19.16, 58.51]}, {"op_id": "S01-OP04", "sheet_num": 1, "seq": 4, "step_code": "Step1_02", "step_title": "Step 1 Drilling (0.30mm)", "work_type": "CNC Drilling", "tool_name": "0.30mm Carbide Drill", "tool_dia_mm": 0.3, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": false, "shift_action": "Slide sheet -145.0mm along Y-axis ONLY -> BACK HALF", "gcode_file": "Sheet01_Step1_02_Back_Top_Drills_0.30mm.gcode", "svg_file": "Bed_Sheet01_Op04_Step1_02_top_back_0.30mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "1 holes @ 0.30mm", "bounds_x": [25.2, 25.2], "bounds_y": [128.5, 128.5]}, {"op_id": "S01-OP05", "sheet_num": 1, "seq": 5, "step_code": "Step1_03", "step_title": "Step 1 Drilling (0.70mm)", "work_type": "CNC Drilling", "tool_name": "0.70mm Carbide Drill", "tool_dia_mm": 0.7, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": true, "shift_action": "Stay at BACK HALF & change drill to 0.70mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_03_Back_Top_Drills_0.70mm.gcode", "svg_file": "Bed_Sheet01_Op05_Step1_03_top_back_0.70mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "14 holes @ 0.70mm", "bounds_x": [45.2, 119.25], "bounds_y": [22.5, 127.5]}, {"op_id": "S01-OP06", "sheet_num": 1, "seq": 6, "step_code": "Step1_04", "step_title": "Step 1 Drilling (0.75mm)", "work_type": "CNC Drilling", "tool_name": "0.75mm Carbide Drill", "tool_dia_mm": 0.75, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": true, "shift_action": "Stay at BACK HALF & change drill to 0.75mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_04_Back_Top_Drills_0.75mm.gcode", "svg_file": "Bed_Sheet01_Op06_Step1_04_top_back_0.75mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "6 holes @ 0.75mm", "bounds_x": [34.16, 57.7], "bounds_y": [63.0, 63.0]}, {"op_id": "S01-OP07", "sheet_num": 1, "seq": 7, "step_code": "Step1_05", "step_title": "Step 1 Drilling (0.80mm)", "work_type": "CNC Drilling", "tool_name": "0.80mm Carbide Drill", "tool_dia_mm": 0.8, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": true, "shift_action": "Stay at BACK HALF & change drill to 0.80mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_05_Back_Top_Drills_0.80mm.gcode", "svg_file": "Bed_Sheet01_Op07_Step1_05_top_back_0.80mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "30 holes @ 0.80mm", "bounds_x": [35.7, 118.56], "bounds_y": [56.69, 117.78]}, {"op_id": "S01-OP08", "sheet_num": 1, "seq": 8, "step_code": "Step1_06", "step_title": "Step 1 Drilling (0.90mm)", "work_type": "CNC Drilling", "tool_name": "0.90mm Carbide Drill", "tool_dia_mm": 0.9, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": true, "shift_action": "Stay at BACK HALF & change drill to 0.90mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_06_Back_Top_Drills_0.90mm.gcode", "svg_file": "Bed_Sheet01_Op08_Step1_06_top_back_0.90mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "4 holes @ 0.90mm", "bounds_x": [68.2, 106.25], "bounds_y": [67.96, 127.5]}, {"op_id": "S01-OP09", "sheet_num": 1, "seq": 9, "step_code": "Step1_07", "step_title": "Step 1 Drilling (0.90mm)", "work_type": "CNC Drilling", "tool_name": "0.90mm Carbide Drill", "tool_dia_mm": 0.9, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Slide sheet +145.0mm back along Y-axis ONLY -> FRONT HALF", "gcode_file": "Sheet01_Step1_07_Front_Top_Drills_0.90mm.gcode", "svg_file": "Bed_Sheet01_Op09_Step1_07_top_front_0.90mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "16 holes @ 0.90mm", "bounds_x": [31.95, 148.26], "bounds_y": [18.42, 58.27]}, {"op_id": "S01-OP10", "sheet_num": 1, "seq": 10, "step_code": "Step1_08", "step_title": "Step 1 Drilling (1.00mm)", "work_type": "CNC Drilling", "tool_name": "1.00mm Carbide Drill", "tool_dia_mm": 1.0, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 1.00mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_08_Front_Top_Drills_1.00mm.gcode", "svg_file": "Bed_Sheet01_Op10_Step1_08_top_front_1.00mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "29 holes @ 1.00mm", "bounds_x": [43.26, 68.66], "bounds_y": [19.16, 54.72]}, {"op_id": "S01-OP11", "sheet_num": 1, "seq": 11, "step_code": "Step1_09", "step_title": "Step 1 Drilling (1.00mm)", "work_type": "CNC Drilling", "tool_name": "1.00mm Carbide Drill", "tool_dia_mm": 1.0, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": false, "shift_action": "Slide sheet -145.0mm along Y-axis ONLY -> BACK HALF", "gcode_file": "Sheet01_Step1_09_Back_Top_Drills_1.00mm.gcode", "svg_file": "Bed_Sheet01_Op11_Step1_09_top_back_1.00mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "18 holes @ 1.00mm", "bounds_x": [42.66, 125.38], "bounds_y": [17.5, 124.5]}, {"op_id": "S01-OP12", "sheet_num": 1, "seq": 12, "step_code": "Step1_10", "step_title": "Step 1 Drilling (1.10mm)", "work_type": "CNC Drilling", "tool_name": "1.10mm Carbide Drill", "tool_dia_mm": 1.1, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": true, "shift_action": "Stay at BACK HALF & change drill to 1.10mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_10_Back_Top_Drills_1.10mm.gcode", "svg_file": "Bed_Sheet01_Op12_Step1_10_top_back_1.10mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "14 holes @ 1.10mm", "bounds_x": [30.45, 91.7], "bounds_y": [53.34, 113.25]}, {"op_id": "S01-OP13", "sheet_num": 1, "seq": 13, "step_code": "Step1_11", "step_title": "Step 1 Drilling (1.20mm)", "work_type": "CNC Drilling", "tool_name": "1.20mm Carbide Drill", "tool_dia_mm": 1.2, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": true, "shift_action": "Stay at BACK HALF & change drill to 1.20mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_11_Back_Top_Drills_1.20mm.gcode", "svg_file": "Bed_Sheet01_Op13_Step1_11_top_back_1.20mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "2 holes @ 1.20mm", "bounds_x": [113.25, 118.25], "bounds_y": [46.5, 46.5]}, {"op_id": "S01-OP14", "sheet_num": 1, "seq": 14, "step_code": "Step1_12", "step_title": "Step 1 Drilling (1.20mm)", "work_type": "CNC Drilling", "tool_name": "1.20mm Carbide Drill", "tool_dia_mm": 1.2, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Slide sheet +145.0mm back along Y-axis ONLY -> FRONT HALF", "gcode_file": "Sheet01_Step1_12_Front_Top_Drills_1.20mm.gcode", "svg_file": "Bed_Sheet01_Op14_Step1_12_top_front_1.20mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "10 holes @ 1.20mm", "bounds_x": [86.3, 141.37], "bounds_y": [12.59, 57.67]}, {"op_id": "S01-OP15", "sheet_num": 1, "seq": 15, "step_code": "Step1_13", "step_title": "Step 1 Drilling (1.30mm)", "work_type": "CNC Drilling", "tool_name": "1.30mm Carbide Drill", "tool_dia_mm": 1.3, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": false, "shift_action": "Slide sheet -145.0mm along Y-axis ONLY -> BACK HALF", "gcode_file": "Sheet01_Step1_13_Back_Top_Drills_1.30mm.gcode", "svg_file": "Bed_Sheet01_Op15_Step1_13_top_back_1.30mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "6 holes @ 1.30mm", "bounds_x": [30.7, 87.67], "bounds_y": [21.47, 23.5]}, {"op_id": "S01-OP16", "sheet_num": 1, "seq": 16, "step_code": "Step1_14", "step_title": "Step 1 Drilling (1.50mm)", "work_type": "CNC Drilling", "tool_name": "1.50mm Carbide Drill", "tool_dia_mm": 1.5, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": true, "shift_action": "Stay at BACK HALF & change drill to 1.50mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_14_Back_Top_Drills_1.50mm.gcode", "svg_file": "Bed_Sheet01_Op16_Step1_14_top_back_1.50mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "10 holes @ 1.50mm", "bounds_x": [30.7, 64.7], "bounds_y": [32.9, 48.1]}, {"op_id": "S01-OP17", "sheet_num": 1, "seq": 17, "step_code": "Step1_15", "step_title": "Step 1 Drilling (1.80mm)", "work_type": "CNC Drilling", "tool_name": "1.80mm Carbide Drill", "tool_dia_mm": 1.8, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Slide sheet +145.0mm back along Y-axis ONLY -> FRONT HALF", "gcode_file": "Sheet01_Step1_15_Front_Top_Drills_1.80mm.gcode", "svg_file": "Bed_Sheet01_Op17_Step1_15_top_front_1.80mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "4 holes @ 1.80mm", "bounds_x": [87.3, 102.54], "bounds_y": [14.67, 14.67]}, {"op_id": "S01-OP18", "sheet_num": 1, "seq": 18, "step_code": "Step1_16", "step_title": "Step 1 Drilling (3.00mm)", "work_type": "CNC Drilling", "tool_name": "3.00mm Carbide Drill", "tool_dia_mm": 3.0, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 3.00mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_16_Front_Top_Drills_3.00mm.gcode", "svg_file": "Bed_Sheet01_Op18_Step1_16_top_front_3.00mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "4 holes @ 3.00mm", "bounds_x": [79.8, 120.8], "bounds_y": [15.17, 56.17]}, {"op_id": "S01-OP19", "sheet_num": 1, "seq": 19, "step_code": "Step1_17", "step_title": "Step 1 Drilling (3.00mm)", "work_type": "CNC Drilling", "tool_name": "3.00mm Carbide Drill", "tool_dia_mm": 3.0, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": false, "shift_action": "Slide sheet -145.0mm along Y-axis ONLY -> BACK HALF", "gcode_file": "Sheet01_Step1_17_Back_Top_Drills_3.00mm.gcode", "svg_file": "Bed_Sheet01_Op19_Step1_17_top_back_3.00mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "3 holes @ 3.00mm", "bounds_x": [106.25, 128.25], "bounds_y": [14.5, 70.5]}, {"op_id": "S01-OP20", "sheet_num": 1, "seq": 20, "step_code": "Step3A", "step_title": "Step 3A: Top Copper Isolation", "work_type": "Top Isolation", "tool_name": "30\u00b0 / 0.2mm V-Bit", "tool_dia_mm": 0.2, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount sheet Top-Side Up at G54 (0,0) FRONT HALF", "gcode_file": "Sheet01_Step3A_Front_Top_Copper_Isolation.gcode", "svg_file": "Bed_Sheet01_Op20_Step3A_top_front_30deg_0.2mm_V-Bit.svg", "depth_mm": -0.04, "feed_mm_min": 300.0, "spindle_rpm": 10000, "stats_label": "68 toolpaths", "bounds_x": [23.0, 149.46], "bounds_y": [11.24, 60.86]}, {"op_id": "S01-OP21", "sheet_num": 1, "seq": 21, "step_code": "Step3B", "step_title": "Step 3B: Top Copper Isolation", "work_type": "Top Isolation", "tool_name": "30\u00b0 / 0.2mm V-Bit", "tool_dia_mm": 0.2, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": false, "shift_action": "Slide sheet -145.0mm along Y-axis ONLY -> BACK HALF", "gcode_file": "Sheet01_Step3B_Back_Top_Copper_Isolation.gcode", "svg_file": "Bed_Sheet01_Op21_Step3B_top_back_30deg_0.2mm_V-Bit.svg", "depth_mm": -0.04, "feed_mm_min": 300.0, "spindle_rpm": 10000, "stats_label": "223 toolpaths", "bounds_x": [24.8, 131.85], "bounds_y": [6.0, 133.1]}, {"op_id": "S01-OP22", "sheet_num": 1, "seq": 22, "step_code": "Step4A", "step_title": "Step 4A: Bottom Copper Isolation", "work_type": "Bottom Isolation", "tool_name": "30\u00b0 / 0.2mm V-Bit", "tool_dia_mm": 0.2, "board_side": "bottom", "mirrored": true, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "FLIP board horizontally along Y-axis (Left <-> Right) -> FRONT HALF", "gcode_file": "Sheet01_Step4A_Front_Bottom_Copper_Isolation.gcode", "svg_file": "Bed_Sheet01_Op22_Step4A_bottom_front_30deg_0.2mm_V-Bit.svg", "depth_mm": -0.04, "feed_mm_min": 300.0, "spindle_rpm": 10000, "stats_label": "46 toolpaths", "bounds_x": [60.54, 180.21], "bounds_y": [9.93, 61.78]}, {"op_id": "S01-OP23", "sheet_num": 1, "seq": 23, "step_code": "Step4B", "step_title": "Step 4B: Bottom Copper Isolation", "work_type": "Bottom Isolation", "tool_name": "30\u00b0 / 0.2mm V-Bit", "tool_dia_mm": 0.2, "board_side": "bottom", "mirrored": true, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": false, "shift_action": "Slide flipped sheet -145.0mm along Y-axis ONLY -> BACK HALF", "gcode_file": "Sheet01_Step4B_Back_Bottom_Copper_Isolation.gcode", "svg_file": "Bed_Sheet01_Op23_Step4B_bottom_back_30deg_0.2mm_V-Bit.svg", "depth_mm": -0.04, "feed_mm_min": 300.0, "spindle_rpm": 10000, "stats_label": "134 toolpaths", "bounds_x": [78.15, 185.2], "bounds_y": [10.9, 133.1]}, {"op_id": "S01-OP24", "sheet_num": 1, "seq": 24, "step_code": "Step5A", "step_title": "Step 5A: Top Mask Clear", "work_type": "Solder Mask Clear", "tool_name": "0.4mm Flat Endmill / V-Bit", "tool_dia_mm": 0.4, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount sheet Top-Side Up at FRONT HALF & re-zero Z on cured mask (M0)", "gcode_file": "Sheet01_Step5A_Front_Top_Mask_Clear.gcode", "svg_file": "Bed_Sheet01_Op24_Step5A_top_front_0.4mm_Flat_Endmill_V-Bit.svg", "depth_mm": -0.06, "feed_mm_min": 300.0, "spindle_rpm": 10000, "stats_label": "60 toolpaths", "bounds_x": [31.04, 149.51], "bounds_y": [11.14, 59.52]}, {"op_id": "S01-OP25", "sheet_num": 1, "seq": 25, "step_code": "Step5B", "step_title": "Step 5B: Top Mask Clear", "work_type": "Solder Mask Clear", "tool_name": "0.4mm Flat Endmill / V-Bit", "tool_dia_mm": 0.4, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": false, "shift_action": "Slide sheet -145.0mm along Y-axis ONLY -> BACK HALF (Top Mask)", "gcode_file": "Sheet01_Step5B_Back_Top_Mask_Clear.gcode", "svg_file": "Bed_Sheet01_Op25_Step5B_top_back_0.4mm_Flat_Endmill_V-Bit.svg", "depth_mm": -0.06, "feed_mm_min": 300.0, "spindle_rpm": 10000, "stats_label": "105 toolpaths", "bounds_x": [29.2, 126.49], "bounds_y": [16.4, 128.5]}, {"op_id": "S01-OP26", "sheet_num": 1, "seq": 26, "step_code": "Step5C", "step_title": "Step 5C: Bottom Mask Clear", "work_type": "Solder Mask Clear", "tool_name": "0.4mm Flat Endmill / V-Bit", "tool_dia_mm": 0.4, "board_side": "bottom", "mirrored": true, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "FLIP board horizontally along Y-axis -> FRONT HALF & re-zero Z on bottom mask (M0)", "gcode_file": "Sheet01_Step5C_Front_Bottom_Mask_Clear.gcode", "svg_file": "Bed_Sheet01_Op26_Step5C_bottom_front_0.4mm_Flat_Endmill_V-Bit.svg", "depth_mm": -0.06, "feed_mm_min": 300.0, "spindle_rpm": 10000, "stats_label": "60 toolpaths", "bounds_x": [60.49, 178.96], "bounds_y": [11.14, 59.52]}, {"op_id": "S01-OP27", "sheet_num": 1, "seq": 27, "step_code": "Step5D", "step_title": "Step 5D: Bottom Mask Clear", "work_type": "Solder Mask Clear", "tool_name": "0.4mm Flat Endmill / V-Bit", "tool_dia_mm": 0.4, "board_side": "bottom", "mirrored": true, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": false, "shift_action": "Slide flipped sheet -145.0mm along Y-axis ONLY -> BACK HALF (Bottom Mask)", "gcode_file": "Sheet01_Step5D_Back_Bottom_Mask_Clear.gcode", "svg_file": "Bed_Sheet01_Op27_Step5D_bottom_back_0.4mm_Flat_Endmill_V-Bit.svg", "depth_mm": -0.06, "feed_mm_min": 300.0, "spindle_rpm": 10000, "stats_label": "101 toolpaths", "bounds_x": [83.51, 180.8], "bounds_y": [16.4, 128.5]}, {"op_id": "S01-OP28", "sheet_num": 1, "seq": 28, "step_code": "Step6A", "step_title": "Step 6A: Top Silkscreen (Front)", "work_type": "Inkjet Silkscreen", "tool_name": "STM32 UV Inkjet (600 DPI)", "tool_dia_mm": 0.05, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Load sheet TOP side up (FRONT half) on flatbed printer", "gcode_file": "Sheet01_Step6A_Front_Top_Silkscreen_Inkjet.json", "svg_file": "Bed_Sheet01_Op28_Step6A_top_front_STM32_UV_Inkjet_600_DPI.svg", "depth_mm": 0.0, "feed_mm_min": 2400.0, "spindle_rpm": 85, "stats_label": "161 silkscreen paths @ 600 DPI", "bounds_x": [30.56, 150.14], "bounds_y": [7.13, 62.4]}, {"op_id": "S01-OP29", "sheet_num": 1, "seq": 29, "step_code": "Step6B", "step_title": "Step 6B: Top Silkscreen (Back)", "work_type": "Inkjet Silkscreen", "tool_name": "STM32 UV Inkjet (600 DPI)", "tool_dia_mm": 0.05, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": false, "shift_action": "Load sheet TOP side up (BACK half) on flatbed printer", "gcode_file": "Sheet01_Step6B_Back_Top_Silkscreen_Inkjet.json", "svg_file": "Bed_Sheet01_Op29_Step6B_top_back_STM32_UV_Inkjet_600_DPI.svg", "depth_mm": 0.0, "feed_mm_min": 2400.0, "spindle_rpm": 85, "stats_label": "140 silkscreen paths @ 600 DPI", "bounds_x": [27.52, 128.84], "bounds_y": [14.83, 131.99]}, {"op_id": "S01-OP30", "sheet_num": 1, "seq": 30, "step_code": "Step7A", "step_title": "Step 7A: Top Endmill Cutout", "work_type": "Cutout & Breakaway", "tool_name": "1.0mm Corn Endmill", "tool_dia_mm": 1.0, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount Top-Side Up at FRONT HALF (Y=0 datum) with 1.0mm Endmill", "gcode_file": "Sheet01_Step7A_Front_Top_Snap_Cutout.gcode", "svg_file": "Bed_Sheet01_Op30_Step7A_top_front_1.0mm_Corn_Endmill.svg", "depth_mm": -0.85, "feed_mm_min": 200.0, "spindle_rpm": 10000, "stats_label": "11 cut segments", "bounds_x": [22.0, 154.25], "bounds_y": [8.5, 64.75]}, {"op_id": "S01-OP31", "sheet_num": 1, "seq": 31, "step_code": "Step7B", "step_title": "Step 7B: Top Endmill Cutout", "work_type": "Cutout & Breakaway", "tool_name": "1.0mm Corn Endmill", "tool_dia_mm": 1.0, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": false, "shift_action": "Slide sheet -145.0mm along Y-axis ONLY -> BACK HALF", "gcode_file": "Sheet01_Step7B_Back_Top_Snap_Cutout.gcode", "svg_file": "Bed_Sheet01_Op31_Step7B_top_back_1.0mm_Corn_Endmill.svg", "depth_mm": -0.85, "feed_mm_min": 200.0, "spindle_rpm": 10000, "stats_label": "18 cut segments", "bounds_x": [24.0, 132.25], "bounds_y": [5.0, 134.2]}, {"op_id": "S01-OP32", "sheet_num": 1, "seq": 32, "step_code": "Step7C", "step_title": "Step 7C: Top V-Bit Breakaway Score", "work_type": "Cutout & Breakaway", "tool_name": "30\u00b0 V-Bit (Score)", "tool_dia_mm": 0.2, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount 30\u00b0 V-Bit & return to FRONT HALF (Y=0 datum)", "gcode_file": "Sheet01_Step7C_Front_Top_VBit_Score.gcode", "svg_file": "Bed_Sheet01_Op32_Step7C_top_front_30deg_V-Bit_Score.svg", "depth_mm": -0.85, "feed_mm_min": 220.0, "spindle_rpm": 10000, "stats_label": "2 cut segments", "bounds_x": [27.0, 27.0], "bounds_y": [25.75, 47.5]}, {"op_id": "S01-OP33", "sheet_num": 1, "seq": 33, "step_code": "Step7D", "step_title": "Step 7D: Top V-Bit Breakaway Score", "work_type": "Cutout & Breakaway", "tool_name": "30\u00b0 V-Bit (Score)", "tool_dia_mm": 0.2, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": false, "shift_action": "Slide sheet -145.0mm along Y-axis ONLY -> BACK HALF", "gcode_file": "Sheet01_Step7D_Back_Top_VBit_Score.gcode", "svg_file": "Bed_Sheet01_Op33_Step7D_top_back_30deg_V-Bit_Score.svg", "depth_mm": -0.85, "feed_mm_min": 220.0, "spindle_rpm": 10000, "stats_label": "4 cut segments", "bounds_x": [48.57, 123.73], "bounds_y": [10.0, 10.0]}, {"op_id": "S01-OP34", "sheet_num": 1, "seq": 34, "step_code": "Step7E", "step_title": "Step 7E: Bottom Endmill Cutout (Mirrored)", "work_type": "Cutout & Breakaway", "tool_name": "1.0mm Corn Endmill", "tool_dia_mm": 1.0, "board_side": "bottom", "mirrored": true, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "FLIP board horizontally along Y-axis -> FRONT HALF (Mirrored X) with 1.0mm Endmill", "gcode_file": "Sheet01_Step7E_Front_Bottom_Snap_Cutout.gcode", "svg_file": "Bed_Sheet01_Op34_Step7E_bottom_front_1.0mm_Corn_Endmill.svg", "depth_mm": -0.85, "feed_mm_min": 200.0, "spindle_rpm": 10000, "stats_label": "11 cut segments", "bounds_x": [55.75, 188.0], "bounds_y": [8.5, 64.75]}, {"op_id": "S01-OP35", "sheet_num": 1, "seq": 35, "step_code": "Step7F", "step_title": "Step 7F: Bottom Endmill Cutout (Mirrored)", "work_type": "Cutout & Breakaway", "tool_name": "1.0mm Corn Endmill", "tool_dia_mm": 1.0, "board_side": "bottom", "mirrored": true, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": false, "shift_action": "Slide flipped sheet -145.0mm along Y-axis ONLY -> BACK HALF (Mirrored X)", "gcode_file": "Sheet01_Step7F_Back_Bottom_Snap_Cutout.gcode", "svg_file": "Bed_Sheet01_Op35_Step7F_bottom_back_1.0mm_Corn_Endmill.svg", "depth_mm": -0.85, "feed_mm_min": 200.0, "spindle_rpm": 10000, "stats_label": "18 cut segments", "bounds_x": [77.75, 186.0], "bounds_y": [5.0, 134.2]}, {"op_id": "S01-OP36", "sheet_num": 1, "seq": 36, "step_code": "Step7G", "step_title": "Step 7G: Bottom V-Bit Score (Mirrored)", "work_type": "Cutout & Breakaway", "tool_name": "30\u00b0 V-Bit (Score)", "tool_dia_mm": 0.2, "board_side": "bottom", "mirrored": true, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount 30\u00b0 V-Bit at FRONT HALF (Bottom Side Mirrored X)", "gcode_file": "Sheet01_Step7G_Front_Bottom_VBit_Score.gcode", "svg_file": "Bed_Sheet01_Op36_Step7G_bottom_front_30deg_V-Bit_Score.svg", "depth_mm": -0.85, "feed_mm_min": 220.0, "spindle_rpm": 10000, "stats_label": "2 cut segments", "bounds_x": [183.0, 183.0], "bounds_y": [25.75, 47.5]}, {"op_id": "S01-OP37", "sheet_num": 1, "seq": 37, "step_code": "Step7H", "step_title": "Step 7H: Bottom V-Bit Score (Mirrored)", "work_type": "Cutout & Breakaway", "tool_name": "30\u00b0 V-Bit (Score)", "tool_dia_mm": 0.2, "board_side": "bottom", "mirrored": true, "bed_half": "back", "y_shift_mm": 145.0, "started_back_same_tool": false, "shift_action": "Slide flipped sheet -145.0mm along Y-axis ONLY -> BACK HALF (Mirrored X)", "gcode_file": "Sheet01_Step7H_Back_Bottom_VBit_Score.gcode", "svg_file": "Bed_Sheet01_Op37_Step7H_bottom_back_30deg_V-Bit_Score.svg", "depth_mm": -0.85, "feed_mm_min": 220.0, "spindle_rpm": 10000, "stats_label": "4 cut segments", "bounds_x": [86.27, 161.43], "bounds_y": [10.0, 10.0]}]};
+    const projectDrills = {"PCB-AC-01": {"total_holes": 78, "via_count": 1, "tools": [{"dia": 0.3, "count": 1, "color": "#22d3ee"}, {"dia": 0.7, "count": 4, "color": "#a78bfa"}, {"dia": 0.75, "count": 6, "color": "#c084fc"}, {"dia": 0.8, "count": 22, "color": "#d946ef"}, {"dia": 0.9, "count": 2, "color": "#fbbf24"}, {"dia": 1.0, "count": 13, "color": "#f59e0b"}, {"dia": 1.1, "count": 14, "color": "#fb923c"}, {"dia": 1.3, "count": 6, "color": "#ef4444"}, {"dia": 1.5, "count": 10, "color": "#f43f5e"}]}, "PCB-AC-02": {"total_holes": 67, "via_count": 4, "tools": [{"dia": 0.3, "count": 4, "color": "#22d3ee"}, {"dia": 0.9, "count": 16, "color": "#fbbf24"}, {"dia": 1.0, "count": 29, "color": "#f59e0b"}, {"dia": 1.2, "count": 10, "color": "#f97316"}, {"dia": 1.8, "count": 4, "color": "#e11d48"}, {"dia": 3.0, "count": 4, "color": "#34d399"}]}, "PCB-AC-03": {"total_holes": 30, "via_count": 0, "tools": [{"dia": 0.7, "count": 10, "color": "#a78bfa"}, {"dia": 0.8, "count": 8, "color": "#d946ef"}, {"dia": 0.9, "count": 2, "color": "#fbbf24"}, {"dia": 1.0, "count": 5, "color": "#f59e0b"}, {"dia": 1.2, "count": 2, "color": "#f97316"}, {"dia": 3.0, "count": 3, "color": "#34d399"}]}};
+    const allUnitRecords = [{"index": 1, "pcb_id": "PCB-AC-01", "project_name": "AirCooler", "unit_id": "PCB-AC-01-001", "sheet_num": 1, "half": "front", "half_label": "Front Bed Half", "rotation_deg": 0, "pcb_w": 124.2, "pcb_h": 78.2, "x": 18.0, "y": 8.5, "attach_side": "LEFT", "shortest_edge": 78.2, "tab_summary": "2 x 2.0mm Tabs", "drill_holes": 78, "svg_front": "Unit_PCB-AC-01-001_FrontSide.svg", "svg_front_mirrored": "Unit_PCB-AC-01-001_FrontSide_Mirrored.svg", "svg_back": "Unit_PCB-AC-01-001_BackSide.svg", "svg_back_mirrored": "Unit_PCB-AC-01-001_BackSide_Mirrored.svg"}, {"index": 2, "pcb_id": "PCB-AC-02", "project_name": "Board-01", "unit_id": "PCB-AC-02-001", "sheet_num": 1, "half": "front", "half_label": "Front Bed Half", "rotation_deg": 0, "pcb_w": 127.2, "pcb_h": 56.2, "x": 18.0, "y": 89.2, "attach_side": "LEFT", "shortest_edge": 56.2, "tab_summary": "2 x 2.0mm Tabs", "drill_holes": 67, "svg_front": "Unit_PCB-AC-02-001_FrontSide.svg", "svg_front_mirrored": "Unit_PCB-AC-02-001_FrontSide_Mirrored.svg", "svg_back": "Unit_PCB-AC-02-001_BackSide.svg", "svg_back_mirrored": "Unit_PCB-AC-02-001_BackSide_Mirrored.svg"}, {"index": 3, "pcb_id": "PCB-AC-03", "project_name": "Micro Probe", "unit_id": "PCB-AC-03-001", "sheet_num": 1, "half": "front", "half_label": "Front Bed Half", "rotation_deg": 90, "pcb_w": 64.5, "pcb_h": 30.1, "x": 149.7, "y": 8.5, "attach_side": "BOTTOM", "shortest_edge": 30.1, "tab_summary": "2 x 2.0mm Tabs", "drill_holes": 30, "svg_front": "Unit_PCB-AC-03-001_FrontSide.svg", "svg_front_mirrored": "Unit_PCB-AC-03-001_FrontSide_Mirrored.svg", "svg_back": "Unit_PCB-AC-03-001_BackSide.svg", "svg_back_mirrored": "Unit_PCB-AC-03-001_BackSide_Mirrored.svg"}];
+    const bedOperationsBySheet = {"1": [{"op_id": "S01-OP01", "sheet_num": 1, "seq": 1, "step_code": "Step0A", "step_title": "Step 0A: Sheet Data & Ref Marks", "work_type": "Alignment Guides", "tool_name": "30\u00b0 V-Bit", "tool_dia_mm": 0.1, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount A4 sheet Top-Side Up at G54 (0,0) FRONT HALF", "gcode_file": "Sheet01_Step0A_Front_Alignment_Guides.gcode", "svg_file": "Bed_Sheet01_Op01_Step0A_top_front_30deg_V-Bit.svg", "depth_mm": -0.04, "feed_mm_min": 250.0, "spindle_rpm": 10000, "stats_label": "42 strokes, 2 pins", "bounds_x": [13.5, 186.5], "bounds_y": [1.2, 166.4]}, {"op_id": "S01-OP02", "sheet_num": 1, "seq": 2, "step_code": "Step0B", "step_title": "Step 0B: Back Alignment Guides", "work_type": "Alignment Guides", "tool_name": "30\u00b0 V-Bit", "tool_dia_mm": 0.1, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 165.0, "started_back_same_tool": false, "shift_action": "Slide sheet -165.0mm along Y-axis ONLY -> BACK HALF", "gcode_file": "Sheet01_Step0B_Back_Alignment_Guides.gcode", "svg_file": "Bed_Sheet01_Op02_Step0B_top_back_30deg_V-Bit.svg", "depth_mm": -0.04, "feed_mm_min": 250.0, "spindle_rpm": 10000, "stats_label": "2 strokes, 0 pins", "bounds_x": [15.0, 185.0], "bounds_y": [21.0, 23.0]}, {"op_id": "S01-OP03", "sheet_num": 1, "seq": 3, "step_code": "Step1_01", "step_title": "Step 1 Drilling (0.30mm)", "work_type": "CNC Drilling", "tool_name": "0.30mm Carbide Drill", "tool_dia_mm": 0.3, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Set sheet Top-Side Up at FRONT HALF (Y=0 datum)", "gcode_file": "Sheet01_Step1_01_Front_Top_Drills_0.30mm.gcode", "svg_file": "Bed_Sheet01_Op03_Step1_01_top_front_0.30mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "5 holes @ 0.30mm", "bounds_x": [42.71, 141.5], "bounds_y": [85.5, 139.21]}, {"op_id": "S01-OP04", "sheet_num": 1, "seq": 4, "step_code": "Step1_02", "step_title": "Step 1 Drilling (0.70mm)", "work_type": "CNC Drilling", "tool_name": "0.70mm Carbide Drill", "tool_dia_mm": 0.7, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 0.70mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_02_Front_Top_Drills_0.70mm.gcode", "svg_file": "Bed_Sheet01_Op04_Step1_02_top_front_0.70mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "14 holes @ 0.70mm", "bounds_x": [126.92, 166.75], "bounds_y": [26.0, 67.81]}, {"op_id": "S01-OP05", "sheet_num": 1, "seq": 5, "step_code": "Step1_03", "step_title": "Step 1 Drilling (0.75mm)", "work_type": "CNC Drilling", "tool_name": "0.75mm Carbide Drill", "tool_dia_mm": 0.75, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 0.75mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_03_Front_Top_Drills_0.75mm.gcode", "svg_file": "Bed_Sheet01_Op05_Step1_03_top_front_0.75mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "6 holes @ 0.75mm", "bounds_x": [76.0, 76.0], "bounds_y": [53.0, 76.54]}, {"op_id": "S01-OP06", "sheet_num": 1, "seq": 6, "step_code": "Step1_04", "step_title": "Step 1 Drilling (0.80mm)", "work_type": "CNC Drilling", "tool_name": "0.80mm Carbide Drill", "tool_dia_mm": 0.8, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 0.80mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_04_Front_Top_Drills_0.80mm.gcode", "svg_file": "Bed_Sheet01_Op06_Step1_04_top_front_0.80mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "30 holes @ 0.80mm", "bounds_x": [82.0, 166.06], "bounds_y": [22.18, 75.0]}, {"op_id": "S01-OP07", "sheet_num": 1, "seq": 7, "step_code": "Step1_05", "step_title": "Step 1 Drilling (0.90mm)", "work_type": "CNC Drilling", "tool_name": "0.90mm Carbide Drill", "tool_dia_mm": 0.9, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 0.90mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_05_Front_Top_Drills_0.90mm.gcode", "svg_file": "Bed_Sheet01_Op07_Step1_05_top_front_0.90mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "20 holes @ 0.90mm", "bounds_x": [27.95, 153.75], "bounds_y": [39.96, 138.97]}, {"op_id": "S01-OP08", "sheet_num": 1, "seq": 8, "step_code": "Step1_06", "step_title": "Step 1 Drilling (1.00mm)", "work_type": "CNC Drilling", "tool_name": "1.00mm Carbide Drill", "tool_dia_mm": 1.0, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 1.00mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_06_Front_Top_Drills_1.00mm.gcode", "svg_file": "Bed_Sheet01_Op08_Step1_06_top_front_1.00mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "49 holes @ 1.00mm", "bounds_x": [15.5, 184.5], "bounds_y": [16.5, 135.42]}, {"op_id": "S01-OP09", "sheet_num": 1, "seq": 9, "step_code": "Step1_07", "step_title": "Step 1 Drilling (1.00mm)", "work_type": "CNC Drilling", "tool_name": "1.00mm Carbide Drill", "tool_dia_mm": 1.0, "board_side": "top", "mirrored": false, "bed_half": "back", "y_shift_mm": 165.0, "started_back_same_tool": false, "shift_action": "Slide sheet -165.0mm along Y-axis ONLY -> BACK HALF", "gcode_file": "Sheet01_Step1_07_Back_Top_Drills_1.00mm.gcode", "svg_file": "Bed_Sheet01_Op09_Step1_07_top_back_1.00mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "2 holes @ 1.00mm", "bounds_x": [15.5, 184.5], "bounds_y": [30.0, 30.0]}, {"op_id": "S01-OP10", "sheet_num": 1, "seq": 10, "step_code": "Step1_08", "step_title": "Step 1 Drilling (1.10mm)", "work_type": "CNC Drilling", "tool_name": "1.10mm Carbide Drill", "tool_dia_mm": 1.1, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Slide sheet +165.0mm back along Y-axis ONLY -> FRONT HALF", "gcode_file": "Sheet01_Step1_08_Front_Top_Drills_1.10mm.gcode", "svg_file": "Bed_Sheet01_Op10_Step1_08_top_front_1.10mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "14 holes @ 1.10mm", "bounds_x": [66.34, 126.25], "bounds_y": [19.0, 80.25]}, {"op_id": "S01-OP11", "sheet_num": 1, "seq": 11, "step_code": "Step1_09", "step_title": "Step 1 Drilling (1.20mm)", "work_type": "CNC Drilling", "tool_name": "1.20mm Carbide Drill", "tool_dia_mm": 1.2, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 1.20mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_09_Front_Top_Drills_1.20mm.gcode", "svg_file": "Bed_Sheet01_Op11_Step1_09_top_front_1.20mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "12 holes @ 1.20mm", "bounds_x": [82.3, 165.75], "bounds_y": [50.0, 138.37]}, {"op_id": "S01-OP12", "sheet_num": 1, "seq": 12, "step_code": "Step1_10", "step_title": "Step 1 Drilling (1.30mm)", "work_type": "CNC Drilling", "tool_name": "1.30mm Carbide Drill", "tool_dia_mm": 1.3, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 1.30mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_10_Front_Top_Drills_1.30mm.gcode", "svg_file": "Bed_Sheet01_Op12_Step1_10_top_front_1.30mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "6 holes @ 1.30mm", "bounds_x": [34.47, 36.5], "bounds_y": [23.02, 80.0]}, {"op_id": "S01-OP13", "sheet_num": 1, "seq": 13, "step_code": "Step1_11", "step_title": "Step 1 Drilling (1.50mm)", "work_type": "CNC Drilling", "tool_name": "1.50mm Carbide Drill", "tool_dia_mm": 1.5, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 1.50mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_11_Front_Top_Drills_1.50mm.gcode", "svg_file": "Bed_Sheet01_Op13_Step1_11_top_front_1.50mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "10 holes @ 1.50mm", "bounds_x": [45.9, 61.1], "bounds_y": [46.0, 80.0]}, {"op_id": "S01-OP14", "sheet_num": 1, "seq": 14, "step_code": "Step1_12", "step_title": "Step 1 Drilling (1.80mm)", "work_type": "CNC Drilling", "tool_name": "1.80mm Carbide Drill", "tool_dia_mm": 1.8, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 1.80mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_12_Front_Top_Drills_1.80mm.gcode", "svg_file": "Bed_Sheet01_Op14_Step1_12_top_front_1.80mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "4 holes @ 1.80mm", "bounds_x": [83.3, 98.54], "bounds_y": [95.37, 95.37]}, {"op_id": "S01-OP15", "sheet_num": 1, "seq": 15, "step_code": "Step1_13", "step_title": "Step 1 Drilling (3.00mm)", "work_type": "CNC Drilling", "tool_name": "3.00mm Carbide Drill", "tool_dia_mm": 3.0, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Stay at FRONT HALF & change drill to 3.00mm (Serpentine: same work, no Y-shift needed!)", "gcode_file": "Sheet01_Step1_13_Front_Top_Drills_3.00mm.gcode", "svg_file": "Bed_Sheet01_Op15_Step1_13_top_front_3.00mm_Carbide_Drill.svg", "depth_mm": -1.8, "feed_mm_min": 150.0, "spindle_rpm": 10000, "stats_label": "7 holes @ 3.00mm", "bounds_x": [75.8, 175.75], "bounds_y": [18.0, 136.87]}, {"op_id": "S01-OP16", "sheet_num": 1, "seq": 16, "step_code": "Step3A", "step_title": "Step 3A: Top Copper Isolation", "work_type": "Top Isolation", "tool_name": "30\u00b0 / 0.2mm V-Bit", "tool_dia_mm": 0.2, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount sheet Top-Side Up at G54 (0,0) FRONT HALF", "gcode_file": "Sheet01_Step3A_Front_Top_Copper_Isolation.gcode", "svg_file": "Bed_Sheet01_Op16_Step3A_top_front_30deg_0.2mm_V-Bit.svg", "depth_mm": -0.04, "feed_mm_min": 300.0, "spindle_rpm": 10000, "stats_label": "291 toolpaths", "bounds_x": [19.0, 179.35], "bounds_y": [9.5, 141.56]}, {"op_id": "S01-OP17", "sheet_num": 1, "seq": 17, "step_code": "Step4A", "step_title": "Step 4A: Bottom Copper Isolation", "work_type": "Bottom Isolation", "tool_name": "30\u00b0 / 0.2mm V-Bit", "tool_dia_mm": 0.2, "board_side": "bottom", "mirrored": true, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "FLIP board horizontally along Y-axis (Left <-> Right) -> FRONT HALF", "gcode_file": "Sheet01_Step4A_Front_Bottom_Copper_Isolation.gcode", "svg_file": "Bed_Sheet01_Op17_Step4A_bottom_front_30deg_0.2mm_V-Bit.svg", "depth_mm": -0.04, "feed_mm_min": 300.0, "spindle_rpm": 10000, "stats_label": "180 toolpaths", "bounds_x": [20.65, 175.6], "bounds_y": [9.9, 142.48]}, {"op_id": "S01-OP18", "sheet_num": 1, "seq": 18, "step_code": "Step5A", "step_title": "Step 5A: Top Mask Clear", "work_type": "Solder Mask Clear", "tool_name": "0.4mm Flat Endmill / V-Bit", "tool_dia_mm": 0.4, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount sheet Top-Side Up at FRONT HALF & re-zero Z on cured mask (M0)", "gcode_file": "Sheet01_Step5A_Front_Top_Mask_Clear.gcode", "svg_file": "Bed_Sheet01_Op18_Step5A_top_front_0.4mm_Flat_Endmill_V-Bit.svg", "depth_mm": -0.06, "feed_mm_min": 300.0, "spindle_rpm": 10000, "stats_label": "165 toolpaths", "bounds_x": [27.04, 173.99], "bounds_y": [15.4, 140.22]}, {"op_id": "S01-OP19", "sheet_num": 1, "seq": 19, "step_code": "Step5C", "step_title": "Step 5C: Bottom Mask Clear", "work_type": "Solder Mask Clear", "tool_name": "0.4mm Flat Endmill / V-Bit", "tool_dia_mm": 0.4, "board_side": "bottom", "mirrored": true, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "FLIP board horizontally along Y-axis -> FRONT HALF & re-zero Z on bottom mask (M0)", "gcode_file": "Sheet01_Step5C_Front_Bottom_Mask_Clear.gcode", "svg_file": "Bed_Sheet01_Op19_Step5C_bottom_front_0.4mm_Flat_Endmill_V-Bit.svg", "depth_mm": -0.06, "feed_mm_min": 300.0, "spindle_rpm": 10000, "stats_label": "161 toolpaths", "bounds_x": [26.01, 172.96], "bounds_y": [15.4, 140.22]}, {"op_id": "S01-OP20", "sheet_num": 1, "seq": 20, "step_code": "Step6A", "step_title": "Step 6A: Top Silkscreen (Front)", "work_type": "Inkjet Silkscreen", "tool_name": "STM32 UV Inkjet (600 DPI)", "tool_dia_mm": 0.05, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Load sheet TOP side up (FRONT half) on flatbed printer", "gcode_file": "Sheet01_Step6A_Front_Top_Silkscreen_Inkjet.json", "svg_file": "Bed_Sheet01_Op20_Step6A_top_front_STM32_UV_Inkjet_600_DPI.svg", "depth_mm": 0.0, "feed_mm_min": 2400.0, "spindle_rpm": 85, "stats_label": "301 silkscreen paths @ 600 DPI", "bounds_x": [26.56, 176.33], "bounds_y": [9.84, 143.1]}, {"op_id": "S01-OP21", "sheet_num": 1, "seq": 21, "step_code": "Step7A", "step_title": "Step 7A: Top Endmill Cutout", "work_type": "Cutout & Breakaway", "tool_name": "1.0mm Corn Endmill", "tool_dia_mm": 1.0, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount Top-Side Up at FRONT HALF (Y=0 datum) with 1.0mm Endmill", "gcode_file": "Sheet01_Step7A_Front_Top_Snap_Cutout.gcode", "svg_file": "Bed_Sheet01_Op21_Step7A_top_front_1.0mm_Corn_Endmill.svg", "depth_mm": -0.85, "feed_mm_min": 200.0, "spindle_rpm": 10000, "stats_label": "33 cut segments", "bounds_x": [18.0, 179.75], "bounds_y": [8.5, 145.45]}, {"op_id": "S01-OP22", "sheet_num": 1, "seq": 22, "step_code": "Step7C", "step_title": "Step 7C: Top V-Bit Breakaway Score", "work_type": "Cutout & Breakaway", "tool_name": "30\u00b0 V-Bit (Score)", "tool_dia_mm": 0.2, "board_side": "top", "mirrored": false, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount 30\u00b0 V-Bit & return to FRONT HALF (Y=0 datum)", "gcode_file": "Sheet01_Step7C_Front_Top_VBit_Score.gcode", "svg_file": "Bed_Sheet01_Op22_Step7C_top_front_30deg_V-Bit_Score.svg", "depth_mm": -0.85, "feed_mm_min": 220.0, "spindle_rpm": 10000, "stats_label": "6 cut segments", "bounds_x": [23.0, 171.23], "bounds_y": [13.5, 128.2]}, {"op_id": "S01-OP23", "sheet_num": 1, "seq": 23, "step_code": "Step7E", "step_title": "Step 7E: Bottom Endmill Cutout (Mirrored)", "work_type": "Cutout & Breakaway", "tool_name": "1.0mm Corn Endmill", "tool_dia_mm": 1.0, "board_side": "bottom", "mirrored": true, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "FLIP board horizontally along Y-axis -> FRONT HALF (Mirrored X) with 1.0mm Endmill", "gcode_file": "Sheet01_Step7E_Front_Bottom_Snap_Cutout.gcode", "svg_file": "Bed_Sheet01_Op23_Step7E_bottom_front_1.0mm_Corn_Endmill.svg", "depth_mm": -0.85, "feed_mm_min": 200.0, "spindle_rpm": 10000, "stats_label": "33 cut segments", "bounds_x": [20.25, 182.0], "bounds_y": [8.5, 145.45]}, {"op_id": "S01-OP24", "sheet_num": 1, "seq": 24, "step_code": "Step7G", "step_title": "Step 7G: Bottom V-Bit Score (Mirrored)", "work_type": "Cutout & Breakaway", "tool_name": "30\u00b0 V-Bit (Score)", "tool_dia_mm": 0.2, "board_side": "bottom", "mirrored": true, "bed_half": "front", "y_shift_mm": 0.0, "started_back_same_tool": false, "shift_action": "Mount 30\u00b0 V-Bit at FRONT HALF (Bottom Side Mirrored X)", "gcode_file": "Sheet01_Step7G_Front_Bottom_VBit_Score.gcode", "svg_file": "Bed_Sheet01_Op24_Step7G_bottom_front_30deg_V-Bit_Score.svg", "depth_mm": -0.85, "feed_mm_min": 220.0, "spindle_rpm": 10000, "stats_label": "6 cut segments", "bounds_x": [28.77, 177.0], "bounds_y": [13.5, 128.2]}]};
     const bedHoldersList = [{"id": "lock_bed_front_left", "name": "Front-Left Common M4 Washer Clamp", "shape": "circle", "x": -5.0, "y": 8.0, "diameter": 30.0, "holder_gap": 3.0, "step_zone": "bed_common", "common_for_both_halves": true, "drill_through_pcb": false, "anchor_type": "washer_clamp", "description": "Common bed locking screw with M4 washer clamping over PCB margin (no through-PCB anchor hole)"}, {"id": "lock_bed_front_right", "name": "Front-Right Common M4 Washer Clamp", "shape": "circle", "x": 205.0, "y": 0.0, "diameter": 30.0, "holder_gap": 3.0, "step_zone": "bed_common", "common_for_both_halves": true, "drill_through_pcb": false, "anchor_type": "washer_clamp", "description": "Common bed locking screw with M4 washer clamping over PCB margin (no through-PCB anchor hole)"}, {"id": "lock_bed_rear_left", "name": "Rear-Left Common Edge Washer Clamp", "shape": "circle", "x": 205.0, "y": 160.0, "diameter": 30.0, "holder_gap": 3.0, "step_zone": "bed_common", "common_for_both_halves": true, "drill_through_pcb": false, "anchor_type": "washer_clamp", "description": "Common bed locking screw with M4 washer clamping over PCB margin (no through-PCB anchor hole)"}, {"id": "lock_bed_rear_right", "name": "Rear-Right Common Edge Washer Clamp", "shape": "circle", "x": -5, "y": 160.0, "diameter": 30.0, "holder_gap": 3.0, "step_zone": "bed_common", "common_for_both_halves": true, "drill_through_pcb": false, "anchor_type": "washer_clamp", "description": "Common bed locking screw with M4 washer clamping over PCB margin (no through-PCB anchor hole)"}];
     const bedZSwitch = {"enabled": true, "x_mm": 272.001, "y_mm": 135.002, "width_mm": 7.0, "length_mm": 20.0, "danger_margin_mm": 6.0, "label": "Z-ZERO LIMIT SWITCH (DANGER ZONE)", "description": "Fixed bed tool-length / Z-zero limit switch danger zone"};
     const cncBedTravelX = 275.0;
@@ -623,7 +623,7 @@
     // -------------------------------------------------------------------
     // Section 5: Checklist interactive persistence
     // -------------------------------------------------------------------
-    let checklistState = {"check_bed_clean": {"label": "1. Spoilboard Cleanliness & Flatness Check", "category": "Prep & Safety", "checked": false, "description": "Remove debris and verify A4 spoilboard fixture surface is flat before clamping."}, "check_z_switch_danger_zone": {"label": "2. Verify Bed Z-Zero Limit Switch Danger Zone (X=272.001, Y=135.002 mm)", "category": "Danger Zone", "checked": false, "description": "Confirm Z-Zero probe limit switch at X=272.001mm, Y=135.002mm is wired, unobstructed, and NEVER overlapped by copper stock, M4 washer clamps, or rapid moves."}, "check_stock_washers": {"label": "3. Clamp A4 Sheet Using Common Single-Half Bed M4 Washers (No Through-PCB Drill)", "category": "Prep & Safety", "checked": false, "description": "Clamp copper edges at Front Half using the 4 shared bed M4 washer clamps (common bed coordinates reused for Y-shifted Back Half)."}, "check_vbit_tool_z0": {"label": "4. Install 30\u00b0 V-Bit & Zero Z-Axis via Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Insert 30\u00b0 / 0.1mm V-Bit, probe tool length on bed Z-Zero Limit Switch (X=272.001, Y=135.002mm Danger Zone), and run FR4 height map."}, "check_step0_sheet_data": {"label": "5. Engrave Sheet Data, Reference Spots & Front-Corner Tag (Step 0A Front -> 0B Back)", "category": "Step 0 - Guides", "checked": false, "description": "Engrave Sheet ID tag, Y145 SHIFT mark & reference guides on Front Half, slide -145.0mm along Y-axis only, then run 0B Back. Dowel pin lock DISABLED (configure enable_dowel_pin_lock in manufacture_config.json)."}, "check_drill_0_30_tool_z0": {"label": "6. Change Bit -> 0.30 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 0.30 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_0_30_execute": {"label": "7. Step 1: Drill 5 Hole(s) Across Sheet Using 0.30 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 5 holes at 0.30 mm (Front Half -> Y-145.0mm Shift -> Back Half)."}, "check_drill_0_70_tool_z0": {"label": "8. Change Bit -> 0.70 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 0.70 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_0_70_execute": {"label": "9. Step 1: Drill 14 Hole(s) Across Sheet Using 0.70 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 14 holes at 0.70 mm (Start directly at Back Half (Serpentine) -> Y+145.0mm -> Front Half)."}, "check_drill_0_75_tool_z0": {"label": "10. Change Bit -> 0.75 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 0.75 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_0_75_execute": {"label": "11. Step 1: Drill 6 Hole(s) Across Sheet Using 0.75 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 6 holes at 0.75 mm (Start at Front Half -> Y-145.0mm -> Back Half)."}, "check_drill_0_80_tool_z0": {"label": "12. Change Bit -> 0.80 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 0.80 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_0_80_execute": {"label": "13. Step 1: Drill 30 Hole(s) Across Sheet Using 0.80 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 30 holes at 0.80 mm (Start directly at Back Half (Serpentine) -> Y+145.0mm -> Front Half)."}, "check_drill_0_90_tool_z0": {"label": "14. Change Bit -> 0.90 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 0.90 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_0_90_execute": {"label": "15. Step 1: Drill 20 Hole(s) Across Sheet Using 0.90 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 20 holes at 0.90 mm (Start at Front Half -> Y-145.0mm -> Back Half)."}, "check_drill_1_00_tool_z0": {"label": "16. Change Bit -> 1.00 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 1.00 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_1_00_execute": {"label": "17. Step 1: Drill 47 Hole(s) Across Sheet Using 1.00 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 47 holes at 1.00 mm (Start directly at Back Half (Serpentine) -> Y+145.0mm -> Front Half)."}, "check_drill_1_10_tool_z0": {"label": "18. Change Bit -> 1.10 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 1.10 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_1_10_execute": {"label": "19. Step 1: Drill 14 Hole(s) Across Sheet Using 1.10 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 14 holes at 1.10 mm (Start at Front Half -> Y-145.0mm -> Back Half)."}, "check_drill_1_20_tool_z0": {"label": "20. Change Bit -> 1.20 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 1.20 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_1_20_execute": {"label": "21. Step 1: Drill 12 Hole(s) Across Sheet Using 1.20 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 12 holes at 1.20 mm (Start directly at Back Half (Serpentine) -> Y+145.0mm -> Front Half)."}, "check_drill_1_30_tool_z0": {"label": "22. Change Bit -> 1.30 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 1.30 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_1_30_execute": {"label": "23. Step 1: Drill 6 Hole(s) Across Sheet Using 1.30 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 6 holes at 1.30 mm (Start at Front Half -> Y-145.0mm -> Back Half)."}, "check_drill_1_50_tool_z0": {"label": "24. Change Bit -> 1.50 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 1.50 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_1_50_execute": {"label": "25. Step 1: Drill 10 Hole(s) Across Sheet Using 1.50 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 10 holes at 1.50 mm (Start directly at Back Half (Serpentine) -> Y+145.0mm -> Front Half)."}, "check_drill_1_80_tool_z0": {"label": "26. Change Bit -> 1.80 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 1.80 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_1_80_execute": {"label": "27. Step 1: Drill 4 Hole(s) Across Sheet Using 1.80 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 4 holes at 1.80 mm (Start at Front Half -> Y-145.0mm -> Back Half)."}, "check_drill_3_00_tool_z0": {"label": "28. Change Bit -> 3.00 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 3.00 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_3_00_execute": {"label": "29. Step 1: Drill 7 Hole(s) Across Sheet Using 3.00 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 7 holes at 3.00 mm (Start directly at Back Half (Serpentine) -> Y+145.0mm -> Front Half)."}, "check_step2_vias": {"label": "30. Step 2: Chemical Through-Hole Via Metallization Bath", "category": "Step 2 - Vias", "checked": false, "description": "Perform desmear, palladium catalyst activation, micro-etch & 25\u00b5m acid Cu barrel electroplating on drilled vias."}, "check_step3_tool_z0": {"label": "31. Change to 30\u00b0 V-Bit, Z-Zero at Limit Switch & Mill Top Copper (Step 3A/3B)", "category": "Step 3 - Top Cu", "checked": false, "description": "Install 30\u00b0 V-Bit, Z-zero via bed Limit Switch (X=272.001, Y=135.002mm), re-autolevel, then isolate Front Half (3A) & Back Half (3B)."}, "check_step4_flip_y_z0": {"label": "32. Flip Sheet Along Y-Axis, Re-Zero Z via Limit Switch & Mill Mirrored Bottom Copper (4A/4B)", "category": "Step 4 - Bottom Cu", "checked": false, "description": "Flip A4 sheet Left<->Right along Y-axis, re-clamp with the same 4 bed washers, probe Z at Limit Switch (X=272.001, Y=135.002mm), then run Step 4A/4B."}, "check_step5_mask_z0": {"label": "33. Step 5: Cure Solder Mask -> Change to 0.4mm Bit & Z-Zero at Limit Switch -> Clear Pads", "category": "Step 5 - Mask", "checked": false, "description": "Install 0.4mm pad-clear bit, probe Z on Limit Switch (X=272.001, Y=135.002mm) + M0 touch-off on cured mask, and clear Front & Back pads."}, "check_step6_silk": {"label": "34. Step 6: UV Silkscreen Legend Printing (Front & Back Sides)", "category": "Step 6 - Silkscreen", "checked": false, "description": "Deposit UV-curable white component legends for Front and Back sides."}, "check_step7_endmill_z0": {"label": "35. Change to 1.0mm Corn Endmill, Z-Zero at Limit Switch & Run Breakaway Cutout (Step 7A..7H)", "category": "Step 7 - Cutout", "checked": false, "description": "Install 1.0mm endmill, Z-zero at Limit Switch (X=272.001, Y=135.002mm), mill Top Side Front->Back, flip along Y-axis, then mill Mirrored Bottom Side."}};
+    let checklistState = {"check_bed_clean": {"label": "1. Spoilboard Cleanliness & Flatness Check", "category": "Prep & Safety", "checked": false, "description": "Remove debris and verify A4 spoilboard fixture surface is flat before clamping."}, "check_z_switch_danger_zone": {"label": "2. Verify Bed Z-Zero Limit Switch Danger Zone (X=272.001, Y=135.002 mm)", "category": "Danger Zone", "checked": false, "description": "Confirm Z-Zero probe limit switch at X=272.001mm, Y=135.002mm is wired, unobstructed, and NEVER overlapped by copper stock, M4 washer clamps, or rapid moves."}, "check_stock_washers": {"label": "3. Clamp A4 Sheet Using Common Single-Half Bed M4 Washers (No Through-PCB Drill)", "category": "Prep & Safety", "checked": false, "description": "Clamp copper edges at Front Half using the 4 shared bed M4 washer clamps (common bed coordinates reused for Y-shifted Back Half)."}, "check_vbit_tool_z0": {"label": "4. Install 30\u00b0 V-Bit & Zero Z-Axis via Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Insert 30\u00b0 / 0.1mm V-Bit, probe tool length on bed Z-Zero Limit Switch (X=272.001, Y=135.002mm Danger Zone), and run FR4 height map."}, "check_step0_sheet_data": {"label": "5. Engrave Sheet Data, Reference Spots & Front-Corner Tag (Step 0A Front -> 0B Back)", "category": "Step 0 - Guides", "checked": false, "description": "Engrave Sheet ID tag, Y165 SHIFT mark & reference guides on Front Half, slide -165.0mm along Y-axis only, then run 0B Back. Dowel pin lock DISABLED (configure enable_dowel_pin_lock in manufacture_config.json)."}, "check_drill_0_30_tool_z0": {"label": "6. Change Bit -> 0.30 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 0.30 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_0_30_execute": {"label": "7. Step 1: Drill 5 Hole(s) Across Sheet Using 0.30 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 5 holes at 0.30 mm (Front Half -> Y-165.0mm Shift -> Back Half)."}, "check_drill_0_70_tool_z0": {"label": "8. Change Bit -> 0.70 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 0.70 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_0_70_execute": {"label": "9. Step 1: Drill 14 Hole(s) Across Sheet Using 0.70 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 14 holes at 0.70 mm (Start directly at Back Half (Serpentine) -> Y+165.0mm -> Front Half)."}, "check_drill_0_75_tool_z0": {"label": "10. Change Bit -> 0.75 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 0.75 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_0_75_execute": {"label": "11. Step 1: Drill 6 Hole(s) Across Sheet Using 0.75 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 6 holes at 0.75 mm (Start at Front Half -> Y-165.0mm -> Back Half)."}, "check_drill_0_80_tool_z0": {"label": "12. Change Bit -> 0.80 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 0.80 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_0_80_execute": {"label": "13. Step 1: Drill 30 Hole(s) Across Sheet Using 0.80 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 30 holes at 0.80 mm (Start directly at Back Half (Serpentine) -> Y+165.0mm -> Front Half)."}, "check_drill_0_90_tool_z0": {"label": "14. Change Bit -> 0.90 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 0.90 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_0_90_execute": {"label": "15. Step 1: Drill 20 Hole(s) Across Sheet Using 0.90 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 20 holes at 0.90 mm (Start at Front Half -> Y-165.0mm -> Back Half)."}, "check_drill_1_00_tool_z0": {"label": "16. Change Bit -> 1.00 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 1.00 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_1_00_execute": {"label": "17. Step 1: Drill 47 Hole(s) Across Sheet Using 1.00 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 47 holes at 1.00 mm (Start directly at Back Half (Serpentine) -> Y+165.0mm -> Front Half)."}, "check_drill_1_10_tool_z0": {"label": "18. Change Bit -> 1.10 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 1.10 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_1_10_execute": {"label": "19. Step 1: Drill 14 Hole(s) Across Sheet Using 1.10 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 14 holes at 1.10 mm (Start at Front Half -> Y-165.0mm -> Back Half)."}, "check_drill_1_20_tool_z0": {"label": "20. Change Bit -> 1.20 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 1.20 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_1_20_execute": {"label": "21. Step 1: Drill 12 Hole(s) Across Sheet Using 1.20 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 12 holes at 1.20 mm (Start directly at Back Half (Serpentine) -> Y+165.0mm -> Front Half)."}, "check_drill_1_30_tool_z0": {"label": "22. Change Bit -> 1.30 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 1.30 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_1_30_execute": {"label": "23. Step 1: Drill 6 Hole(s) Across Sheet Using 1.30 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 6 holes at 1.30 mm (Start at Front Half -> Y-165.0mm -> Back Half)."}, "check_drill_1_50_tool_z0": {"label": "24. Change Bit -> 1.50 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 1.50 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_1_50_execute": {"label": "25. Step 1: Drill 10 Hole(s) Across Sheet Using 1.50 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 10 holes at 1.50 mm (Start directly at Back Half (Serpentine) -> Y+165.0mm -> Front Half)."}, "check_drill_1_80_tool_z0": {"label": "26. Change Bit -> 1.80 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 1.80 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_1_80_execute": {"label": "27. Step 1: Drill 4 Hole(s) Across Sheet Using 1.80 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 4 holes at 1.80 mm (Start at Front Half -> Y-165.0mm -> Back Half)."}, "check_drill_3_00_tool_z0": {"label": "28. Change Bit -> 3.00 mm Carbide Drill & Zero Z on Limit Switch (X=272.001, Y=135.002 mm)", "category": "Tool & Z-Zero", "checked": false, "description": "Swap collet to 3.00 mm drill bit, jog safely into Limit Switch Danger Zone (X=272.001, Y=135.002mm) and set Z-Zero before starting."}, "check_drill_3_00_execute": {"label": "29. Step 1: Drill 7 Hole(s) Across Sheet Using 3.00 mm Bit", "category": "Step 1 - Drilling", "checked": false, "description": "Execute peck drilling for all 7 holes at 3.00 mm (Start directly at Back Half (Serpentine) -> Y+165.0mm -> Front Half)."}, "check_step2_vias": {"label": "30. Step 2: Chemical Through-Hole Via Metallization Bath", "category": "Step 2 - Vias", "checked": false, "description": "Perform desmear, palladium catalyst activation, micro-etch & 25\u00b5m acid Cu barrel electroplating on drilled vias."}, "check_step3_tool_z0": {"label": "31. Change to 30\u00b0 V-Bit, Z-Zero at Limit Switch & Mill Top Copper (Step 3A/3B)", "category": "Step 3 - Top Cu", "checked": false, "description": "Install 30\u00b0 V-Bit, Z-zero via bed Limit Switch (X=272.001, Y=135.002mm), re-autolevel, then isolate Front Half (3A) & Back Half (3B)."}, "check_step4_flip_y_z0": {"label": "32. Flip Sheet Along Y-Axis, Re-Zero Z via Limit Switch & Mill Mirrored Bottom Copper (4A/4B)", "category": "Step 4 - Bottom Cu", "checked": false, "description": "Flip A4 sheet Left<->Right along Y-axis, re-clamp with the same 4 bed washers, probe Z at Limit Switch (X=272.001, Y=135.002mm), then run Step 4A/4B."}, "check_step5_mask_z0": {"label": "33. Step 5: Cure Solder Mask -> Change to 0.4mm Bit & Z-Zero at Limit Switch -> Clear Pads", "category": "Step 5 - Mask", "checked": false, "description": "Install 0.4mm pad-clear bit, probe Z on Limit Switch (X=272.001, Y=135.002mm) + M0 touch-off on cured mask, and clear Front & Back pads."}, "check_step6_silk": {"label": "34. Step 6: UV Silkscreen Legend Printing (Front & Back Sides)", "category": "Step 6 - Silkscreen", "checked": false, "description": "Deposit UV-curable white component legends for Front and Back sides."}, "check_step7_endmill_z0": {"label": "35. Change to 1.0mm Corn Endmill, Z-Zero at Limit Switch & Run Breakaway Cutout (Step 7A..7H)", "category": "Step 7 - Cutout", "checked": false, "description": "Install 1.0mm endmill, Z-zero at Limit Switch (X=272.001, Y=135.002mm), mill Top Side Front->Back, flip along Y-axis, then mill Mirrored Bottom Side."}};
 
     function filterChecklistCat(cat) {
       document.querySelectorAll('.chk-cat-btn').forEach(btn => {
@@ -764,7 +764,9 @@
       if (frameLink) frameLink.href = `http://${fluidncTargetIp}`;
       const ipLabel = document.getElementById('fluidnc-embedded-ip-label');
       if (ipLabel) ipLabel.innerText = fluidncTargetIp;
-      testFluidNCConnection();
+      const mode = document.getElementById('cnc-transport-select')?.value || 'auto';
+      if (mode === 'ws' || mode === 'auto') connectCNCBridge('connect');
+      else testFluidNCConnection();
     }
 
     let fluidncMachineState = 'Unknown';
@@ -772,6 +774,179 @@
     let fluidncSdMounted = false;
     let activeStreamWs = null;
     let streamAborted = false;
+    let bridgeEventSource = null;
+
+    function applyFluidNCStatusPayload(data) {
+      if (!data) return;
+      lastLiveToolPos = data;
+      const badge = document.getElementById('fluidnc-status-badge');
+      const dot = document.getElementById('fluidnc-status-dot');
+      const text = document.getElementById('fluidnc-status-text');
+      const sdIndicator = document.getElementById('fluidnc-sd-indicator');
+      const connectBtn = document.getElementById('btn-cnc-connect');
+      const macroLbl = document.getElementById('macro-live-pos-lbl');
+
+      if (data.sd_mounted === true) fluidncSdMounted = true;
+      else if (data.sd_mounted === false) fluidncSdMounted = false;
+
+      const via = (data.transport_active || 'none').toLowerCase();
+      const viaTag = via === 'usb' ? `USB ${data.usb_port || ''}`
+        : via === 'ws' ? 'WS Proxy'
+        : via === 'http' ? 'HTTP/Telnet'
+        : 'Offline';
+
+      if (data.online) {
+        fluidncMachineState = data.state || 'Online';
+        const pos = data.wpos || data.mpos;
+        if (pos) {
+          fluidncMPos = `X:${pos[0].toFixed(2)} Y:${pos[1].toFixed(2)} Z:${pos[2].toFixed(2)}`;
+        }
+        if (dot && text && badge) {
+          dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+          const posTxt = pos ? ` | X:${pos[0].toFixed(2)} Y:${pos[1].toFixed(2)} Z:${pos[2].toFixed(2)}` : '';
+          text.innerText = `${fluidncMachineState}${posTxt}`;
+          badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-950/40 border border-emerald-500/40 text-[11px] font-mono text-emerald-300';
+        }
+        if (sdIndicator) {
+          const col = via === 'usb' ? 'text-cyan-400' : (via === 'ws' ? 'text-emerald-400' : 'text-amber-300');
+          sdIndicator.innerHTML = `<span class="${col}">${viaTag} Ready</span>`;
+        }
+        if (connectBtn) {
+          connectBtn.innerText = (via === 'usb' || via === 'ws') ? 'Disconnect' : 'Connect';
+          connectBtn.dataset.connected = (via === 'usb' || via === 'ws') ? '1' : '0';
+        }
+        if (macroLbl) {
+          macroLbl.innerText = pos ? `${fluidncMachineState} | ${fluidncMPos}` : fluidncMachineState;
+        }
+        if (typeof drawLiveBedToolCanvas === 'function') drawLiveBedToolCanvas(data);
+      } else {
+        fluidncMachineState = 'Offline';
+        if (dot && text && badge) {
+          dot.className = 'w-2 h-2 rounded-full bg-red-400';
+          const tgt = (data.transport_configured === 'usb') ? (data.usb_port || 'USB') : fluidncTargetIp;
+          text.innerText = `Offline (${tgt})`;
+          badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-950/40 border border-red-500/40 text-[11px] font-mono text-red-300';
+        }
+        if (sdIndicator) sdIndicator.innerHTML = `<span class="text-slate-400">${data.transport_configured ? data.transport_configured.toUpperCase() : 'Disconnected'}</span>`;
+        if (connectBtn) {
+          connectBtn.innerText = 'Connect';
+          connectBtn.dataset.connected = '0';
+        }
+      }
+    }
+
+    function appendBridgeConsoleLine(via, line, ts) {
+      const box = document.getElementById('cnc-console-log');
+      if (!box || !line) return;
+      const row = document.createElement('div');
+      const viaCol = via === 'usb' ? 'text-cyan-400' : (via === 'ws' ? 'text-emerald-400' : 'text-slate-400');
+      row.className = 'leading-relaxed break-all';
+      row.innerHTML = `<span class="text-slate-600 mr-1.5">${ts || ''}</span><span class="${viaCol} mr-1.5">[${(via || 'cnc').toUpperCase()}]</span><span class="text-slate-200"></span>`;
+      row.lastChild.textContent = line;
+      box.appendChild(row);
+      while (box.children.length > 80) box.removeChild(box.firstChild);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function initBridgeEventStream() {
+      if (!window.location.protocol.startsWith('http') || typeof EventSource === 'undefined') return;
+      if (bridgeEventSource) {
+        try { bridgeEventSource.close(); } catch (e) {}
+      }
+      bridgeEventSource = new EventSource(`${getApiBase()}/api/fluidnc_events`);
+      bridgeEventSource.addEventListener('status', (evt) => {
+        try { applyFluidNCStatusPayload(JSON.parse(evt.data)); } catch (e) {}
+      });
+      bridgeEventSource.addEventListener('console', (evt) => {
+        try {
+          const d = JSON.parse(evt.data);
+          appendBridgeConsoleLine(d.via, d.line, d.ts);
+        } catch (e) {}
+      });
+      bridgeEventSource.addEventListener('stream', (evt) => {
+        try {
+          const s = JSON.parse(evt.data);
+          const stText = document.getElementById('fluidnc-status-text');
+          if (stText && s.total && s.active) stText.innerText = `${s.state} (${s.sent}/${s.total})`;
+        } catch (e) {}
+      });
+    }
+
+    async function scanCNCUsbPorts() {
+      try {
+        const res = await fetch(`${getApiBase()}/api/cnc_ports`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        const sel = document.getElementById('cnc-usb-port-select');
+        if (sel) {
+          const cur = (uiConfigState && uiConfigState.cnc_serial_port) || sel.value || 'auto';
+          let opts = `<option value="auto" ${cur === 'auto' ? 'selected' : ''}>Auto CNC USB</option>`;
+          (data.ports || []).forEach(p => {
+            const tag = p.is_cnc ? ' [CNC]' : (p.is_stm32 ? ' [STM32]' : '');
+            opts += `<option value="${p.device}" ${cur === p.device ? 'selected' : ''}>${p.device} (${p.label})${tag}</option>`;
+          });
+          sel.innerHTML = opts;
+        }
+        if (data.bridge) applyFluidNCStatusPayload(data.bridge);
+      } catch (e) {}
+    }
+
+    function updateBridgeControlVisibility(mode) {
+      const usbWrap = document.getElementById('cnc-usb-controls');
+      const ipWrap = document.getElementById('cnc-ip-wrap');
+      if (usbWrap) usbWrap.classList.toggle('hidden', mode !== 'usb' && mode !== 'auto');
+      if (ipWrap) ipWrap.classList.toggle('hidden', mode === 'usb');
+    }
+
+    async function onTransportModeChange(mode) {
+      updateBridgeControlVisibility(mode);
+      await saveUIConfigPartial({ cnc_transport: mode });
+      await connectCNCBridge('connect');
+    }
+
+    async function connectCNCBridge(forceAction) {
+      const btn = document.getElementById('btn-cnc-connect');
+      const isConn = btn && btn.dataset.connected === '1';
+      const action = forceAction || (isConn ? 'disconnect' : 'connect');
+      const transport = document.getElementById('cnc-transport-select')?.value || 'auto';
+      const port = document.getElementById('cnc-usb-port-select')?.value || 'auto';
+      const baudrate = Number(document.getElementById('cnc-usb-baud-select')?.value || 115200);
+      if (btn) { btn.disabled = true; btn.classList.add('opacity-50'); }
+      try {
+        const res = await fetch(`${getApiBase()}/api/cnc_connect`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transport, ip: fluidncTargetIp, port, baudrate, action })
+        });
+        const d = await res.json();
+        if (d.bridge) applyFluidNCStatusPayload(d.bridge);
+        appendBridgeConsoleLine(transport, d.message || (d.success ? 'Connected' : 'Failed'), '');
+        if (!d.success && action === 'connect' && d.message) {
+          const sdIndicator = document.getElementById('fluidnc-sd-indicator');
+          if (sdIndicator) sdIndicator.innerHTML = `<span class="text-red-400" data-tip="${d.message}">${d.message.slice(0, 36)}</span>`;
+        }
+      } catch (e) {
+        appendBridgeConsoleLine('bridge', 'Connect error: ' + e, '');
+      } finally {
+        if (btn) { btn.disabled = false; btn.classList.remove('opacity-50'); }
+      }
+    }
+
+    function toggleCNCConsole() {
+      const p = document.getElementById('cnc-console-panel');
+      if (p) p.classList.toggle('hidden');
+    }
+
+    async function sendConsoleMDI(e) {
+      if (e) e.preventDefault();
+      const inp = document.getElementById('cnc-mdi-input');
+      if (!inp) return;
+      const cmd = inp.value.trim();
+      if (!cmd) return;
+      inp.value = '';
+      appendBridgeConsoleLine('tx', `> ${cmd}`, '');
+      await sendFluidNCRealtime(cmd);
+    }
 
     async function testFluidNCConnection() {
       const badge = document.getElementById('fluidnc-status-badge');
@@ -783,7 +958,7 @@
       dot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-ping';
       text.innerText = `Checking ${fluidncTargetIp}...`;
 
-      // 1. Primary: Query local Python bridge /api/fluidnc_status (no WebSocket conflict or CORS hang)
+      // 1. Primary: Query local Python bridge /api/fluidnc_status (USB Serial / WS Proxy / HTTP)
       if (window.location.protocol.startsWith('http')) {
         try {
           const ctrl = new AbortController();
@@ -792,15 +967,8 @@
           clearTimeout(tid);
           if (res.ok) {
             const data = await res.json();
-            if (data.online) {
-              dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
-              const st = (data.status || 'Online').replace(/^<|>$/g, '');
-              const shortSt = st.split('|').slice(0, 2).join(' | ');
-              text.innerText = shortSt || `Online (${fluidncTargetIp})`;
-              badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-950/40 border border-emerald-500/40 text-[11px] font-mono text-emerald-300';
-              if (sdIndicator) sdIndicator.innerHTML = `<span class="text-emerald-400">Telnet/HTTP Ready</span>`;
-              return;
-            }
+            applyFluidNCStatusPayload(data);
+            return;
           }
         } catch (e) {}
       }
@@ -910,7 +1078,7 @@
     }
 
     async function streamGCodeToFluidNC(filename, buttonEl) {
-      return confirmAndStream(filename, buttonEl, false);
+      return _executeStreamStart(filename, buttonEl);
     }
 
     async function _executeStreamStart(filename, buttonEl) {
@@ -2123,7 +2291,8 @@
       }
 
       let html = '';
-      ops.forEach(op => {
+      ops.forEach((op, idx) => {
+        const rowNum = String(idx + 1).padStart(2, '0');
         const isSent = fluidncSentFiles.has(op.gcode_file);
         const isDone = dispatchDoneSet.has(op.gcode_file);
         const btnClass = isSent
@@ -2132,8 +2301,8 @@
         const btnTip = isSent ? 'Uploaded to /sd/ (click to re-upload)' : 'Upload to FluidNC';
 
         const halfBadge = op.bed_half === 'front'
-          ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/25" data-tip="Front Bed Half (Y 0-145mm)">Front</span>'
-          : '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-amber-500/15 text-amber-300 border border-amber-500/25" data-tip="Back Bed Half (Y-Shift -145mm)">Back</span>';
+          ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/25" data-tip="Front Bed Half (Y 0-165mm)">Front</span>'
+          : '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-amber-500/15 text-amber-300 border border-amber-500/25" data-tip="Back Bed Half (Y-Shift -165mm)">Back</span>';
 
         const mirrorBadge = op.mirrored
           ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-violet-500/20 text-violet-300 border border-violet-500/30" data-tip="Horizontally mirrored for Bottom Side">Flip</span>'
@@ -2142,6 +2311,7 @@
         html += `
           <div class="p-2.5 rounded-xl border ${isDone ? 'border-emerald-500/30 bg-emerald-950/15 opacity-70' : 'border-slate-800/90 bg-[#0b101b]/90'} hover:border-slate-700 transition flex items-center justify-between gap-3 text-xs">
             <div class="flex items-center gap-2.5 min-w-0">
+              <span class="text-xs font-mono font-bold ${isDone ? 'text-emerald-400/70' : 'text-cyan-400'} w-6 text-right shrink-0 select-none" data-tip="File #${idx + 1} (Op #${String(op.seq).padStart(2, '0')})">${rowNum}.</span>
               <input type="checkbox" ${isDone ? 'checked' : ''}
                      onchange="toggleDispatchDone('${op.gcode_file}', this.checked)"
                      class="w-4 h-4 rounded accent-emerald-500 bg-slate-900 border-slate-600 cursor-pointer shrink-0"
@@ -2237,6 +2407,8 @@
         }
       } catch (e) {}
 
+      scanCNCUsbPorts();
+      initBridgeEventStream();
       testFluidNCConnection();
       renderFluidNCDispatcher();
     }
@@ -2365,7 +2537,7 @@
     }
 
     async function runMacroOnCNC(fname, btn) {
-      return confirmAndStream(fname, btn, true);
+      return _executeStreamStart(fname, btn);
     }
 
     let jogStepMm = 1.0;
@@ -2435,6 +2607,7 @@
       setChk('cfg-enable-homing', u.enable_homing_btn);
       setChk('cfg-enable-unlock', u.enable_unlock_btn);
       setChk('cfg-enable-zero', u.enable_zero_work_btn);
+      setChk('cfg-enable-hmap', u.enable_heightmap_leveling);
       const tIn = document.getElementById('cfg-pcb-thickness');
       if (tIn) tIn.value = Number(u.pcb_thickness_mm ?? 1.6).toFixed(2);
 
@@ -2458,6 +2631,15 @@
           ? 'Run G38.2 Touch Probe'
           : 'Touch Probe disabled in ui_config.json');
       });
+
+      // Sync CNC Bridge Transport controls
+      const trSel = document.getElementById('cnc-transport-select');
+      if (trSel && u.cnc_transport) trSel.value = u.cnc_transport;
+      const baudSel = document.getElementById('cnc-usb-baud-select');
+      if (baudSel && u.cnc_baudrate) baudSel.value = String(u.cnc_baudrate);
+      const portSel = document.getElementById('cnc-usb-port-select');
+      if (portSel && u.cnc_serial_port) portSel.value = u.cnc_serial_port;
+      updateBridgeControlVisibility(u.cnc_transport || 'auto');
 
       // Show/hide Quick Macros strip in Dispatch
       const dBar = document.getElementById('dispatch-macros-bar');
@@ -2499,15 +2681,7 @@
       try {
         const res = await fetch(`${getApiBase()}/api/fluidnc_status?ip=${encodeURIComponent(fluidncTargetIp)}`, { cache: 'no-store' });
         const d = await res.json();
-        lastLiveToolPos = d;
-        const lbl = document.getElementById('macro-live-pos-lbl');
-        if (lbl) {
-          const p = d.wpos || d.mpos;
-          lbl.innerText = (d.online && p)
-            ? `${d.state} | X:${p[0].toFixed(2)} Y:${p[1].toFixed(2)} Z:${p[2].toFixed(2)}`
-            : (d.online ? d.state : 'Offline');
-        }
-        drawLiveBedToolCanvas(d);
+        applyFluidNCStatusPayload(d);
       } catch (e) {}
     }
 
@@ -2538,11 +2712,11 @@
       ctx.strokeRect(tx(0), ty(cncBedTravelY), cncBedMillingX * sc, cncBedTravelY * sc);
       ctx.setLineDash([]);
 
-      // A4 Front Half outline (0..210 x 0..145)
+      // Front Half outline (0..200 x 0..165)
       ctx.fillStyle = 'rgba(16, 185, 129, 0.08)';
-      ctx.fillRect(tx(0), ty(145), 210 * sc, 145 * sc);
+      ctx.fillRect(tx(0), ty(165.0), 200.0 * sc, 165.0 * sc);
       ctx.strokeStyle = 'rgba(16, 185, 129, 0.45)';
-      ctx.strokeRect(tx(0), ty(145), 210 * sc, 145 * sc);
+      ctx.strokeRect(tx(0), ty(165.0), 200.0 * sc, 165.0 * sc);
 
       // Bed clamps
       (bedHoldersList || []).forEach(h => {
@@ -2901,7 +3075,7 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         </span>
         <span class="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 font-mono text-[11px] text-amber-300"
-              data-tip="4 bed clamps &bull; Y-Split 145mm &bull; Both V-Bit &amp; Milling">
+              data-tip="4 bed clamps &bull; Y-Split 165mm &bull; Both V-Bit &amp; Milling">
           4 Clamps
         </span>
         <a href="http://192.168.8.109" target="_blank" rel="noopener noreferrer"
@@ -2943,8 +3117,14 @@
           <button type="button" id="btn-dispatch-zero" onclick="sendFluidNCRealtime('G10 L20 P1 X0 Y0 Z0')" class="p-2 rounded-lg bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 transition cursor-pointer" data-tip="Zero Work XYZ (G10 L20)" aria-label="Zero Work">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/></svg>
           </button>
+          <button type="button" id="btn-dispatch-change-tool" onclick="runMacroOnCNC('change_tool.gcode', this)" class="p-2 rounded-lg bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 transition cursor-pointer" data-tip="Change Tool (M5 + X Max, Z Max, Y Min)" aria-label="Change Tool">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+          </button>
           <button type="button" onclick="togglePrinterPanel()" class="p-2 rounded-lg bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 transition cursor-pointer" data-tip="STM32 Inkjet Printer Settings" aria-label="Inkjet Printer Settings">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          </button>
+          <button type="button" onclick="toggleCNCConsole()" class="p-2 rounded-lg bg-teal-600/20 hover:bg-teal-600 text-teal-300 hover:text-white border border-teal-500/30 transition cursor-pointer" data-tip="Toggle Live CNC Bridge Console &amp; MDI" aria-label="CNC Bridge Console">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
           </button>
           <button type="button" onclick="toggleFluidNCFrame()" id="btn-toggle-fluidnc-frame" class="p-2 rounded-lg bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 transition cursor-pointer" data-tip="Toggle Embedded FluidNC UI" aria-label="Embedded View">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
@@ -3010,10 +3190,35 @@
       <!-- Compact Controls Strip -->
       <div class="flex flex-wrap items-center justify-between gap-2.5 mb-4 text-xs">
         <div class="flex flex-wrap items-center gap-2">
-          <div class="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-1" data-tip="FluidNC Controller IP">
+          <div class="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 rounded-lg px-2 py-1" data-tip="CNC Bridge Mode: Option A (WS Proxy), Option 1 (USB Serial), or Auto">
+            <span class="text-slate-500 font-mono text-[11px]">LINK</span>
+            <select id="cnc-transport-select" onchange="onTransportModeChange(this.value)"
+                    class="bg-transparent text-cyan-300 font-mono text-xs font-semibold focus:outline-none cursor-pointer">
+              <option value="auto" class="bg-slate-950 text-slate-100">Auto (WS / USB)</option>
+              <option value="ws" class="bg-slate-950 text-slate-100">WS Proxy (Wi-Fi)</option>
+              <option value="usb" class="bg-slate-950 text-slate-100">USB Serial</option>
+              <option value="telnet" class="bg-slate-950 text-slate-100">HTTP / Telnet</option>
+            </select>
+          </div>
+          <div id="cnc-ip-wrap" class="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-1" data-tip="FluidNC Controller IP">
             <span class="text-slate-500 font-mono text-[11px]">IP</span>
             <input type="text" id="fluidnc-ip-input" value="192.168.8.109" onchange="updateFluidNCIp(this.value)"
                    class="w-28 bg-transparent text-slate-100 font-mono text-xs focus:outline-none">
+          </div>
+          <div id="cnc-usb-controls" class="flex items-center gap-1.5 bg-slate-900/90 border border-cyan-500/30 rounded-lg px-2 py-1">
+            <select id="cnc-usb-port-select" onchange="saveUIConfigPartial({ cnc_serial_port: this.value })" data-tip="CNC USB Serial Port (/dev/ttyUSB* or /dev/ttyACM*)"
+                    class="bg-transparent text-slate-100 font-mono text-xs focus:outline-none max-w-[170px] cursor-pointer">
+              <option value="auto" class="bg-slate-950">Auto CNC USB</option>
+            </select>
+            <select id="cnc-usb-baud-select" onchange="saveUIConfigPartial({ cnc_baudrate: Number(this.value) })" data-tip="USB Serial Baudrate"
+                    class="bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 text-slate-200 font-mono text-[11px] cursor-pointer">
+              <option value="115200" selected>115200</option>
+              <option value="230400">230400</option>
+              <option value="57600">57600</option>
+              <option value="9600">9600</option>
+            </select>
+            <button type="button" onclick="scanCNCUsbPorts()" class="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] cursor-pointer" data-tip="Rescan USB ports">Scan</button>
+            <button type="button" id="btn-cnc-connect" data-connected="0" onclick="connectCNCBridge()" class="px-2 py-0.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-[11px] cursor-pointer" data-tip="Connect or Disconnect Python CNC Bridge">Connect</button>
           </div>
           <select id="fluidnc-target-select" data-tip="Target Storage" class="bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 font-mono text-xs focus:outline-none">
             <option value="sd" selected>SD (/upload)</option>
@@ -3021,7 +3226,7 @@
           </select>
           <div class="relative">
             <input type="text" id="fluidnc-search-input" placeholder="Filter files..." oninput="filterFluidNCSearch(this.value)"
-                   class="w-40 bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-100 font-mono text-xs focus:outline-none focus:border-blue-500">
+                   class="w-36 bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-100 font-mono text-xs focus:outline-none focus:border-blue-500">
           </div>
         </div>
 
@@ -3032,6 +3237,25 @@
           <span>Batch Upload</span>
           <span id="fluidnc-batch-sheet-lbl" class="font-mono text-[10px] opacity-80"></span>
         </button>
+      </div>
+
+      <!-- Collapsible Live Bridge Console & MDI -->
+      <div id="cnc-console-panel" class="hidden mb-4 p-3 rounded-xl bg-slate-950/90 border border-teal-500/30 text-xs space-y-2">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-1.5">
+          <span class="font-semibold text-teal-300 font-mono text-[11px]">Live CNC Bridge Console (WS Proxy / USB Serial SSE)</span>
+          <div class="flex items-center gap-1.5">
+            <button type="button" onclick="sendFluidNCRealtime('?')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-[11px] cursor-pointer">?</button>
+            <button type="button" onclick="sendFluidNCRealtime('$I')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-[11px] cursor-pointer">$I</button>
+            <button type="button" onclick="sendFluidNCRealtime('$$')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-[11px] cursor-pointer">$$</button>
+            <button type="button" onclick="document.getElementById('cnc-console-log').innerHTML=''" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 text-[11px] cursor-pointer">Clear</button>
+          </div>
+        </div>
+        <div id="cnc-console-log" class="font-mono text-[11px] h-32 overflow-y-auto bg-[#070a10] p-2 rounded-lg border border-slate-800/80 space-y-0.5"></div>
+        <form onsubmit="sendConsoleMDI(event)" class="flex gap-2">
+          <input type="text" id="cnc-mdi-input" placeholder="Send MDI / Grbl command (e.g. G0 X10 Y10 F600, $H, $X)..."
+                 class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 font-mono text-xs text-slate-100 focus:outline-none focus:border-teal-500">
+          <button type="submit" class="px-3 py-1 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-semibold cursor-pointer">Send</button>
+        </form>
       </div>
 
       <!-- Batch Transfer Progress Strip -->
@@ -3083,7 +3307,7 @@
         <div id="dispatch-macros-list" class="flex flex-wrap items-center gap-1.5"></div>
       </div>
 
-      <div id="fluidnc-dispatcher-table" class="space-y-1.5 max-h-[580px] overflow-y-auto pr-1"></div>
+      <div id="fluidnc-dispatcher-table" class="space-y-1.5"></div>
     </section>
 
     <!-- TAB 2: GERBER STEP-BY-STEP -->
@@ -3092,14 +3316,14 @@
         <h2 class="text-base font-semibold text-slate-100">Gerber Layers</h2>
         <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Select PCB Project">
           
-          <button type="button" onclick="selectCircuitProject('PCB-AC-02')" id="proj-btn-PCB-AC-02" aria-pressed="true"
+          <button type="button" onclick="selectCircuitProject('PCB-AC-01')" id="proj-btn-PCB-AC-01" aria-pressed="true"
                   class="proj-btn px-3 py-1 text-xs font-semibold rounded-lg transition cursor-pointer bg-blue-600 text-white">
-            Board-01 (PCB-AC-02)
+            AirCooler (PCB-AC-01)
           </button>
           
-          <button type="button" onclick="selectCircuitProject('PCB-AC-01')" id="proj-btn-PCB-AC-01" aria-pressed="false"
+          <button type="button" onclick="selectCircuitProject('PCB-AC-02')" id="proj-btn-PCB-AC-02" aria-pressed="false"
                   class="proj-btn px-3 py-1 text-xs font-semibold rounded-lg transition cursor-pointer bg-slate-800/90 text-slate-300 hover:text-white border border-slate-700/70">
-            AirCooler (PCB-AC-01)
+            Board-01 (PCB-AC-02)
           </button>
           
           <button type="button" onclick="selectCircuitProject('PCB-AC-03')" id="proj-btn-PCB-AC-03" aria-pressed="false"
@@ -3153,7 +3377,7 @@
 
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
         <div class="lg:col-span-8 blueprint-stage p-4 rounded-xl border border-slate-800/90 flex justify-center items-center svg-container min-h-[380px]">
-          <img id="circuit-svg-img" src="manufacture_svg/Circuit_PCB-AC-02_Composite_Stackup.svg" alt="Circuit Gerber Step Preview" class="max-h-[520px] object-contain">
+          <img id="circuit-svg-img" src="manufacture_svg/Circuit_PCB-AC-01_Composite_Stackup.svg" alt="Circuit Gerber Step Preview" class="max-h-[520px] object-contain">
           <div id="circuit-vias-spec-card" style="display: none;" class="w-full max-w-md bg-[#0b101b] border border-cyan-500/40 rounded-xl p-5 flex-col gap-3 text-left">
             <h3 class="text-sm font-bold text-slate-100">Step 2: Chemical Via Plating</h3>
             <div class="grid grid-cols-2 gap-2 text-xs font-mono">
@@ -3200,12 +3424,12 @@
         <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Unit Batch Filter">
           <button type="button" onclick="filterUnitSubmenu('ALL')" id="unit-filter-ALL" aria-pressed="true" class="unit-filter-btn px-3 py-1 text-xs font-semibold rounded-lg bg-blue-600 text-white cursor-pointer transition">All</button>
           
-          <button type="button" onclick="filterUnitSubmenu('PCB-AC-02')" id="unit-filter-PCB-AC-02" aria-pressed="false" class="unit-filter-btn px-3 py-1 text-xs font-semibold rounded-lg bg-slate-800/90 text-slate-300 hover:text-white border border-slate-700/70 cursor-pointer transition">
-            PCB-AC-02 (1)
-          </button>
-          
           <button type="button" onclick="filterUnitSubmenu('PCB-AC-01')" id="unit-filter-PCB-AC-01" aria-pressed="false" class="unit-filter-btn px-3 py-1 text-xs font-semibold rounded-lg bg-slate-800/90 text-slate-300 hover:text-white border border-slate-700/70 cursor-pointer transition">
             PCB-AC-01 (1)
+          </button>
+          
+          <button type="button" onclick="filterUnitSubmenu('PCB-AC-02')" id="unit-filter-PCB-AC-02" aria-pressed="false" class="unit-filter-btn px-3 py-1 text-xs font-semibold rounded-lg bg-slate-800/90 text-slate-300 hover:text-white border border-slate-700/70 cursor-pointer transition">
+            PCB-AC-02 (1)
           </button>
           
           <button type="button" onclick="filterUnitSubmenu('PCB-AC-03')" id="unit-filter-PCB-AC-03" aria-pressed="false" class="unit-filter-btn px-3 py-1 text-xs font-semibold rounded-lg bg-slate-800/90 text-slate-300 hover:text-white border border-slate-700/70 cursor-pointer transition">
@@ -3215,16 +3439,16 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         <aside class="lg:col-span-4 bg-[#0b101b] rounded-xl border border-slate-800 p-3 flex flex-col">
           <div class="flex items-center justify-between px-1 pb-2 mb-2 border-b border-slate-800/80">
             <span class="text-xs font-semibold text-slate-300">Instances</span>
             <span id="unit-submenu-count" class="text-[11px] font-mono text-slate-400"></span>
           </div>
-          <div id="unit-submenu-list" class="space-y-1.5 max-h-[520px] overflow-y-auto pr-1"></div>
+          <div id="unit-submenu-list" class="space-y-1.5"></div>
         </aside>
 
-        <div class="lg:col-span-8 bg-[#0b101b] rounded-xl border border-slate-800 p-4 flex flex-col justify-between">
+        <div class="lg:col-span-8 lg:sticky lg:top-4 bg-[#0b101b] rounded-xl border border-slate-800 p-4 flex flex-col justify-between">
           <div class="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-800/80">
             <div class="flex flex-wrap items-center gap-2">
               <span id="unit-stage-pcb" class="px-2 py-0.5 text-xs font-mono font-bold rounded bg-amber-500/20 text-amber-300">-</span>
@@ -3250,7 +3474,7 @@
           </div>
 
           <div class="blueprint-stage rounded-xl border border-slate-800/90 p-4 flex justify-center items-center min-h-[340px]">
-            <img id="unit-stage-img" src="manufacture_svg/Unit_PCB-AC-02-001_FrontSide.svg" alt="Single Manufactured Unit Preview" class="max-h-[420px] w-auto object-contain rounded">
+            <img id="unit-stage-img" src="manufacture_svg/Unit_PCB-AC-01-001_FrontSide.svg" alt="Single Manufactured Unit Preview" class="max-h-[420px] w-auto object-contain rounded">
           </div>
 
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-4 text-xs">
@@ -3271,7 +3495,7 @@
       <div class="flex flex-wrap items-center justify-between pb-3 mb-4 border-b border-slate-800/80 gap-3">
         <div class="flex items-center gap-2">
           <h2 class="text-base font-semibold text-slate-100">A4 Sheets</h2>
-          <span class="text-[11px] font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded">210&times;297mm</span>
+          <span class="text-[11px] font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded">200&times;300mm</span>
         </div>
 
         <div class="inline-flex items-center gap-1 rounded-lg bg-[#0a0e17] p-1 border border-slate-800">
@@ -3290,9 +3514,9 @@
           <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div class="flex flex-wrap items-center gap-2">
               <h3 class="font-semibold text-base sm:text-lg text-slate-100">Sheet 01 Full Manufacturing Blueprint</h3>
-              <span class="text-xs font-mono bg-slate-800/90 text-slate-300 px-2.5 py-0.5 rounded-md border border-slate-700/70">210 &times; 297 mm</span>
+              <span class="text-xs font-mono bg-slate-800/90 text-slate-300 px-2.5 py-0.5 rounded-md border border-slate-700/70">200 &times; 300 mm</span>
               <span class="text-xs font-mono bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded-md">GREEN MASK</span>
-              <span class="text-xs font-mono bg-slate-800/90 text-slate-300 border border-slate-700/70 px-2.5 py-0.5 rounded-md">Front Half: 1 | Back Half: 2</span>
+              <span class="text-xs font-mono bg-slate-800/90 text-slate-300 border border-slate-700/70 px-2.5 py-0.5 rounded-md">Front Half: 3 | Back Half: 0</span>
             </div>
             <div class="inline-flex rounded-lg bg-[#0a0e17] p-1 border border-slate-800" role="group" aria-label="Sheet Side View">
               <button type="button" onclick="setSheetSide(1, 'top')" id="sheet-side-1-top" aria-pressed="true"
@@ -3313,7 +3537,7 @@
           <div class="mt-5 overflow-x-auto rounded-xl border border-slate-800/90 bg-[#0b0f19]">
             <div class="px-4 py-2.5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
               <h4 class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Nested Units on Sheet 01</h4>
-              <span class="text-[11px] font-mono text-amber-300/90">Y-Shift Line: 145.0 mm &bull; Common Single-Half Bed Washers (No Through-PCB Drills)</span>
+              <span class="text-[11px] font-mono text-amber-300/90">Y-Shift Line: 165.0 mm &bull; Common Single-Half Bed Washers (No Through-PCB Drills)</span>
             </div>
             <table class="w-full text-left border-collapse">
               <thead class="text-slate-400 border-b border-slate-800 bg-[#090d16] text-[11px] uppercase tracking-wider">
@@ -3328,7 +3552,7 @@
                   <th class="py-2.5 px-3">Action</th>
                 </tr>
               </thead>
-              <tbody><tr class="border-b border-slate-800/80 hover:bg-slate-800/40 font-mono text-xs transition-colors"><td class="py-2.5 px-3 text-amber-400 font-semibold">PCB-AC-02</td><td class="py-2.5 px-3 text-slate-100 font-semibold">PCB-AC-02-001</td><td class="py-2.5 px-3 text-slate-300 font-sans">Board-01</td><td class="py-2.5 px-3 text-slate-400">127.2 &times; 56.2 mm</td><td class="py-2.5 px-3 text-sky-400">0&deg; (LEFT: 56.2mm)</td><td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Front Bed Half</span></td><td class="py-2.5 px-3 text-slate-400">X 22.0, Y 8.5</td><td class="py-2.5 px-3"><button type="button" onclick="jumpToUnit('PCB-AC-02-001')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-200 hover:text-white text-[11px] font-sans font-medium transition cursor-pointer">Inspect Unit &rarr;</button></td></tr><tr class="border-b border-slate-800/80 hover:bg-slate-800/40 font-mono text-xs transition-colors"><td class="py-2.5 px-3 text-amber-400 font-semibold">PCB-AC-01</td><td class="py-2.5 px-3 text-slate-100 font-semibold">PCB-AC-01-001</td><td class="py-2.5 px-3 text-slate-300 font-sans">AirCooler</td><td class="py-2.5 px-3 text-slate-400">124.2 &times; 78.2 mm</td><td class="py-2.5 px-3 text-sky-400">90&deg; (BOTTOM: 78.2mm)</td><td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-violet-500/15 text-violet-300 border border-violet-500/30">Back Bed Half</span></td><td class="py-2.5 px-3 text-slate-400">X 24.0, Y 150.0</td><td class="py-2.5 px-3"><button type="button" onclick="jumpToUnit('PCB-AC-01-001')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-200 hover:text-white text-[11px] font-sans font-medium transition cursor-pointer">Inspect Unit &rarr;</button></td></tr><tr class="border-b border-slate-800/80 hover:bg-slate-800/40 font-mono text-xs transition-colors"><td class="py-2.5 px-3 text-amber-400 font-semibold">PCB-AC-03</td><td class="py-2.5 px-3 text-slate-100 font-semibold">PCB-AC-03-001</td><td class="py-2.5 px-3 text-slate-300 font-sans">Micro Probe</td><td class="py-2.5 px-3 text-slate-400">64.5 &times; 30.1 mm</td><td class="py-2.5 px-3 text-sky-400">90&deg; (BOTTOM: 30.1mm)</td><td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-violet-500/15 text-violet-300 border border-violet-500/30">Back Bed Half</span></td><td class="py-2.5 px-3 text-slate-400">X 102.2, Y 150.0</td><td class="py-2.5 px-3"><button type="button" onclick="jumpToUnit('PCB-AC-03-001')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-200 hover:text-white text-[11px] font-sans font-medium transition cursor-pointer">Inspect Unit &rarr;</button></td></tr></tbody>
+              <tbody><tr class="border-b border-slate-800/80 hover:bg-slate-800/40 font-mono text-xs transition-colors"><td class="py-2.5 px-3 text-amber-400 font-semibold">PCB-AC-01</td><td class="py-2.5 px-3 text-slate-100 font-semibold">PCB-AC-01-001</td><td class="py-2.5 px-3 text-slate-300 font-sans">AirCooler</td><td class="py-2.5 px-3 text-slate-400">124.2 &times; 78.2 mm</td><td class="py-2.5 px-3 text-sky-400">0&deg; (LEFT: 78.2mm)</td><td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Front Bed Half</span></td><td class="py-2.5 px-3 text-slate-400">X 18.0, Y 8.5</td><td class="py-2.5 px-3"><button type="button" onclick="jumpToUnit('PCB-AC-01-001')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-200 hover:text-white text-[11px] font-sans font-medium transition cursor-pointer">Inspect Unit &rarr;</button></td></tr><tr class="border-b border-slate-800/80 hover:bg-slate-800/40 font-mono text-xs transition-colors"><td class="py-2.5 px-3 text-amber-400 font-semibold">PCB-AC-02</td><td class="py-2.5 px-3 text-slate-100 font-semibold">PCB-AC-02-001</td><td class="py-2.5 px-3 text-slate-300 font-sans">Board-01</td><td class="py-2.5 px-3 text-slate-400">127.2 &times; 56.2 mm</td><td class="py-2.5 px-3 text-sky-400">0&deg; (LEFT: 56.2mm)</td><td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Front Bed Half</span></td><td class="py-2.5 px-3 text-slate-400">X 18.0, Y 89.2</td><td class="py-2.5 px-3"><button type="button" onclick="jumpToUnit('PCB-AC-02-001')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-200 hover:text-white text-[11px] font-sans font-medium transition cursor-pointer">Inspect Unit &rarr;</button></td></tr><tr class="border-b border-slate-800/80 hover:bg-slate-800/40 font-mono text-xs transition-colors"><td class="py-2.5 px-3 text-amber-400 font-semibold">PCB-AC-03</td><td class="py-2.5 px-3 text-slate-100 font-semibold">PCB-AC-03-001</td><td class="py-2.5 px-3 text-slate-300 font-sans">Micro Probe</td><td class="py-2.5 px-3 text-slate-400">64.5 &times; 30.1 mm</td><td class="py-2.5 px-3 text-sky-400">90&deg; (BOTTOM: 30.1mm)</td><td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Front Bed Half</span></td><td class="py-2.5 px-3 text-slate-400">X 149.7, Y 8.5</td><td class="py-2.5 px-3"><button type="button" onclick="jumpToUnit('PCB-AC-03-001')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-200 hover:text-white text-[11px] font-sans font-medium transition cursor-pointer">Inspect Unit &rarr;</button></td></tr></tbody>
             </table>
           </div>
         </div>
@@ -3382,16 +3606,16 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         <aside class="lg:col-span-4 bg-[#0b101b] rounded-xl border border-slate-800 p-3 flex flex-col">
           <div class="flex items-center justify-between px-1 pb-2 mb-2 border-b border-slate-800/80">
             <span class="text-xs font-semibold text-slate-300">Timeline</span>
             <span id="bed-ops-count" class="text-[11px] font-mono text-slate-400"></span>
           </div>
-          <div id="bed-ops-submenu" class="space-y-1.5 max-h-[540px] overflow-y-auto pr-1"></div>
+          <div id="bed-ops-submenu" class="space-y-1.5"></div>
         </aside>
 
-        <div class="lg:col-span-8 bg-[#0b101b] rounded-xl border border-slate-800 p-4 flex flex-col justify-between gap-4">
+        <div class="lg:col-span-8 lg:sticky lg:top-4 bg-[#0b101b] rounded-xl border border-slate-800 p-4 flex flex-col justify-between gap-4">
           <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-800/80">
             <div>
               <h3 id="bed-op-title" class="text-sm font-bold text-slate-100">-</h3>
@@ -3506,7 +3730,7 @@
         <div id="chk-progress-bar" class="bg-gradient-to-r from-blue-500 to-emerald-400 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-[560px] overflow-y-auto pr-1">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
         
         <label for="check_bed_clean" data-chk-cat="Prep &amp; Safety"
                class="chk-row flex items-start gap-3 p-3.5 bg-[#0b101b] rounded-xl border border-slate-800 hover:border-blue-500/40 transition-colors cursor-pointer">
@@ -3569,7 +3793,7 @@
               <span id="label-check_step0_sheet_data" class="text-sm font-medium text-slate-100">5. Engrave Sheet Data, Reference Spots &amp; Front-Corner Tag (Step 0A Front -&gt; 0B Back)</span>
               <span class="text-[10px] font-mono uppercase tracking-wide px-2 py-0.5 rounded bg-slate-800/90 text-slate-300 border border-slate-700/70">Step 0 - Guides</span>
             </div>
-            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Engrave Sheet ID tag, Y145 SHIFT mark &amp; reference guides on Front Half, slide -145.0mm along Y-axis only, then run 0B Back. Dowel pin lock DISABLED (configure enable_dowel_pin_lock in manufacture_config.json).</p>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Engrave Sheet ID tag, Y165 SHIFT mark &amp; reference guides on Front Half, slide -165.0mm along Y-axis only, then run 0B Back. Dowel pin lock DISABLED (configure enable_dowel_pin_lock in manufacture_config.json).</p>
           </div>
         </label>
         
@@ -3595,7 +3819,7 @@
               <span id="label-check_drill_0_30_execute" class="text-sm font-medium text-slate-100">7. Step 1: Drill 5 Hole(s) Across Sheet Using 0.30 mm Bit</span>
               <span class="text-[10px] font-mono uppercase tracking-wide px-2 py-0.5 rounded bg-slate-800/90 text-slate-300 border border-slate-700/70">Step 1 - Drilling</span>
             </div>
-            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 5 holes at 0.30 mm (Front Half -&gt; Y-145.0mm Shift -&gt; Back Half).</p>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 5 holes at 0.30 mm (Front Half -&gt; Y-165.0mm Shift -&gt; Back Half).</p>
           </div>
         </label>
         
@@ -3621,7 +3845,7 @@
               <span id="label-check_drill_0_70_execute" class="text-sm font-medium text-slate-100">9. Step 1: Drill 14 Hole(s) Across Sheet Using 0.70 mm Bit</span>
               <span class="text-[10px] font-mono uppercase tracking-wide px-2 py-0.5 rounded bg-slate-800/90 text-slate-300 border border-slate-700/70">Step 1 - Drilling</span>
             </div>
-            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 14 holes at 0.70 mm (Start directly at Back Half (Serpentine) -&gt; Y+145.0mm -&gt; Front Half).</p>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 14 holes at 0.70 mm (Start directly at Back Half (Serpentine) -&gt; Y+165.0mm -&gt; Front Half).</p>
           </div>
         </label>
         
@@ -3647,7 +3871,7 @@
               <span id="label-check_drill_0_75_execute" class="text-sm font-medium text-slate-100">11. Step 1: Drill 6 Hole(s) Across Sheet Using 0.75 mm Bit</span>
               <span class="text-[10px] font-mono uppercase tracking-wide px-2 py-0.5 rounded bg-slate-800/90 text-slate-300 border border-slate-700/70">Step 1 - Drilling</span>
             </div>
-            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 6 holes at 0.75 mm (Start at Front Half -&gt; Y-145.0mm -&gt; Back Half).</p>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 6 holes at 0.75 mm (Start at Front Half -&gt; Y-165.0mm -&gt; Back Half).</p>
           </div>
         </label>
         
@@ -3673,7 +3897,7 @@
               <span id="label-check_drill_0_80_execute" class="text-sm font-medium text-slate-100">13. Step 1: Drill 30 Hole(s) Across Sheet Using 0.80 mm Bit</span>
               <span class="text-[10px] font-mono uppercase tracking-wide px-2 py-0.5 rounded bg-slate-800/90 text-slate-300 border border-slate-700/70">Step 1 - Drilling</span>
             </div>
-            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 30 holes at 0.80 mm (Start directly at Back Half (Serpentine) -&gt; Y+145.0mm -&gt; Front Half).</p>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 30 holes at 0.80 mm (Start directly at Back Half (Serpentine) -&gt; Y+165.0mm -&gt; Front Half).</p>
           </div>
         </label>
         
@@ -3699,7 +3923,7 @@
               <span id="label-check_drill_0_90_execute" class="text-sm font-medium text-slate-100">15. Step 1: Drill 20 Hole(s) Across Sheet Using 0.90 mm Bit</span>
               <span class="text-[10px] font-mono uppercase tracking-wide px-2 py-0.5 rounded bg-slate-800/90 text-slate-300 border border-slate-700/70">Step 1 - Drilling</span>
             </div>
-            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 20 holes at 0.90 mm (Start at Front Half -&gt; Y-145.0mm -&gt; Back Half).</p>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 20 holes at 0.90 mm (Start at Front Half -&gt; Y-165.0mm -&gt; Back Half).</p>
           </div>
         </label>
         
@@ -3725,7 +3949,7 @@
               <span id="label-check_drill_1_00_execute" class="text-sm font-medium text-slate-100">17. Step 1: Drill 47 Hole(s) Across Sheet Using 1.00 mm Bit</span>
               <span class="text-[10px] font-mono uppercase tracking-wide px-2 py-0.5 rounded bg-slate-800/90 text-slate-300 border border-slate-700/70">Step 1 - Drilling</span>
             </div>
-            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 47 holes at 1.00 mm (Start directly at Back Half (Serpentine) -&gt; Y+145.0mm -&gt; Front Half).</p>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 47 holes at 1.00 mm (Start directly at Back Half (Serpentine) -&gt; Y+165.0mm -&gt; Front Half).</p>
           </div>
         </label>
         
@@ -3751,7 +3975,7 @@
               <span id="label-check_drill_1_10_execute" class="text-sm font-medium text-slate-100">19. Step 1: Drill 14 Hole(s) Across Sheet Using 1.10 mm Bit</span>
               <span class="text-[10px] font-mono uppercase tracking-wide px-2 py-0.5 rounded bg-slate-800/90 text-slate-300 border border-slate-700/70">Step 1 - Drilling</span>
             </div>
-            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 14 holes at 1.10 mm (Start at Front Half -&gt; Y-145.0mm -&gt; Back Half).</p>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 14 holes at 1.10 mm (Start at Front Half -&gt; Y-165.0mm -&gt; Back Half).</p>
           </div>
         </label>
         
@@ -3777,7 +4001,7 @@
               <span id="label-check_drill_1_20_execute" class="text-sm font-medium text-slate-100">21. Step 1: Drill 12 Hole(s) Across Sheet Using 1.20 mm Bit</span>
               <span class="text-[10px] font-mono uppercase tracking-wide px-2 py-0.5 rounded bg-slate-800/90 text-slate-300 border border-slate-700/70">Step 1 - Drilling</span>
             </div>
-            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 12 holes at 1.20 mm (Start directly at Back Half (Serpentine) -&gt; Y+145.0mm -&gt; Front Half).</p>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 12 holes at 1.20 mm (Start directly at Back Half (Serpentine) -&gt; Y+165.0mm -&gt; Front Half).</p>
           </div>
         </label>
         
@@ -3803,7 +4027,7 @@
               <span id="label-check_drill_1_30_execute" class="text-sm font-medium text-slate-100">23. Step 1: Drill 6 Hole(s) Across Sheet Using 1.30 mm Bit</span>
               <span class="text-[10px] font-mono uppercase tracking-wide px-2 py-0.5 rounded bg-slate-800/90 text-slate-300 border border-slate-700/70">Step 1 - Drilling</span>
             </div>
-            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 6 holes at 1.30 mm (Start at Front Half -&gt; Y-145.0mm -&gt; Back Half).</p>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 6 holes at 1.30 mm (Start at Front Half -&gt; Y-165.0mm -&gt; Back Half).</p>
           </div>
         </label>
         
@@ -3829,7 +4053,7 @@
               <span id="label-check_drill_1_50_execute" class="text-sm font-medium text-slate-100">25. Step 1: Drill 10 Hole(s) Across Sheet Using 1.50 mm Bit</span>
               <span class="text-[10px] font-mono uppercase tracking-wide px-2 py-0.5 rounded bg-slate-800/90 text-slate-300 border border-slate-700/70">Step 1 - Drilling</span>
             </div>
-            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 10 holes at 1.50 mm (Start directly at Back Half (Serpentine) -&gt; Y+145.0mm -&gt; Front Half).</p>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 10 holes at 1.50 mm (Start directly at Back Half (Serpentine) -&gt; Y+165.0mm -&gt; Front Half).</p>
           </div>
         </label>
         
@@ -3855,7 +4079,7 @@
               <span id="label-check_drill_1_80_execute" class="text-sm font-medium text-slate-100">27. Step 1: Drill 4 Hole(s) Across Sheet Using 1.80 mm Bit</span>
               <span class="text-[10px] font-mono uppercase tracking-wide px-2 py-0.5 rounded bg-slate-800/90 text-slate-300 border border-slate-700/70">Step 1 - Drilling</span>
             </div>
-            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 4 holes at 1.80 mm (Start at Front Half -&gt; Y-145.0mm -&gt; Back Half).</p>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 4 holes at 1.80 mm (Start at Front Half -&gt; Y-165.0mm -&gt; Back Half).</p>
           </div>
         </label>
         
@@ -3881,7 +4105,7 @@
               <span id="label-check_drill_3_00_execute" class="text-sm font-medium text-slate-100">29. Step 1: Drill 7 Hole(s) Across Sheet Using 3.00 mm Bit</span>
               <span class="text-[10px] font-mono uppercase tracking-wide px-2 py-0.5 rounded bg-slate-800/90 text-slate-300 border border-slate-700/70">Step 1 - Drilling</span>
             </div>
-            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 7 holes at 3.00 mm (Start directly at Back Half (Serpentine) -&gt; Y+145.0mm -&gt; Front Half).</p>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Execute peck drilling for all 7 holes at 3.00 mm (Start directly at Back Half (Serpentine) -&gt; Y+165.0mm -&gt; Front Half).</p>
           </div>
         </label>
         
@@ -4065,6 +4289,10 @@
               <label class="flex items-center gap-1.5 cursor-pointer text-slate-300">
                 <input type="checkbox" id="cfg-enable-zero" onchange="saveUIConfigPartial({ enable_zero_work_btn: this.checked })" class="accent-purple-500">
                 <span>Zero Controls</span>
+              </label>
+              <label class="flex items-center gap-1.5 cursor-pointer text-slate-300" data-tip="Apply saved Bed Height Map Z-offset when streaming">
+                <input type="checkbox" id="cfg-enable-hmap" onchange="saveUIConfigPartial({ enable_heightmap_leveling: this.checked })" class="accent-cyan-500">
+                <span>Height Map</span>
               </label>
             </div>
           </div>
