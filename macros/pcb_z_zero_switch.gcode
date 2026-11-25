@@ -1,7 +1,7 @@
 ; === PCB Mounted Z-Zero Calibration Macro (via Limit Switch) ===
 ; Fixed Bed Z-Zero Limit Switch at Machine G53 (X=272.001, Y=135.002)
-; Limit switch trigger is 6.800mm above bed; PCB thickness is 1.600mm
-; Switch trigger is therefore +5.200mm above the mounted PCB top copper surface
+; Limit switch trigger is 7.270mm above bed; PCB thickness is 1.600mm
+; Switch trigger is therefore +5.670mm above the mounted PCB top copper surface
 G21 ; Millimeters
 G90 ; Absolute positioning
 M5 ; Ensure spindle is off before moving to switch
@@ -15,6 +15,6 @@ G38.2 Z-25.000 F80.0 ; Probe down until limit switch triggers
 G0 Z2.000 ; Back off 2mm
 G38.2 Z-5.000 F25.0 ; Slow precision re-probe
 G90 ; Restore absolute positioning
-G10 L20 P1 Z5.200 ; 6.800mm switch - 1.600mm PCB -> PCB Top = G54 Z0.000
+G10 L20 P1 Z5.670 ; 7.270mm switch - 1.600mm PCB -> PCB Top = G54 Z0.000
 G53 G0 Z10.000 ; Retract to safe machine Z
-(MSG, Mounted PCB Z-Zero complete: switch = Z+5.200mm, PCB Top = Z0)
+(MSG, Mounted PCB Z-Zero complete: switch = Z+5.670mm, PCB Top = Z0)

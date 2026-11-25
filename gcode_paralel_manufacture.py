@@ -1327,7 +1327,8 @@ def _make_cal_circle_poly(cx: float, cy: float, radius: float = 1.0, segs: int =
 
 
 def generate_left_guides(sheet_w=210.0, sheet_h=297.0, margin_w=18.0, y_shift=145.0,
-                         enable_dowel_pins: bool = False, mirrored_x: bool = False):
+                         enable_dowel_pins: bool = False, mirrored_x: bool = False,
+                         holders_mgr: Optional[HolderManager] = None):
     """
     Step 0: Simplified Fast Alignment Arrows (Both Left & Right edges facing OUTSIDE at y_shift)
     + 4-Side Calibration Circles + 2x Left & 2x Right Alignment Drill Points.
@@ -1340,14 +1341,30 @@ def generate_left_guides(sheet_w=210.0, sheet_h=297.0, margin_w=18.0, y_shift=14
     back_texts = []
     back_pins = []
 
-    # 1. Alignment Arrows at y = y_shift on BOTH Left & Right edges facing OUTSIDE (-X on left, +X on right)
-    # Left arrow (x=18.0 -> 13.5, clear of 13.0mm clamp keep-out)
-    lx_tail, lx_tip = 18.0, 13.5
+    # 1. Alignment Arrows at y = y_shift on BOTH Left & Right edges facing OUTSIDE (-X on left, +X on right).
+    # Keep arrowheads clear of rear corner bed clamps so neither G-code nor SVG graphics are clipped.
+    arrow_len = 5.5
+    lx_tip = 15.5
+    if holders_mgr is not None:
+        for step in range(25):
+            cand = 15.0 + step * 0.5
+            pts_check = [(cand, y_shift), (cand + 1.5, y_shift + 1.4), (cand + 1.5, y_shift - 1.4)]
+            if all(not holders_mgr.is_bed_point_blocked(cx, cy, half="front", tool_radius=0.25) for cx, cy in pts_check):
+                lx_tip = cand
+                break
+    lx_tail = lx_tip + arrow_len
     front_lines.append([(lx_tail, y_shift), (lx_tip, y_shift)])
     front_lines.append([(lx_tip + 1.5, y_shift + 1.4), (lx_tip, y_shift), (lx_tip + 1.5, y_shift - 1.4)])
 
-    # Right arrow (x=sheet_w-18.0 -> sheet_w-13.5, facing +X outside)
-    rx_tail, rx_tip = sheet_w - 18.0, sheet_w - 13.5
+    rx_tip = sheet_w - 15.5
+    if holders_mgr is not None:
+        for step in range(25):
+            cand = sheet_w - 15.0 - step * 0.5
+            pts_check = [(cand, y_shift), (cand - 1.5, y_shift + 1.4), (cand - 1.5, y_shift - 1.4)]
+            if all(not holders_mgr.is_bed_point_blocked(cx, cy, half="front", tool_radius=0.25) for cx, cy in pts_check):
+                rx_tip = cand
+                break
+    rx_tail = rx_tip - arrow_len
     front_lines.append([(rx_tail, y_shift), (rx_tip, y_shift)])
     front_lines.append([(rx_tip - 1.5, y_shift + 1.4), (rx_tip, y_shift), (rx_tip - 1.5, y_shift - 1.4)])
 
@@ -2282,11 +2299,49 @@ class SvgVisualizer:
             sx, sy = tr_fn(pt[0], pt[1])
             self.elements.append(f'<circle cx="{sx:.1f}" cy="{sy:.1f}" r="{r_px:.1f}" fill="none" stroke="{color}" stroke-width="1.2"/>')
 
+    def draw_4pt_clamp_pins(self, points, pin_dia: float = 3.0):
+        """Render the 4 symmetric Step0P/0V physical clamp/dowel pin holes with upright labels."""
+        if not points:
+            return
+        r_hole = max(1.0, (pin_dia / 2.0) * self.scale)
+        r_ring = r_hole + 4.5
+        ch = r_ring + 3.5
+        labels_front = ["P1", "P2", "P3", "P4"]
+        labels_flip = ["P2(F)", "P1(F)", "P4(F)", "P3(F)"]
+        for idx, (px, py) in enumerate(points):
+            sx, sy = self._tr(px, py)
+            lbl = labels_flip[idx] if (self.mirrored_x and idx < 4) else (labels_front[idx] if idx < 4 else f"P{idx+1}")
+            self.elements.append(f'<circle cx="{sx:.1f}" cy="{sy:.1f}" r="{r_ring:.1f}" fill="rgba(232, 121, 249, 0.14)" stroke="#e879f9" stroke-width="1.2" stroke-dasharray="3,2"/>')
+            self.elements.append(f'<circle cx="{sx:.1f}" cy="{sy:.1f}" r="{r_hole:.1f}" fill="rgba(20, 184, 166, 0.40)" stroke="#14b8a6" stroke-width="1.5"/>')
+            self.elements.append(f'<line x1="{sx - ch:.1f}" y1="{sy:.1f}" x2="{sx + ch:.1f}" y2="{sy:.1f}" stroke="#5eead4" stroke-width="0.8"/>')
+            self.elements.append(f'<line x1="{sx:.1f}" y1="{sy - ch:.1f}" x2="{sx:.1f}" y2="{sy + ch:.1f}" stroke="#5eead4" stroke-width="0.8"/>')
+            tx_off = -34.0 if sx > (self.width * self.scale * 0.5) else (r_ring + 3.5)
+            self.elements.append(
+                f'<rect x="{sx + tx_off - 2:.1f}" y="{sy - 8.5:.1f}" width="{len(lbl) * 6.2 + 5:.1f}" height="12" rx="2.5" '
+                f'fill="rgba(9, 13, 22, 0.88)" stroke="#14b8a6" stroke-width="0.7"/>'
+            )
+            self.elements.append(
+                f'<text x="{sx + tx_off + 0.5:.1f}" y="{sy + 0.2:.1f}" fill="#99f6e4" font-family="monospace" font-size="8.0" font-weight="bold">{lbl}</text>'
+            )
+
+    def draw_edge_cut_drills(self, points, dia: float = 1.0):
+        """Render Step1E cutting-edge entry/alignment drill points along PCB perimeters."""
+        if not points:
+            return
+        r_px = max(1.8, (dia / 2.0) * self.scale * 1.4)
+        ch = r_px + 2.2
+        for (px, py) in points:
+            sx, sy = self._tr(px, py)
+            self.elements.append(f'<circle cx="{sx:.1f}" cy="{sy:.1f}" r="{r_px + 1.8:.1f}" fill="rgba(249, 115, 22, 0.22)" stroke="none"/>')
+            self.elements.append(f'<circle cx="{sx:.1f}" cy="{sy:.1f}" r="{r_px:.1f}" fill="#f97316" stroke="#fff7ed" stroke-width="0.7"/>')
+            self.elements.append(f'<line x1="{sx - ch:.1f}" y1="{sy:.1f}" x2="{sx + ch:.1f}" y2="{sy:.1f}" stroke="#fdba74" stroke-width="0.6"/>')
+            self.elements.append(f'<line x1="{sx:.1f}" y1="{sy - ch:.1f}" x2="{sx:.1f}" y2="{sy + ch:.1f}" stroke="#fdba74" stroke-width="0.6"/>')
+
     def draw_orientation_banner(self, sheet_num: int):
         w = self.width * self.scale
-        lbl = (f"SHEET {sheet_num:02d} · BACK SIDE MIRRORED (Y-AXIS FLIP | UPRIGHT TEXT READABILITY | COMMON BED WASHER CLAMPS)"
+        lbl = (f"SHEET {sheet_num:02d} · BACK SIDE MIRRORED (Y-AXIS FLIP | 4-PT CLAMP PINS + EDGE-CUT DRILLS | BED CLAMPS)"
                if self.mirrored_x else
-               f"SHEET {sheet_num:02d} · FRONT SIDE VIEW (TOP COPPER | COMMON BED WASHER CLAMPS · NO PCB ANCHOR DRILLS)")
+               f"SHEET {sheet_num:02d} · FRONT SIDE VIEW (TOP COPPER | 4-PT CLAMP PINS + EDGE-CUT DRILLS | BED CLAMPS)")
         bg = "rgba(139, 92, 246, 0.2)" if self.mirrored_x else "rgba(56, 189, 248, 0.14)"
         col = "#ddd6fe" if self.mirrored_x else "#bae6fd"
         self.elements.append(f'<rect x="6" y="6" width="{w - 12:.1f}" height="22" rx="4" fill="{bg}" stroke="{col}" stroke-width="0.6" opacity="0.9"/>')
@@ -2295,8 +2350,13 @@ class SvgVisualizer:
     def render(self):
         w = self.width * self.scale
         h = self.height * self.scale
-        content = "\n".join(self.elements)
-        return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w:.1f} {h:.1f}" width="{w:.1f}" height="{h:.1f}">\n{content}\n</svg>'
+        pad = 10.0 * self.scale
+        bg = f'<rect x="{-pad:.1f}" y="{-pad:.1f}" width="{w + 2 * pad:.1f}" height="{h + 2 * pad:.1f}" fill="#090d16"/>'
+        content = "\n".join([bg] + self.elements)
+        return (
+            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{-pad:.1f} {-pad:.1f} {w + 2 * pad:.1f} {h + 2 * pad:.1f}" '
+            f'width="{w + 2 * pad:.1f}" height="{h + 2 * pad:.1f}">\n{content}\n</svg>'
+        )
 
 
 class BedSvgBuilder:
@@ -2395,6 +2455,9 @@ class BedSvgBuilder:
         inactive_drill_pts_bed: Optional[List[Tuple[float, float]]] = None,
         pin_holes_bed: Optional[List[Tuple[float, float]]] = None,
         z_probe_switch: Optional[Dict] = None,
+        active_drill_color: Optional[str] = None,
+        pin_holes_active: bool = True,
+        pin_dia_mm: float = 3.0,
     ) -> str:
         mirrored_x = (board_side == "bottom")
         y_off = self.y_split if bed_half == "back" else 0.0
@@ -2415,7 +2478,7 @@ class BedSvgBuilder:
             f'<rect width="{self.px_w:.1f}" height="{self.px_h:.1f}" fill="#090d16"/>',
         ]
 
-        cx0, cy0, cw, ch = _svg_rect_bounds(-4.0, -6.0, self.bed_w + 8.0, self.bed_h + 6.0, self._tr_bed)
+        cx0, cy0, cw, ch = _svg_rect_bounds(-7.0, -6.0, self.bed_w + 8.0, self.bed_h + 6.0, self._tr_bed)
         elems.append(f'<defs><clipPath id="bed-clip"><rect x="{cx0:.1f}" y="{cy0:.1f}" width="{cw:.1f}" height="{ch:.1f}" rx="4"/></clipPath></defs>')
 
         # 1. CNC Bed grid across [0..bed_w] x [0..bed_h]
@@ -2469,13 +2532,16 @@ class BedSvgBuilder:
         # 4. Left Margin Guides, Sheet Tag, and Units (upright left-to-right text even when mirrored_x=True)
         layer_key = "copper_bottom" if mirrored_x else "copper_top"
         tr_g = tr_sheet_upright if mirrored_x else tr_sheet
-        g_d = _polylines_to_svg_path_d(guides.get("lines", []) + guides.get("texts", []), tr_g)
+        half_guide_lines = guides.get("back_lines", []) if bed_half == "back" else guides.get("front_lines", [])
+        half_guide_texts = guides.get("back_texts", []) if bed_half == "back" else guides.get("front_texts", [])
+        g_d = _polylines_to_svg_path_d(half_guide_lines + half_guide_texts, tr_g)
         if g_d:
             elems.append(f'<path d="{g_d}" fill="none" stroke="#38bdf8" stroke-width="0.8" opacity="0.50"/>')
 
-        stag_d = _polylines_to_svg_path_d(sheet_tag.get("border", []) + sheet_tag.get("text", []) + sheet_tag.get("arrow", []), tr_g)
-        if stag_d:
-            elems.append(f'<path d="{stag_d}" fill="none" stroke="#f59e0b" stroke-width="1.0" opacity="0.85"/>')
+        if bed_half == "front":
+            stag_d = _polylines_to_svg_path_d(sheet_tag.get("border", []) + sheet_tag.get("text", []) + sheet_tag.get("arrow", []), tr_g)
+            if stag_d:
+                elems.append(f'<path d="{stag_d}" fill="none" stroke="#f59e0b" stroke-width="1.0" opacity="0.85"/>')
 
         for u in units:
             u_is_active = ((u.y + u.h <= self.y_split + 1e-6) and bed_half == "front") or ((u.y >= self.y_split - 1e-6) and bed_half == "back")
@@ -2506,8 +2572,9 @@ class BedSvgBuilder:
         if active_drill_pts_bed:
             if len(active_drill_pts_bed) >= 2:
                 trav_d = _polylines_to_svg_path_d([active_drill_pts_bed], self._tr_bed)
-                elems.append(f'<path d="{trav_d}" fill="none" stroke="#38bdf8" stroke-width="0.7" stroke-dasharray="3,3" opacity="0.45"/>')
-            d_col = get_drill_color(active_drill_dia or 0.8)
+                trav_col = active_drill_color or "#38bdf8"
+                elems.append(f'<path d="{trav_d}" fill="none" stroke="{trav_col}" stroke-width="0.7" stroke-dasharray="3,3" opacity="0.45"/>')
+            d_col = active_drill_color or get_drill_color(active_drill_dia or 0.8)
             d_rad = max(2.8, ((active_drill_dia or 0.8) / 2.0) * self.scale * 1.4)
             for idx_p, (dx, dy) in enumerate(active_drill_pts_bed):
                 px_d, py_d = self._tr_bed(dx, dy)
@@ -2520,11 +2587,27 @@ class BedSvgBuilder:
                     elems.append(f'<circle cx="{px_d:.1f}" cy="{py_d:.1f}" r="{d_rad + 5:.1f}" fill="none" stroke="#22c55e" stroke-width="1.3"/>')
 
         if pin_holes_bed:
-            for (px_h, py_h) in pin_holes_bed:
+            p_op = "0.96" if pin_holes_active else "0.72"
+            r_pin = max(1.6, (pin_dia_mm / 2.0) * self.scale)
+            r_outer = r_pin + 3.2
+            ch_p = r_outer + 3.0
+            p_labels_front = ["P1", "P2", "P3", "P4"]
+            p_labels_flip = ["P2(F)", "P1(F)", "P4(F)", "P3(F)"]
+            elems.append(f'<g opacity="{p_op}">')
+            for idx_h, (px_h, py_h) in enumerate(pin_holes_bed):
                 ux, uy = self._tr_bed(px_h, py_h)
-                r_pin = 1.5 * self.scale
-                elems.append(f'<circle cx="{ux:.1f}" cy="{uy:.1f}" r="{r_pin + 2:.1f}" fill="none" stroke="#fb7185" stroke-width="1.4"/>')
-                elems.append(f'<circle cx="{ux:.1f}" cy="{uy:.1f}" r="{r_pin:.1f}" fill="#fb7185" opacity="0.35"/>')
+                lbl = p_labels_flip[idx_h] if (mirrored_x and idx_h < 4) else (p_labels_front[idx_h] if idx_h < 4 else f"P{idx_h + 1}")
+                elems.append(f'<circle cx="{ux:.1f}" cy="{uy:.1f}" r="{r_outer:.1f}" fill="rgba(232, 121, 249, 0.14)" stroke="#e879f9" stroke-width="1.3" stroke-dasharray="{"none" if pin_holes_active else "3,2"}"/>')
+                elems.append(f'<circle cx="{ux:.1f}" cy="{uy:.1f}" r="{r_pin:.1f}" fill="rgba(20, 184, 166, 0.38)" stroke="#14b8a6" stroke-width="1.5"/>')
+                elems.append(f'<line x1="{ux - ch_p:.1f}" y1="{uy:.1f}" x2="{ux + ch_p:.1f}" y2="{uy:.1f}" stroke="#5eead4" stroke-width="0.8"/>')
+                elems.append(f'<line x1="{ux:.1f}" y1="{uy - ch_p:.1f}" x2="{ux:.1f}" y2="{uy + ch_p:.1f}" stroke="#5eead4" stroke-width="0.8"/>')
+                tx_off = -30.0 if px_h > (self.sheet_w * 0.5) else (r_outer + 3.0)
+                elems.append(
+                    f'<rect x="{ux + tx_off - 2:.1f}" y="{uy - 8:.1f}" width="{len(lbl) * 5.8 + 5:.1f}" height="11" rx="2" '
+                    f'fill="rgba(9, 13, 22, 0.88)" stroke="#14b8a6" stroke-width="0.7"/>'
+                )
+                elems.append(f'<text x="{ux + tx_off + 0.5:.1f}" y="{uy + 0.2:.1f}" fill="#99f6e4" font-family="monospace" font-size="7.5" font-weight="bold">{lbl}</text>')
+            elems.append('</g>')
 
         elems.append('</g>')
 
@@ -2551,6 +2634,67 @@ class BedSvgBuilder:
 # ---------------------------------------------------------------------------
 # G-code Formatter & Dialect Generator
 # ---------------------------------------------------------------------------
+
+def _sanitize_gcode_comment_text(text: str) -> str:
+    """Replace inner parentheses so RS-274/FluidNC (...) comments never nest."""
+    return str(text).replace("(", "[").replace(")", "]")
+
+
+def _strip_gcode_parens(line: str) -> str:
+    """Remove all parenthesized G-code comments, including nested (...) spans."""
+    out: List[str] = []
+    depth = 0
+    for ch in line:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            if depth > 0:
+                depth -= 1
+        elif depth == 0:
+            out.append(ch)
+    return " ".join("".join(out).split())
+
+
+def _extract_gcode_paren_comment(line: str) -> str:
+    """Extract the inner text of the first balanced (...) comment on a line."""
+    depth = 0
+    buf: List[str] = []
+    started = False
+    for ch in line:
+        if ch == "(":
+            if depth > 0:
+                buf.append(ch)
+            depth += 1
+            started = True
+        elif ch == ")":
+            if depth > 1:
+                buf.append(ch)
+                depth -= 1
+            elif depth == 1:
+                return "".join(buf).strip()
+        elif depth > 0:
+            buf.append(ch)
+    return "".join(buf).strip() if started else ""
+
+
+def _flatten_gcode_inline_comments(line: str) -> str:
+    """Flatten any nested parentheses inside inline (...) comments for FluidNC."""
+    out: List[str] = []
+    depth = 0
+    for ch in line:
+        if ch == "(":
+            depth += 1
+            out.append("(" if depth == 1 else "[")
+        elif ch == ")":
+            if depth > 0:
+                out.append(")" if depth == 1 else "]")
+                depth -= 1
+            else:
+                out.append("]")
+        else:
+            out.append(ch)
+    return "".join(out)
+
 
 class GcodeBuilder:
     """Standardizes CNC G-code formatting with FluidNC compatibility."""
@@ -2857,6 +3001,9 @@ class ManufacturingPipeline:
 
         self.generated_files: List[str] = []
         self.bed_operations: Dict[int, List[Dict[str, Any]]] = {}
+        self.sheet_4pt_pins_by_sheet: Dict[int, List[Tuple[float, float]]] = {}
+        self.sheet_edge_drills_by_sheet: Dict[int, Tuple[List[Tuple[float, float]], List[Tuple[float, float]]]] = {}
+        self.clamp_pin_dia = float(fix_cfg.get("alignment_pin_hole_dia_mm", 3.0))
 
     def _apply_startup_verify(self, gb: GcodeBuilder, half: str = "front"):
         if not self.verify_enabled:
@@ -2927,6 +3074,7 @@ class ManufacturingPipeline:
         guides = generate_left_guides(
             self.sheet_w, self.sheet_h, margin_w=self.left_margin, y_shift=self.y_split,
             enable_dowel_pins=self.enable_dowel_pin_lock, mirrored_x=is_mirrored_op,
+            holders_mgr=self.holders_mgr,
         )
         s_tag = generate_sheet_tag(
             sheet_num, len(self.sheets), len(units), solder_mask_color=sm_color,
@@ -2956,6 +3104,13 @@ class ManufacturingPipeline:
         raw_slug = f"{step_code}_{board_side}_{bed_half}_{tool_name}".replace("°", "deg")
         safe_slug = re.sub(r"[^A-Za-z0-9_.-]+", "_", raw_slug).strip("_")
         svg_fname = f"Bed_Sheet{sheet_num:02d}_Op{seq:02d}_{safe_slug}.svg"
+
+        effective_pins = pin_holes_bed
+        if not effective_pins and bed_half == "front":
+            effective_pins = self.sheet_4pt_pins_by_sheet.get(sheet_num, [])
+        pins_active = step_code in ("Step0P", "Step0V")
+        drill_col_override = "#f97316" if step_code == "Step1E" else None
+
         svg_content = self.bed_svg_builder.build_operation_svg(
             sheet_num=sheet_num,
             op_seq=seq,
@@ -2975,8 +3130,11 @@ class ManufacturingPipeline:
             active_drill_dia=active_drill_dia,
             active_drill_pts_bed=active_drill_pts_bed,
             inactive_drill_pts_bed=inactive_drill_pts_bed,
-            pin_holes_bed=pin_holes_bed,
+            pin_holes_bed=effective_pins,
             z_probe_switch=self.holders_mgr.z_probe_switch,
+            active_drill_color=drill_col_override,
+            pin_holes_active=pins_active,
+            pin_dia_mm=self.clamp_pin_dia,
         )
         with open(os.path.join(self.out_svg_dir, svg_fname), "w", encoding="utf-8") as f:
             f.write(svg_content)
@@ -3019,9 +3177,19 @@ class ManufacturingPipeline:
         self._generate_unit_svgs()
 
         # 3. Process each Sheet (Dual-Sided + Constrained Bed Y-axis-only + Serpentine Drill Optimization)
+        self.sheet_4pt_pins_by_sheet = {}
+        self.sheet_edge_drills_by_sheet = {}
         for s_idx, units in enumerate(self.sheets):
             sheet_num = s_idx + 1
             print(f"\n>>> Generating Manufacturing Package for Sheet {sheet_num}/{len(self.sheets)} ({len(units)} units)...")
+
+            self.sheet_4pt_pins_by_sheet[sheet_num] = self._compute_single_face_4pt_clamp_pins(
+                units, pin_dia=self.clamp_pin_dia
+            )
+            edge_dia = float(self.breakaway_cfg.milling_tool_dia_mm)
+            self.sheet_edge_drills_by_sheet[sheet_num] = self._collect_pcb_cutting_edge_drill_points(
+                units, edge_dia=edge_dia
+            )
 
             self._generate_composite_svg(sheet_num, units)
             self._generate_step0_alignment_guides(sheet_num, units)
@@ -3117,6 +3285,7 @@ class ManufacturingPipeline:
             guides = generate_left_guides(
                 self.sheet_w, self.sheet_h, margin_w=self.left_margin, y_shift=self.y_split,
                 enable_dowel_pins=self.enable_dowel_pin_lock, mirrored_x=is_mirrored,
+                holders_mgr=self.holders_mgr,
             )
             s_tag = generate_sheet_tag(
                 sheet_num, len(self.sheets), len(units), solder_mask_color=sm_color,
@@ -3136,16 +3305,172 @@ class ManufacturingPipeline:
             svg.draw_polylines(s_tag["arrow"], color="#38bdf8", width=1.5, upright_mirrored=is_mirrored)
             for u in units:
                 svg.draw_unit(u, self.layer_cache)
+
+            # Overlay 4-point single-face clamp holes (Step0P/0V) & PCB cutting-edge drill points (Step1E)
+            pins_4pt = self.sheet_4pt_pins_by_sheet.get(sheet_num)
+            if pins_4pt is None:
+                pins_4pt = self._compute_single_face_4pt_clamp_pins(units, pin_dia=self.clamp_pin_dia)
+            svg.draw_4pt_clamp_pins(pins_4pt, pin_dia=self.clamp_pin_dia)
+
+            edge_dia = float(self.breakaway_cfg.milling_tool_dia_mm)
+            edge_front, edge_back = self.sheet_edge_drills_by_sheet.get(sheet_num) or ([], [])
+            all_edge_pts = list(edge_front) + [(px, py + self.y_split) for (px, py) in edge_back]
+            svg.draw_edge_cut_drills(all_edge_pts, dia=edge_dia)
+
             svg.draw_orientation_banner(sheet_num)
             fpath = os.path.join(self.out_svg_dir, fname)
             with open(fpath, "w", encoding="utf-8") as f:
                 f.write(svg.render())
             print(f"  [+] Saved sheet blueprint SVG: {fname}")
 
+    def _compute_single_face_4pt_clamp_pins(
+        self, units: List[PlacedUnit], pin_dia: float = 3.0
+    ) -> List[Tuple[float, float]]:
+        """
+        Choose 4 mirror-symmetric physical clamp/dowel pin holes inside a single bed face
+        (Y in 0..y_split, X symmetric about sheet_w/2) clear of washer clamps & PCB units.
+        Default placement puts pin centers 1.0mm inside the left/right outer sheet edges
+        (X = 1.0mm and sheet_w - 1.0mm).
+        """
+        pin_r = pin_dia / 2.0 + 0.5
+        y_top_limit = min(self.y_split, self.bed_travel_y)
+        cand_xs = [1.0, 14.5, 13.5, 15.5, 12.0, self.sheet_w / 2.0 - 5.0]
+        cand_ys = [(40.0, 126.0), (36.0, 130.0), (45.0, 120.0), (32.0, 134.0)]
+
+        def _point_clear(px: float, py: float) -> bool:
+            if px < 0.5 or px > self.sheet_w - 0.5:
+                return False
+            if py - pin_r < 2.0 or py + pin_r > y_top_limit - 2.0:
+                return False
+            for check_x in (px, self.sheet_w - px):
+                if self.holders_mgr.is_bed_point_blocked(check_x, py, half="front", tool_radius=pin_r):
+                    return False
+                for u in units:
+                    ux0, uy0, ux1, uy1 = u.tab_box.bounds
+                    px0, py0, px1, py1 = u.pcb_box.bounds
+                    bx0 = min(ux0, px0) - pin_r
+                    by0 = min(uy0, py0) - pin_r
+                    bx1 = max(ux1, px1) + pin_r
+                    by1 = max(uy1, py1) + pin_r
+                    if bx0 <= check_x <= bx1 and by0 <= py <= by1:
+                        return False
+            return True
+
+        for y_lo, y_hi in cand_ys:
+            if y_hi >= y_top_limit - 4.0:
+                continue
+            for x_left in cand_xs:
+                x_right = round(self.sheet_w - x_left, 3)
+                if x_right <= x_left + 10.0:
+                    continue
+                if _point_clear(x_left, y_lo) and _point_clear(x_left, y_hi):
+                    return [(x_left, y_lo), (x_right, y_lo), (x_right, y_hi), (x_left, y_hi)]
+
+        return [(1.0, 40.0), (self.sheet_w - 1.0, 40.0), (self.sheet_w - 1.0, 126.0), (1.0, 126.0)]
+
+    def _generate_4pt_clamp_setup_files(self, sheet_num: int, units: List[PlacedUnit]):
+        """
+        Generate two dedicated setup G-code files:
+          1) Step0P: Drill 4 symmetric physical clamp/dowel holes in a single face.
+          2) Step0V: Move to all 4 positions (covering Correct & Flipped orientations) with
+                     spindle OFF and prompt M0 at each point to physically pin & clamp the PCB.
+        """
+        pin_dia = self.clamp_pin_dia
+        pts = self.sheet_4pt_pins_by_sheet.get(sheet_num)
+        if not pts:
+            pts = self._compute_single_face_4pt_clamp_pins(units, pin_dia=pin_dia)
+            self.sheet_4pt_pins_by_sheet[sheet_num] = pts
+        labels = [
+            ("Correct P1 - Front-Left", "Flipped P2 - Mirror Front-Right"),
+            ("Correct P2 - Front-Right", "Flipped P1 - Mirror Front-Left"),
+            ("Correct P3 - Rear-Right", "Flipped P4 - Mirror Rear-Left"),
+            ("Correct P4 - Rear-Left", "Flipped P3 - Mirror Rear-Right"),
+        ]
+
+        # 1. Dedicated 4-Point Initial Clamp Hole Drilling File (Step0P)
+        b_drill = GcodeBuilder(
+            f"Sheet {sheet_num} - Step 0P Initial 4-Point Physical Clamp Hole Drill ({pin_dia:.1f}mm)",
+            feed=150.0, plunge=80.0, spindle_rpm=10000, park_x=self.bed_travel_x,
+        )
+        b_drill.header([
+            f"Step 0P: Drill 4 mirror-symmetric {pin_dia:.1f}mm physical clamp/dowel holes in single face",
+            f"Coordinates (X symmetric about {self.sheet_w / 2.0:.1f}mm): " + ", ".join(f"({x:.2f},{y:.2f})" for x, y in pts),
+            "Drills into PCB + spoilboard so flipped side (X -> W - X) aligns to the exact same 4 holes.",
+        ])
+        b_drill.lines.append(f"(MSG, Install {pin_dia:.1f}mm drill bit, verify Z0 & initial edge hold, then Continue)")
+        b_drill.lines.append(f"M0 (Install {pin_dia:.1f}mm drill bit & verify initial edge hold)")
+        b_drill.spindle_start()
+        for idx, (px, py) in enumerate(pts, 1):
+            b_drill.lines.append(f"; --- Clamp Hole {idx}/4 ---")
+            b_drill.peck_drill(px, py, depth=-2.5, step=0.5)
+        b_drill.footer()
+
+        fname_drill = f"Sheet{sheet_num:02d}_Step0P_Drill_4Pt_Clamp_Holes.gcode"
+        with open(os.path.join(self.out_gcode_dir, fname_drill), "w", encoding="utf-8") as f:
+            f.write(b_drill.get_text())
+        self.generated_files.append(os.path.join(self.out_gcode_dir, fname_drill))
+
+        cross_polys = []
+        for px, py in pts:
+            cross_polys.append([(px - 3.5, py), (px + 3.5, py)])
+            cross_polys.append([(px, py - 3.5), (px, py + 3.5)])
+
+        self._record_bed_op(
+            sheet_num, units, "Step0P", "Step 0P: Drill 4-Pt Clamp Holes",
+            "Pin Clamp Drill", f"{pin_dia:.1f}mm Dowel Drill", pin_dia,
+            "top", "front", fname_drill, -2.5, 150.0, 10000,
+            "Mount single-face sheet & drill 4 symmetric clamp holes into spoilboard",
+            f"4 holes @ {pin_dia:.1f}mm (single-face symmetric)",
+            active_polylines_bed=cross_polys, polyline_color="#14b8a6", polyline_width=1.4,
+            pin_holes_bed=pts,
+        )
+
+        # 2. Dedicated 4-Point Physical Verify & Clamp Confirmation File (Step0V)
+        b_verify = GcodeBuilder(
+            f"Sheet {sheet_num} - Step 0V Verify & Clamp 4-Point Alignment (Correct & Flipped Side)",
+            feed=300.0, plunge=100.0, spindle_rpm=0, park_x=self.bed_travel_x,
+        )
+        b_verify.header([
+            "Step 0V: Visit all 4 physical clamp points (spindle OFF) with 4 M0 confirmations",
+            "Works identically on BOTH Correct (Front) side AND Flipped (Bottom) side (X -> W - X).",
+        ])
+        b_verify.lines.append("M5 ; Ensure spindle remains OFF")
+        b_verify.lines.append("S0 ; Zero spindle speed")
+        for idx, ((px, py), (corr_lbl, flip_lbl)) in enumerate(zip(pts, labels), 1):
+            b_verify.lines.append(f"; --- Clamp Point {idx}/4: {corr_lbl} | {flip_lbl} ---")
+            b_verify.lines.append(f"G53 G0 Z{b_verify.machine_safe_z:.3f} ; Pull Z to 10mm safe height before moving")
+            b_verify.lines.append(f"G0 X{px:.3f} Y{py:.3f} ; Move to Clamp Point {idx}/4")
+            b_verify.lines.append("G0 Z2.000 ; Lower gently for visual/pin alignment check")
+            safe_msg = _sanitize_gcode_comment_text(
+                f"Point {idx}/4 [{corr_lbl} / {flip_lbl}] @ X{px:.2f} Y{py:.2f}: Align & clamp PCB, then Continue"
+            )
+            b_verify.lines.append(f"(MSG, {safe_msg})")
+            b_verify.lines.append(f"M0 ({safe_msg})")
+        b_verify.footer()
+
+        fname_verify = f"Sheet{sheet_num:02d}_Step0V_Verify_Clamp_4Pt_Pins.gcode"
+        with open(os.path.join(self.out_gcode_dir, fname_verify), "w", encoding="utf-8") as f:
+            f.write(b_verify.get_text())
+        self.generated_files.append(os.path.join(self.out_gcode_dir, fname_verify))
+
+        loop_poly = [pts + [pts[0]]] + cross_polys
+        self._record_bed_op(
+            sheet_num, units, "Step0V", "Step 0V: Verify & Clamp 4-Pt Pins (Correct + Flipped)",
+            "Pin Clamp Align", "Alignment Pin / Bit (Spindle OFF)", pin_dia,
+            "top", "front", fname_verify, 2.0, 300.0, 0,
+            "Insert pins & clamp PCB at all 4 confirmed positions (works Front & Flipped)",
+            "4x M0 confirmations (Correct + Flipped side)",
+            active_polylines_bed=loop_poly, polyline_color="#e879f9", polyline_width=1.3,
+            polyline_dash="5,3", pin_holes_bed=pts,
+        )
+        print(f"  [+] Step 0P & 0V: {fname_drill}, {fname_verify} (4 symmetric clamp pts: {pts})")
+
     def _generate_step0_alignment_guides(self, sheet_num, units):
+        self._generate_4pt_clamp_setup_files(sheet_num, units)
         guides = generate_left_guides(
             self.sheet_w, self.sheet_h, margin_w=self.left_margin, y_shift=self.y_split,
             enable_dowel_pins=self.enable_dowel_pin_lock, mirrored_x=False,
+            holders_mgr=self.holders_mgr,
         )
         sm_color = units[0].project.solder_mask_color if units else "green"
         s_tag = generate_sheet_tag(
@@ -3393,6 +3718,126 @@ class ManufacturingPipeline:
 
         print(f"  [+] Step 1: Generated {drill_seq} sequential drill files across {len(all_tools)} diameters "
               f"({back_starts_count} serpentine Back-first tool changes).")
+        self._generate_edge_cut_drill_files(sheet_num, units)
+
+    def _collect_pcb_cutting_edge_drill_points(
+        self, units: List[PlacedUnit], edge_dia: float = 1.0
+    ) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]]]:
+        """
+        Compute 1.0mm plunge/relief/alignment drill points along the open cutting edges
+        of every circuit board on the sheet (staying strictly on cutout lines, clear of
+        retention tabs, board interiors, and washer clamps).
+        """
+        perim_segs = _deduplicate_and_tab_perimeter_edges(units, 0.0, bridge_tab_len=3.0)
+        slot_segs = [sl["pts"] for u in units for sl in u.milling_slot_segs]
+        all_cut_segs = perim_segs + slot_segs
+
+        corner_pts: List[Tuple[float, float]] = []
+        for u in units:
+            for box in (u.pcb_box, u.tab_box):
+                x0, y0, x1, y1 = box.bounds
+                corner_pts.extend([(x0, y0), (x1, y0), (x1, y1), (x0, y1)])
+
+        def _is_corner(px: float, py: float) -> bool:
+            return any(math.hypot(px - cx, py - cy) < 0.25 for cx, cy in corner_pts)
+
+        def _inside_any_pcb(px: float, py: float) -> bool:
+            for u in units:
+                bx0, by0, bx1, by1 = u.pcb_box.bounds
+                if (bx0 + 0.15) < px < (bx1 - 0.15) and (by0 + 0.15) < py < (by1 - 0.15):
+                    return True
+            return False
+
+        raw_front: List[Tuple[float, float]] = []
+        raw_back: List[Tuple[float, float]] = []
+        for seg in all_cut_segs:
+            f_segs, b_segs = _split_polyline_by_y(seg, self.y_split)
+            for half_name, half_segs, dst in (("front", f_segs, raw_front), ("back", b_segs, raw_back)):
+                for s in half_segs:
+                    if len(s) < 2:
+                        continue
+                    x0, y0 = s[0]
+                    x1, y1 = s[-1]
+                    if half_name == "back":
+                        y0_sheet, y1_sheet = y0 + self.y_split, y1 + self.y_split
+                    else:
+                        y0_sheet, y1_sheet = y0, y1
+                    L = math.hypot(x1 - x0, y1 - y0)
+                    if L < 2.5:
+                        continue
+                    ux, uy = (x1 - x0) / L, (y1 - y0) / L
+                    t_start = 0.0 if _is_corner(x0, y0_sheet) else min(0.7, 0.2 * L)
+                    t_end = L if _is_corner(x1, y1_sheet) else max(t_start + 0.5, L - min(0.7, 0.2 * L))
+                    n_div = max(1, int(round((t_end - t_start) / 32.0)))
+                    for k in range(n_div + 1):
+                        t = t_start + (t_end - t_start) * (k / n_div)
+                        px, py = round(x0 + ux * t, 3), round(y0 + uy * t, 3)
+                        py_sheet = py + (self.y_split if half_name == "back" else 0.0)
+                        if _inside_any_pcb(px, py_sheet):
+                            continue
+                        dst.append((px, py))
+
+        def _dedup_filter(pts: List[Tuple[float, float]], half_name: str) -> List[Tuple[float, float]]:
+            kept: List[Tuple[float, float]] = []
+            for px, py in pts:
+                if self.holders_mgr.is_bed_point_blocked(px, py, half=half_name, tool_radius=edge_dia / 2.0):
+                    continue
+                if any(math.hypot(px - kx, py - ky) < 2.0 for kx, ky in kept):
+                    continue
+                kept.append((px, py))
+            return sort_points_nearest_neighbor(kept)
+
+        return _dedup_filter(raw_front, "front"), _dedup_filter(raw_back, "back")
+
+    def _generate_edge_cut_drill_files(self, sheet_num: int, units: List[PlacedUnit]):
+        """Generate dedicated G-code file(s) for drilling entry/alignment points on each board's cutting edges."""
+        edge_dia = float(self.breakaway_cfg.milling_tool_dia_mm)
+        cached_edge = self.sheet_edge_drills_by_sheet.get(sheet_num)
+        if cached_edge is not None:
+            front_pts, back_pts = cached_edge
+        else:
+            front_pts, back_pts = self._collect_pcb_cutting_edge_drill_points(units, edge_dia=edge_dia)
+        for half_name, pts in (("front", front_pts), ("back", back_pts)):
+            if not pts:
+                continue
+            half_cap = "Front" if half_name == "front" else "Back"
+            b_edge = GcodeBuilder(
+                f"Sheet {sheet_num} - Step 1E {half_cap} PCB Cutting-Edge Drill Points ({edge_dia:.2f}mm)",
+                feed=150.0, plunge=80.0, spindle_rpm=10000, park_x=self.bed_travel_x,
+            )
+            shift_txt = (
+                "Mount sheet Top-Side Up at FRONT HALF (Y=0 datum)"
+                if half_name == "front"
+                else f"Slide sheet -{self.y_split:.1f}mm along Y-axis ONLY -> BACK HALF"
+            )
+            b_edge.header([
+                f"Step 1E: Drill {len(pts)} cutting-edge points across all {len(units)} circuit boards ({edge_dia:.2f}mm bit)",
+                "Placed on open cutout lines / corners (keeps retention tabs & PCB copper untouched).",
+                f"Action: {shift_txt}",
+            ])
+            self._apply_startup_verify(b_edge, half=half_name)
+            b_edge.spindle_start()
+            for (x, y) in pts:
+                b_edge.peck_drill(x, y, depth=-1.8, step=0.4)
+            b_edge.footer()
+
+            fname = f"Sheet{sheet_num:02d}_Step1E_{half_cap}_Edge_Cut_Drills_{edge_dia:.2f}mm.gcode"
+            fpath = os.path.join(self.out_gcode_dir, fname)
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(b_edge.get_text())
+            self.generated_files.append(fpath)
+
+            self._record_bed_op(
+                sheet_num, units, "Step1E",
+                f"Step 1E: PCB Cutting-Edge Drills ({edge_dia:.2f}mm)",
+                "Edge Cut Drills", f"{edge_dia:.2f}mm Edge Drill / Mill", edge_dia,
+                "top", half_name, fname, -1.80, 150.0, 10000,
+                shift_txt, f"{len(pts)} edge points @ {edge_dia:.2f}mm",
+                polyline_color="#f97316",
+                active_drill_dia=edge_dia,
+                active_drill_pts_bed=pts,
+            )
+            print(f"  [+] Step 1E ({half_name}): Generated {fname} ({len(pts)} cutting-edge drill points across PCBs).")
 
     def _generate_step2_vias_guide(self, sheet_num):
         content = (
@@ -4011,14 +4456,24 @@ def _default_checklist_items(
             "category": "Tool & Z-Zero", "checked": False,
             "description": f"Insert 30° / 0.1mm V-Bit, probe tool length on bed Z-Zero Limit Switch (X={z_switch_x:.3f}, Y={z_switch_y:.3f}mm Danger Zone), and run FR4 height map."
         },
+        "check_step0p_clamp_drill": {
+            "label": "5. Step 0P: Drill 4 Physical Clamp / Dowel Holes in Single Face",
+            "category": "Step 0P - Pin Drill", "checked": False,
+            "description": "Run Sheet01_Step0P_Drill_4Pt_Clamp_Holes.gcode to drill 4 mirror-symmetric holes through the PCB into the spoilboard."
+        },
+        "check_step0v_clamp_verify": {
+            "label": "6. Step 0V: Verify & Clamp PCB at 4 Pin Locations (Correct & Flipped)",
+            "category": "Step 0V - Pin Clamp", "checked": False,
+            "description": "Run Sheet01_Step0V_Verify_Clamp_4Pt_Pins.gcode (4x M0 stops, spindle OFF) to verify & clamp the sheet on Correct or Flipped side."
+        },
         "check_step0_sheet_data": {
-            "label": "5. Engrave Sheet Data, Reference Spots & Front-Corner Tag (Step 0A Front -> 0B Back)",
+            "label": "7. Engrave Sheet Data, Reference Spots & Front-Corner Tag (Step 0A Front -> 0B Back)",
             "category": "Step 0 - Guides", "checked": False,
             "description": f"Engrave Sheet ID tag, Y{y_split:.0f} SHIFT mark & reference guides on Front Half, slide -{y_split:.1f}mm along Y-axis only, then run 0B Back. {pin_msg}"
         },
     }
 
-    step_num = 6
+    step_num = 8
     if drill_counts:
         sorted_dias = sorted(drill_counts.keys())
         cur_half = "front"
@@ -4056,6 +4511,12 @@ def _default_checklist_items(
         }
         step_num += 1
 
+    items["check_step1e_edge_drills"] = {
+        "label": f"{step_num}. Step 1E: Drill Cutting-Edge Points Around Each Circuit Board (1.00 mm)",
+        "category": "Step 1E - Edge Drills", "checked": False,
+        "description": "Drill pre-cut relief & alignment holes along every PCB's cutting edges (corners & open slots; retention tabs stay intact)."
+    }
+    step_num += 1
     items["check_step2_vias"] = {
         "label": f"{step_num}. Step 2: Chemical Through-Hole Via Metallization Bath",
         "category": "Step 2 - Vias", "checked": False,
@@ -4108,6 +4569,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
     z_switch_y = float(zsw.get("y_mm", 135.002))
     sheet_w = float(config.get("copper_sheet", {}).get("sheet_width_mm", 210.0))
     sheet_h = float(config.get("copper_sheet", {}).get("sheet_height_mm", 297.0))
+    svg_v = int(time.time())
     cnc = config.get("cnc_limits", {})
     bed_x = float(cnc.get("bed_travel_x_mm", 275.0))
     bed_y = float(cnc.get("bed_travel_y_mm", 170.0))
@@ -4178,6 +4640,17 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         sm_color = u_list[0].project.solder_mask_color.upper() if u_list else "GREEN"
         front_cnt = sum(1 for u in u_list if u.y + u.h <= y_split + 1e-6)
         back_cnt = len(u_list) - front_cnt
+        s_ops = (bed_operations or {}).get(s_num, [])
+        pin_op = next((o for o in s_ops if o.get("step_code") in ("Step0P", "Step0V")), None)
+        edge_ops = [o for o in s_ops if o.get("step_code") == "Step1E"]
+        pin_pill = (
+            f'<span class="text-xs font-mono bg-teal-500/15 text-teal-300 border border-teal-500/35 px-2.5 py-0.5 rounded-md">4-Pt Pins ({pin_op.get("tool_dia_mm", 3.0):.1f}mm)</span>'
+            if pin_op else ""
+        )
+        edge_pill = (
+            f'<span class="text-xs font-mono bg-orange-500/15 text-orange-300 border border-orange-500/35 px-2.5 py-0.5 rounded-md">Edge Drills ({len(edge_ops)} file{"s" if len(edge_ops) != 1 else ""})</span>'
+            if edge_ops else ""
+        )
 
         sheet_tabs_html.append(
             f'<button type="button" onclick="selectSheet({s_num})" id="tab-btn-{s_num}" aria-selected="{"true" if is_first else "false"}" '
@@ -4207,6 +4680,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
               <span class="text-xs font-mono bg-slate-800/90 text-slate-300 px-2.5 py-0.5 rounded-md border border-slate-700/70">{sheet_w:.0f} &times; {sheet_h:.0f} mm</span>
               <span class="text-xs font-mono bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded-md">{sm_color} MASK</span>
               <span class="text-xs font-mono bg-slate-800/90 text-slate-300 border border-slate-700/70 px-2.5 py-0.5 rounded-md">Front Half: {front_cnt} | Back Half: {back_cnt}</span>
+              {pin_pill}{edge_pill}
             </div>
             <div class="inline-flex rounded-lg bg-[#0a0e17] p-1 border border-slate-800" role="group" aria-label="Sheet Side View">
               <button type="button" onclick="setSheetSide({s_num}, 'top')" id="sheet-side-{s_num}-top" aria-pressed="true"
@@ -4221,13 +4695,13 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
           </div>
 
           <div class="blueprint-stage p-4 rounded-xl border border-slate-800 flex justify-center items-center overflow-auto min-h-[420px]">
-            <img id="sheet-img-{s_num}" src="{img_prefix}Sheet{s_num:02d}_Overview_Panel_Blueprint.svg" alt="Sheet {s_num} Manufacturing Blueprint" class="sheet-preview-img max-h-[760px] w-auto object-contain rounded transition-all">
+            <img id="sheet-img-{s_num}" src="{img_prefix}Sheet{s_num:02d}_Overview_Panel_Blueprint.svg?v={svg_v}" alt="Sheet {s_num} Manufacturing Blueprint" class="sheet-preview-img max-h-[760px] w-auto object-contain rounded transition-all">
           </div>
 
           <div class="mt-5 overflow-x-auto rounded-xl border border-slate-800/90 bg-[#0b0f19]">
             <div class="px-4 py-2.5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
               <h4 class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Nested Units on Sheet {s_num:02d}</h4>
-              <span class="text-[11px] font-mono text-amber-300/90">Y-Shift Line: {y_split:.1f} mm &bull; Common Single-Half Bed Washers (No Through-PCB Drills)</span>
+              <span class="text-[11px] font-mono text-amber-300/90">Y-Shift Line: {y_split:.1f} mm &bull; Common Single-Half Bed Washers + 4-Pt Symmetric Clamp Pins (Step0P/0V)</span>
             </div>
             <table class="w-full text-left border-collapse">
               <thead class="text-slate-400 border-b border-slate-800 bg-[#090d16] text-[11px] uppercase tracking-wider">
@@ -4272,15 +4746,27 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         checked_attr = "checked" if item.get("checked", False) else ""
         checked_class = "line-through text-slate-500" if item.get("checked", False) else "text-slate-100"
         cat = item.get("category", "Setup")
+        if cat.startswith("Step 0P"):
+            row_cls = "border-teal-500/40 bg-teal-950/20 hover:border-teal-400/60"
+            cat_cls = "bg-teal-500/20 text-teal-300 border-teal-500/40"
+        elif cat.startswith("Step 0V"):
+            row_cls = "border-fuchsia-500/40 bg-fuchsia-950/20 hover:border-fuchsia-400/60"
+            cat_cls = "bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/40"
+        elif cat.startswith("Step 1E"):
+            row_cls = "border-orange-500/40 bg-orange-950/20 hover:border-orange-400/60"
+            cat_cls = "bg-orange-500/20 text-orange-300 border-orange-500/40"
+        else:
+            row_cls = "border-slate-800 bg-[#0b101b] hover:border-blue-500/40"
+            cat_cls = "bg-slate-800/90 text-slate-300 border-slate-700/70"
         chk_rows_html.append(f'''
         <label for="{item_id}" data-chk-cat="{svg_escape(cat)}"
-               class="chk-row flex items-start gap-3 p-3.5 bg-[#0b101b] rounded-xl border border-slate-800 hover:border-blue-500/40 transition-colors cursor-pointer">
+               class="chk-row flex items-start gap-3 p-3.5 rounded-xl border {row_cls} transition-colors cursor-pointer">
           <input type="checkbox" id="{item_id}" {checked_attr} onchange="toggleChecklistItem('{item_id}', this.checked)"
                  class="mt-0.5 w-4 h-4 rounded text-blue-500 bg-slate-900 border-slate-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer">
           <div class="flex-1 min-w-0">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <span id="label-{item_id}" class="text-sm font-medium {checked_class}">{svg_escape(item.get("label", item_id))}</span>
-              <span class="text-[10px] font-mono uppercase tracking-wide px-2 py-0.5 rounded bg-slate-800/90 text-slate-300 border border-slate-700/70">{svg_escape(cat)}</span>
+              <span class="text-[10px] font-mono uppercase tracking-wide px-2 py-0.5 rounded border {cat_cls}">{svg_escape(cat)}</span>
             </div>
             <p class="text-xs text-slate-400 mt-1 leading-relaxed">{svg_escape(item.get("description", ""))}</p>
           </div>
@@ -4737,13 +5223,15 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       if (panel) panel.style.display = 'block';
     }}
 
+    const svgCacheBust = '?v={svg_v}';
+
     function setSheetSide(num, side) {{
       const sPad = String(num).padStart(2, '0');
       const img = document.getElementById('sheet-img-' + num);
       if (img) {{
-        img.src = side === 'back'
+        img.src = (side === 'back'
           ? `${{imgPrefix}}Sheet${{sPad}}_BackSide_Mirrored_Blueprint.svg`
-          : `${{imgPrefix}}Sheet${{sPad}}_Overview_Panel_Blueprint.svg`;
+          : `${{imgPrefix}}Sheet${{sPad}}_Overview_Panel_Blueprint.svg`) + svgCacheBust;
       }}
       document.querySelectorAll(`.sheet-side-btn-${{num}}`).forEach(btn => {{
         const active = (btn.id === `sheet-side-${{num}}-${{side}}`);
@@ -4847,24 +5335,43 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       }}
       el.innerHTML = filteredBedOps.map(op => {{
         const active = (op.op_id === selectedBedOpId);
-        const sideBadge = op.mirrored
-          ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-violet-500/20 text-violet-300 border border-violet-500/40">BACK SIDE (MIRROR)</span>'
-          : '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">FRONT SIDE</span>';
+        const isPinDrill = op.step_code === 'Step0P';
+        const isPinVerify = op.step_code === 'Step0V';
+        const isEdgeDrill = op.step_code === 'Step1E';
+        const specialBadge = isPinDrill
+          ? '<span class="px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded bg-teal-500/20 text-teal-300 border border-teal-500/40">Pin Drill</span>'
+          : (isPinVerify
+            ? '<span class="px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/40">4-Pt Clamp</span>'
+            : (isEdgeDrill
+              ? '<span class="px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded bg-orange-500/20 text-orange-300 border border-orange-500/40">Edge Drills</span>'
+              : ''));
+        const sideBadge = isPinVerify
+          ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-violet-500/20 text-violet-300 border border-violet-500/40">CORRECT + FLIPPED</span>'
+          : (op.mirrored
+            ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-violet-500/20 text-violet-300 border border-violet-500/40">BACK SIDE (MIRROR)</span>'
+            : '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">FRONT SIDE</span>');
         const halfBadge = op.bed_half === 'front'
           ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Front Bed Half</span>'
           : '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">Back Bed Half</span>';
         const serpBadge = op.started_back_same_tool
           ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">BACK FIRST (SERPENTINE)</span>'
           : '';
+        const idleBorder = isPinDrill
+          ? 'border-teal-500/40 bg-teal-950/20'
+          : (isPinVerify
+            ? 'border-fuchsia-500/40 bg-fuchsia-950/20'
+            : (isEdgeDrill
+              ? 'border-orange-500/40 bg-orange-950/20'
+              : 'border-slate-800/90 bg-[#0b101b]'));
         return `
           <button type="button" onclick="selectBedOp('${{op.op_id}}')" aria-current="${{active ? 'true' : 'false'}}"
-                  class="submenu-item ${{active ? 'active' : ''}} w-full text-left p-2.5 rounded-xl border border-slate-800/90 bg-[#0b101b] hover:border-slate-600 transition cursor-pointer">
+                  class="submenu-item ${{active ? 'active' : ''}} w-full text-left p-2.5 rounded-xl border ${{idleBorder}} hover:border-slate-600 transition cursor-pointer">
             <div class="flex items-center justify-between gap-2">
               <span class="text-xs font-mono font-semibold text-slate-100">Op #${{String(op.seq).padStart(2, '0')}} &bull; ${{op.tool_name}}</span>
             </div>
             <div class="text-[11px] text-slate-400 mt-0.5 truncate">${{op.step_title}}</div>
             <div class="flex flex-wrap items-center gap-1 mt-1.5">
-              ${{sideBadge}} ${{halfBadge}} ${{serpBadge}}
+              ${{specialBadge}} ${{sideBadge}} ${{halfBadge}} ${{serpBadge}}
             </div>
           </button>
         `;
@@ -4894,11 +5401,14 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       document.getElementById('bed-op-counter').innerText = `Op ${{idx + 1}} of ${{filteredBedOps.length}} (Seq #${{op.seq}})`;
       document.getElementById('bed-op-title').innerText = `${{op.step_title}} — ${{op.tool_name}}`;
       document.getElementById('bed-op-action').innerText = op.shift_action;
-      document.getElementById('bed-op-img').src = `${{imgPrefix}}${{op.svg_file}}`;
+      document.getElementById('bed-op-img').src = `${{imgPrefix}}${{op.svg_file}}${{svgCacheBust}}`;
       document.getElementById('bed-op-img').alt = `${{op.step_title}} CNC Bed Setup`;
 
       const mirrorPill = document.getElementById('bed-mirror-pill');
-      if (op.mirrored) {{
+      if (op.step_code === 'Step0V') {{
+        mirrorPill.innerText = 'BOTH SIDES: CORRECT (FRONT) + FLIPPED (BACK)';
+        mirrorPill.className = 'px-2.5 py-1 text-[11px] font-mono font-semibold rounded-md bg-fuchsia-500/20 text-fuchsia-200 border border-fuchsia-500/40';
+      }} else if (op.mirrored) {{
         mirrorPill.innerText = 'BACK SIDE: MIRRORED HORIZONTALLY ALONG Y-AXIS';
         mirrorPill.className = 'px-2.5 py-1 text-[11px] font-mono font-semibold rounded-md bg-violet-500/20 text-violet-200 border border-violet-500/40';
       }} else {{
@@ -5095,7 +5605,19 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       drills: [],
       bounds: {{ minX: 0, maxX: 200, minY: 0, maxY: 165 }},
       lastCompletedFile: '',
-      dismissed: false
+      dismissed: false,
+      view: {{
+        baseScale: 1,
+        scale: 1,
+        ox: 0,
+        oy: 0,
+        dragging: false,
+        lastX: 0,
+        lastY: 0,
+        followTool: false,
+        fitKey: '',
+        hoverMm: null
+      }}
     }};
 
     function isMacroFilename(fname) {{
@@ -5132,6 +5654,10 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
 
       if (data.online) {{
         fluidncMachineState = data.state || 'Online';
+        if (typeof figJogState !== 'undefined' && figJogState.isJogging && !figJogState.contTimer && String(fluidncMachineState).toLowerCase() === 'idle') {{
+          figJogState.isJogging = false;
+          if (typeof updateFigCenterReadout === 'function') updateFigCenterReadout();
+        }}
         const pos = data.wpos || data.mpos;
         if (pos) {{
           fluidncMPos = `X:${{pos[0].toFixed(2)}} Y:${{pos[1].toFixed(2)}} Z:${{pos[2].toFixed(2)}}`;
@@ -5393,7 +5919,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         }}
         if (txt) {{
           const lines = txt.split(/\\r?\\n/).filter(l => l.trim() && !l.trim().startsWith(';'));
-          const msgMatch = txt.match(/\\(\\s*MSG\\s*,\\s*([^)]+)\\)/i) || txt.match(/M0\\s*\\(([^)]+)\\)/i);
+          const msgMatch = txt.match(/^\\(\\s*MSG\\s*,\\s*(.+)\\)\\s*$/im) || txt.match(/^M0*1?\\s*\\((.+)\\)\\s*$/im);
           if (msgMatch) document.getElementById('pf-prompt').innerText = msgMatch[1].trim();
           document.getElementById('pf-meta').innerText = `${{isMacro ? 'Macro' : 'G-Code'}} • ${{lines.length}} commands`;
         }}
@@ -5496,8 +6022,183 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       liveStreamState.segments = parsed.segments;
       liveStreamState.drills = parsed.drills;
       liveStreamState.bounds = parsed.bounds;
+      liveStreamState.view.fitKey = '';
+      fitLivePreviewCamera('bed', false);
       drawLiveStreamCanvas();
       renderLiveExecutionWindow();
+    }}
+
+    function fitLivePreviewCamera(mode = 'bed', redraw = true) {{
+      const canvas = document.getElementById('dispatch-live-canvas');
+      if (!canvas) return;
+      const W = canvas.clientWidth || 640;
+      const H = canvas.clientHeight || 300;
+      const b = liveStreamState.bounds || {{ minX: 0, maxX: cncBedTravelX, minY: 0, maxY: cncBedTravelY }};
+      let minX, maxX, minY, maxY;
+      if (mode === 'path' && (liveStreamState.segments?.length || liveStreamState.drills?.length)) {{
+        const pMinX = Number.isFinite(b.minX) ? b.minX : 0;
+        const pMaxX = Number.isFinite(b.maxX) ? b.maxX : cncBedTravelX;
+        const pMinY = Number.isFinite(b.minY) ? b.minY : 0;
+        const pMaxY = Number.isFinite(b.maxY) ? b.maxY : cncBedTravelY;
+        const mx = Math.max(4, (pMaxX - pMinX) * 0.08);
+        const my = Math.max(4, (pMaxY - pMinY) * 0.08);
+        minX = pMinX - mx; maxX = pMaxX + mx;
+        minY = pMinY - my; maxY = pMaxY + my;
+      }} else {{
+        minX = Math.min(0, b.minX ?? 0);
+        maxX = Math.max(cncBedTravelX, b.maxX ?? cncBedTravelX);
+        minY = Math.min(0, b.minY ?? 0);
+        maxY = Math.max(cncBedTravelY, b.maxY ?? cncBedTravelY);
+      }}
+      const pad = 18;
+      const spanX = Math.max(10, maxX - minX);
+      const spanY = Math.max(10, maxY - minY);
+      const bedSpanX = Math.max(20, Math.max(cncBedTravelX, b.maxX ?? cncBedTravelX) - Math.min(0, b.minX ?? 0));
+      const bedSpanY = Math.max(20, Math.max(cncBedTravelY, b.maxY ?? cncBedTravelY) - Math.min(0, b.minY ?? 0));
+      const baseSc = Math.min((W - 2 * pad) / bedSpanX, (H - 2 * pad) / bedSpanY);
+      const sc = Math.min((W - 2 * pad) / spanX, (H - 2 * pad) / spanY);
+      const v = liveStreamState.view;
+      v.baseScale = Math.max(0.1, baseSc);
+      v.scale = Math.max(0.1, sc);
+      v.ox = (W - spanX * sc) / 2 - minX * sc;
+      v.oy = H - (H - spanY * sc) / 2 + minY * sc;
+      v.fitKey = `${{liveStreamState.loadedFilename || ''}}:${{W}}x${{H}}`;
+      updateLivePreviewZoomBadge();
+      if (redraw) drawLiveStreamCanvas();
+    }}
+
+    function updateLivePreviewZoomBadge() {{
+      const v = liveStreamState.view;
+      const lbl = document.getElementById('live-preview-zoom-lbl');
+      if (lbl && v.baseScale > 0) {{
+        const mult = v.scale / v.baseScale;
+        lbl.textContent = `${{mult >= 10 ? mult.toFixed(0) : mult.toFixed(1)}}x`;
+      }}
+      const flwBtn = document.getElementById('btn-live-follow');
+      if (flwBtn) {{
+        flwBtn.className = v.followTool
+          ? 'px-2 py-0.5 rounded bg-cyan-500/25 text-cyan-200 border border-cyan-400/60 font-semibold cursor-pointer'
+          : 'px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-100 border border-slate-700 cursor-pointer';
+      }}
+    }}
+
+    function zoomLivePreview(factor, cx = null, cy = null) {{
+      const canvas = document.getElementById('dispatch-live-canvas');
+      if (!canvas) return;
+      const v = liveStreamState.view;
+      if (!v.fitKey) fitLivePreviewCamera('bed', false);
+      const W = canvas.clientWidth || canvas.width || 640;
+      const H = canvas.clientHeight || canvas.height || 300;
+      const anchorX = (cx != null) ? cx : (W / 2);
+      const anchorY = (cy != null) ? cy : (H / 2);
+      const oldScale = v.scale;
+      const minScale = Math.max(0.1, v.baseScale * 0.4);
+      const maxScale = Math.max(20, v.baseScale * 60);
+      const newScale = Math.max(minScale, Math.min(maxScale, oldScale * factor));
+      v.ox = anchorX - (anchorX - v.ox) * (newScale / oldScale);
+      v.oy = anchorY - (anchorY - v.oy) * (newScale / oldScale);
+      v.scale = newScale;
+      updateLivePreviewZoomBadge();
+      drawLiveStreamCanvas();
+    }}
+
+    function resetLivePreviewZoom() {{
+      liveStreamState.view.followTool = false;
+      fitLivePreviewCamera('bed', true);
+    }}
+
+    function zoomLivePreviewToPath() {{
+      fitLivePreviewCamera('path', true);
+    }}
+
+    function toggleLivePreviewFollow() {{
+      const v = liveStreamState.view;
+      v.followTool = !v.followTool;
+      if (v.followTool && (v.scale / Math.max(0.1, v.baseScale)) < 2.2) {{
+        zoomLivePreview(3.5);
+      }} else {{
+        updateLivePreviewZoomBadge();
+        drawLiveStreamCanvas();
+      }}
+    }}
+
+    function initLiveStreamCanvasEvents() {{
+      const canvas = document.getElementById('dispatch-live-canvas');
+      if (!canvas || canvas.dataset.liveBound) return;
+      canvas.dataset.liveBound = '1';
+      canvas.style.touchAction = 'none';
+
+      canvas.addEventListener('contextmenu', e => e.preventDefault());
+      canvas.addEventListener('wheel', (e) => {{
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const factor = e.deltaY < 0 ? 1.2 : 0.83;
+        zoomLivePreview(factor, mx, my);
+      }}, {{ passive: false }});
+
+      canvas.addEventListener('dblclick', (e) => {{
+        const rect = canvas.getBoundingClientRect();
+        zoomLivePreview(2.2, e.clientX - rect.left, e.clientY - rect.top);
+      }});
+
+      canvas.addEventListener('pointerdown', (e) => {{
+        try {{ canvas.setPointerCapture(e.pointerId); }} catch (_) {{}}
+        liveStreamState.view.dragging = true;
+        liveStreamState.view.lastX = e.clientX;
+        liveStreamState.view.lastY = e.clientY;
+        canvas.classList.add('cursor-grabbing');
+      }});
+
+      canvas.addEventListener('pointermove', (e) => {{
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const v = liveStreamState.view;
+        if (v.scale > 0) {{
+          const mmX = (mx - v.ox) / v.scale;
+          const mmY = (v.oy - my) / v.scale;
+          v.hoverMm = {{ x: mmX, y: mmY }};
+          const xyLbl = document.getElementById('live-preview-cursor-mm');
+          if (xyLbl) xyLbl.textContent = `X:${{mmX.toFixed(1)}} Y:${{mmY.toFixed(1)}}mm`;
+        }}
+        if (!v.dragging) return;
+        const dx = e.clientX - v.lastX;
+        const dy = e.clientY - v.lastY;
+        v.lastX = e.clientX;
+        v.lastY = e.clientY;
+        v.ox += dx;
+        v.oy += dy;
+        if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {{
+          v.followTool = false;
+          updateLivePreviewZoomBadge();
+        }}
+        drawLiveStreamCanvas();
+      }});
+
+      const endDrag = () => {{
+        liveStreamState.view.dragging = false;
+        canvas.classList.remove('cursor-grabbing');
+      }};
+      canvas.addEventListener('pointerup', endDrag);
+      canvas.addEventListener('pointercancel', endDrag);
+      canvas.addEventListener('pointerleave', () => {{
+        endDrag();
+        liveStreamState.view.hoverMm = null;
+        const xyLbl = document.getElementById('live-preview-cursor-mm');
+        if (xyLbl) xyLbl.textContent = 'Wheel: Zoom · Drag: Pan';
+      }});
+      window.addEventListener('resize', () => {{
+        if (!document.getElementById('dispatch-live-stream-panel')?.classList.contains('hidden')) {{
+          const v = liveStreamState.view;
+          if (v.baseScale > 0 && Math.abs(v.scale / v.baseScale - 1.0) < 0.05) {{
+            fitLivePreviewCamera('bed', true);
+          }} else {{
+            drawLiveStreamCanvas();
+          }}
+        }}
+      }});
     }}
 
     function renderLiveExecutionWindow() {{
@@ -5529,31 +6230,64 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
       const W = canvas.width = canvas.clientWidth || 640;
-      const H = canvas.height = canvas.clientHeight || 260;
+      const H = canvas.height = canvas.clientHeight || 300;
       ctx.fillStyle = '#04060b';
       ctx.fillRect(0, 0, W, H);
 
       const segs = liveStreamState.segments || [];
-      const b = liveStreamState.bounds || {{ minX: 0, maxX: cncBedTravelX, minY: 0, maxY: cncBedTravelY }};
-      const minX = Math.min(0, b.minX ?? 0);
-      const maxX = Math.max(cncBedTravelX, b.maxX ?? cncBedTravelX);
-      const minY = Math.min(0, b.minY ?? 0);
-      const maxY = Math.max(cncBedTravelY, b.maxY ?? cncBedTravelY);
-      const pad = 18;
-      const spanX = Math.max(20, maxX - minX);
-      const spanY = Math.max(20, maxY - minY);
-      const sc = Math.min((W - 2 * pad) / spanX, (H - 2 * pad) / spanY);
-      const ox = (W - spanX * sc) / 2 - minX * sc;
-      const oy = H - (H - spanY * sc) / 2 + minY * sc;
+      const curFitKey = `${{liveStreamState.loadedFilename || ''}}:${{W}}x${{H}}`;
+      const v = liveStreamState.view;
+      if (!v.fitKey || (Math.abs(v.scale / Math.max(0.1, v.baseScale) - 1.0) < 0.03 && v.fitKey !== curFitKey)) {{
+        fitLivePreviewCamera('bed', false);
+      }}
+
+      // Determine current raw line index early so Follow Head can track cleanly
+      const sent = liveStreamState.jobFilename ? (liveStreamState.jobSent || 0) : (liveStreamState.sent || 0);
+      const execIdx = Math.max(-1, Math.min(liveStreamState.execToRawLine.length - 1, sent - 1));
+      const curRawLine = execIdx >= 0 ? (liveStreamState.execToRawLine[execIdx] ?? -1) : -1;
+      const pLive = lastLiveToolPos && (lastLiveToolPos.wpos || lastLiveToolPos.mpos);
+
+      let followPt = pLive ? {{ x: pLive[0], y: pLive[1] }} : null;
+      if (!followPt && segs.length && curRawLine >= 0) {{
+        for (const sg of segs) {{
+          if (sg.lineIdx > curRawLine) break;
+          followPt = {{ x: sg.x2, y: sg.y2 }};
+        }}
+      }}
+      if (v.followTool && followPt) {{
+        v.ox = W / 2 - followPt.x * v.scale;
+        v.oy = H / 2 + followPt.y * v.scale;
+      }}
+
+      const sc = v.scale;
+      const ox = v.ox;
+      const oy = v.oy;
       const tx = (x) => ox + x * sc;
       const ty = (y) => oy - y * sc;
+      updateLivePreviewZoomBadge();
+
+      // Adaptive fine mm grid when zoomed in >= 2x
+      const zoomMult = sc / Math.max(0.1, v.baseScale);
+      const gridStep = zoomMult >= 8 ? 2 : (zoomMult >= 3 ? 5 : 20);
+      ctx.strokeStyle = 'rgba(30, 41, 59, 0.45)';
+      ctx.lineWidth = 0.7;
+      for (let gx = 0; gx <= cncBedTravelX; gx += gridStep) {{
+        const sxp = tx(gx);
+        if (sxp < 0 || sxp > W) continue;
+        ctx.beginPath(); ctx.moveTo(sxp, ty(0)); ctx.lineTo(sxp, ty(cncBedTravelY)); ctx.stroke();
+      }}
+      for (let gy = 0; gy <= cncBedTravelY; gy += gridStep) {{
+        const syp = ty(gy);
+        if (syp < 0 || syp > H) continue;
+        ctx.beginPath(); ctx.moveTo(tx(0), syp); ctx.lineTo(tx(cncBedTravelX), syp); ctx.stroke();
+      }}
 
       // Bed outline & Milling zone
-      ctx.strokeStyle = '#1e293b';
+      ctx.strokeStyle = '#334155';
       ctx.lineWidth = 1.2;
       ctx.strokeRect(tx(0), ty(cncBedTravelY), cncBedTravelX * sc, cncBedTravelY * sc);
       ctx.setLineDash([4, 3]);
-      ctx.strokeStyle = 'rgba(2, 132, 199, 0.45)';
+      ctx.strokeStyle = 'rgba(2, 132, 199, 0.5)';
       ctx.strokeRect(tx(0), ty(cncBedTravelY), cncBedMillingX * sc, cncBedTravelY * sc);
       ctx.setLineDash([]);
 
@@ -5574,18 +6308,13 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         ctx.fillRect(tx(sx - sw), ty(sy + sl), sw * 2 * sc, sl * 2 * sc);
       }}
 
-      // Determine current raw line index from stream progress (preserve PCB job progress while macros run)
-      const sent = liveStreamState.jobFilename ? (liveStreamState.jobSent || 0) : (liveStreamState.sent || 0);
-      const execIdx = Math.max(-1, Math.min(liveStreamState.execToRawLine.length - 1, sent - 1));
-      const curRawLine = execIdx >= 0 ? (liveStreamState.execToRawLine[execIdx] ?? -1) : -1;
-
       let targetPt = null;
       if (segs.length) {{
         // 1. Future segments (dimmed)
         ctx.lineWidth = 1.0;
         for (const sg of segs) {{
           if (sg.lineIdx <= curRawLine) continue;
-          ctx.strokeStyle = sg.rapid ? 'rgba(56, 189, 248, 0.22)' : 'rgba(148, 163, 184, 0.32)';
+          ctx.strokeStyle = sg.rapid ? 'rgba(56, 189, 248, 0.25)' : 'rgba(148, 163, 184, 0.36)';
           ctx.beginPath(); ctx.moveTo(tx(sg.x1), ty(sg.y1)); ctx.lineTo(tx(sg.x2), ty(sg.y2)); ctx.stroke();
         }}
 
@@ -5594,15 +6323,15 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
           if (sg.lineIdx > curRawLine) continue;
           const isCur = (sg.lineIdx === curRawLine);
           ctx.strokeStyle = isCur ? '#22d3ee' : (sg.rapid ? 'rgba(56, 189, 248, 0.55)' : '#10b981');
-          ctx.lineWidth = isCur ? 2.4 : (sg.rapid ? 1.0 : 1.7);
+          ctx.lineWidth = isCur ? 2.5 : (sg.rapid ? 1.0 : 1.7);
           ctx.beginPath(); ctx.moveTo(tx(sg.x1), ty(sg.y1)); ctx.lineTo(tx(sg.x2), ty(sg.y2)); ctx.stroke();
           targetPt = {{ x: sg.x2, y: sg.y2, z: sg.z2 }};
         }}
 
         // 3. Drills
         for (const dr of (liveStreamState.drills || [])) {{
-          ctx.fillStyle = (dr.lineIdx <= curRawLine) ? '#f59e0b' : 'rgba(245, 158, 11, 0.25)';
-          ctx.beginPath(); ctx.arc(tx(dr.x), ty(dr.y), dr.lineIdx <= curRawLine ? 2.6 : 1.6, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = (dr.lineIdx <= curRawLine) ? '#f59e0b' : 'rgba(245, 158, 11, 0.30)';
+          ctx.beginPath(); ctx.arc(tx(dr.x), ty(dr.y), dr.lineIdx <= curRawLine ? 2.8 : 1.7, 0, Math.PI * 2); ctx.fill();
         }}
       }}
 
@@ -5615,12 +6344,11 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       }}
 
       // Live reported CNC head position (WPos or MPos)
-      const p = lastLiveToolPos && (lastLiveToolPos.wpos || lastLiveToolPos.mpos);
-      if (p) {{
-        const mx = tx(p[0]), my = ty(p[1]);
+      if (pLive) {{
+        const mx = tx(pLive[0]), my = ty(pLive[1]);
         ctx.fillStyle = '#e879f9';
         ctx.beginPath(); ctx.arc(mx, my, 4.5, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = 'rgba(232, 121, 249, 0.55)';
+        ctx.strokeStyle = 'rgba(232, 121, 249, 0.65)';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.arc(mx, my, 10, 0, Math.PI * 2);
@@ -6253,8 +6981,9 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       let cutDist = 0, rapidDist = 0;
 
       for (let i = 0; i < lines.length; i++) {{
-        let raw = lines[i].trim();
-        const stripped = raw.replace(/\\([^)]*\\)/g, '').split(';')[0].trim().toUpperCase();
+        let raw = lines[i].trim().split(';')[0];
+        while (/\\([^()]*\\)/.test(raw)) raw = raw.replace(/\\([^()]*\\)/g, '');
+        const stripped = raw.trim().toUpperCase();
         if (!stripped) continue;
 
         if (/\\bG90\\b/.test(stripped)) absMode = true;
@@ -7026,9 +7755,22 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
           : 'p-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white shadow-sm transition cursor-pointer';
         const btnTip = isSent ? 'Uploaded to /sd/ (click to re-upload)' : 'Upload to FluidNC';
 
-        const halfBadge = op.bed_half === 'front'
-          ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/25" data-tip="Front Bed Half (Y 0-{y_split:.0f}mm)">Front</span>'
-          : '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-amber-500/15 text-amber-300 border border-amber-500/25" data-tip="Back Bed Half (Y-Shift -{y_split:.0f}mm)">Back</span>';
+        const isPinDrill = op.step_code === 'Step0P';
+        const isPinVerify = op.step_code === 'Step0V';
+        const isEdgeDrill = op.step_code === 'Step1E';
+        const specialBadge = isPinDrill
+          ? '<span class="px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded bg-teal-500/20 text-teal-300 border border-teal-500/40" data-tip="Initial 4-point single-face physical clamp hole drill">Pin Drill</span>'
+          : (isPinVerify
+            ? '<span class="px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/40" data-tip="4x M0 confirmations to verify & clamp Front + Flipped side">4-Pt Clamp</span>'
+            : (isEdgeDrill
+              ? '<span class="px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded bg-orange-500/20 text-orange-300 border border-orange-500/40" data-tip="Drills corner & slot cutting-edge points around each PCB">Edge Drills</span>'
+              : ''));
+
+        const halfBadge = isPinVerify
+          ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-violet-500/20 text-violet-300 border border-violet-500/35" data-tip="Works on BOTH Correct (Front) and Flipped (Bottom) sides">Correct + Flipped</span>'
+          : (op.bed_half === 'front'
+            ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/25" data-tip="Front Bed Half (Y 0-{y_split:.0f}mm)">Front</span>'
+            : '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-amber-500/15 text-amber-300 border border-amber-500/25" data-tip="Back Bed Half (Y-Shift -{y_split:.0f}mm)">Back</span>');
 
         const mirrorBadge = op.mirrored
           ? '<span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-violet-500/20 text-violet-300 border border-violet-500/30" data-tip="Horizontally mirrored for Bottom Side">Flip</span>'
@@ -7040,16 +7782,28 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
             ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono font-bold rounded bg-amber-500/25 text-amber-200 border border-amber-400/60" data-tip="Most recently completed stream">JUST FINISHED</span>`
             : '');
 
+        const idleRowStyle = isPinDrill
+          ? 'border-teal-500/40 bg-teal-950/20'
+          : (isPinVerify
+            ? 'border-fuchsia-500/40 bg-fuchsia-950/20'
+            : (isEdgeDrill
+              ? 'border-orange-500/40 bg-orange-950/20'
+              : 'border-slate-800/90 bg-[#0b101b]/90'));
+
         const rowStyle = isStreamingThis
           ? 'border-cyan-400 bg-cyan-950/35 ring-2 ring-cyan-500/40 shadow-lg shadow-cyan-950/40'
           : (isJustFinishedThis
             ? 'border-amber-400 bg-amber-950/30 ring-2 ring-amber-500/40 shadow-md shadow-amber-950/30'
-            : (isDone ? 'border-emerald-500/30 bg-emerald-950/15 opacity-70' : 'border-slate-800/90 bg-[#0b101b]/90'));
+            : (isDone ? 'border-emerald-500/30 bg-emerald-950/15 opacity-70' : idleRowStyle));
+
+        const numColor = isStreamingThis
+          ? 'text-cyan-300'
+          : (isJustFinishedThis ? 'text-amber-300' : (isDone ? 'text-emerald-400/70' : (isPinDrill ? 'text-teal-300' : (isPinVerify ? 'text-fuchsia-300' : (isEdgeDrill ? 'text-orange-300' : 'text-cyan-400')))));
 
         html += `
           <div class="p-2.5 rounded-xl border ${{rowStyle}} hover:border-slate-700 transition flex items-center justify-between gap-3 text-xs">
             <div class="flex items-center gap-2.5 min-w-0">
-              <span class="text-xs font-mono font-bold ${{isStreamingThis ? 'text-cyan-300' : (isJustFinishedThis ? 'text-amber-300' : (isDone ? 'text-emerald-400/70' : 'text-cyan-400'))}} w-6 text-right shrink-0 select-none" data-tip="File #${{idx + 1}} (Op #${{String(op.seq).padStart(2, '0')}})">${{rowNum}}.</span>
+              <span class="text-xs font-mono font-bold ${{numColor}} w-6 text-right shrink-0 select-none" data-tip="File #${{idx + 1}} (Op #${{String(op.seq).padStart(2, '0')}})">${{rowNum}}.</span>
               <input type="checkbox" ${{isDone ? 'checked' : ''}}
                      onchange="toggleDispatchDone('${{op.gcode_file}}', this.checked); syncLiveDoneButton();"
                      class="w-4 h-4 rounded accent-emerald-500 bg-slate-900 border-slate-600 cursor-pointer shrink-0"
@@ -7068,7 +7822,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
                           data-tip="Inspect toolpath in 2D/3D Viewer">
                     ${{op.gcode_file}}
                   </button>
-                  ${{streamingBadge}}
+                  ${{streamingBadge}} ${{specialBadge}}
                   <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-400">S${{op.sheet_num}} #${{String(op.seq).padStart(2, '0')}}</span>
                   ${{halfBadge}} ${{mirrorBadge}}
                 </div>
@@ -7301,6 +8055,8 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       hoverAxis: null,
       hoverStep: null,
       isJogging: false,
+      lastMoveType: 'jog',
+      jogTimer: null,
       contTimer: null,
       contLastTs: 0,
       contDirs: [],
@@ -7384,18 +8140,23 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
     }}
 
     async function sendJogMoves(axesDeltas, feed) {{
-      const words = Object.entries(axesDeltas || {{}})
-        .filter(([, d]) => Number.isFinite(Number(d)) && Number(d) !== 0)
-        .map(([ax, d]) => `${{ax}}${{Number(d).toFixed(3)}}`);
+      const entries = Object.entries(axesDeltas || {{}})
+        .filter(([, d]) => Number.isFinite(Number(d)) && Number(d) !== 0);
+      const words = entries.map(([ax, d]) => `${{ax}}${{Number(d).toFixed(3)}}`);
       if (!words.length) return;
+      const dist = Math.hypot(...entries.map(([, d]) => Math.abs(Number(d))));
+      const estMs = Math.max(450, Math.min(30000, Math.round((dist / Math.max(1, Number(feed) || 200)) * 60000 + 250)));
+      if (figJogState.jogTimer) clearTimeout(figJogState.jogTimer);
+      figJogState.lastMoveType = 'jog';
       figJogState.isJogging = true;
       updateFigCenterReadout();
       await sendFluidNCRealtime(`$J=G91 G21 ${{words.join(' ')}} F${{Math.round(feed)}}`);
-      setTimeout(() => {{
+      figJogState.jogTimer = setTimeout(() => {{
+        figJogState.jogTimer = null;
         figJogState.isJogging = false;
         updateFigCenterReadout();
         refreshLiveBedTool();
-      }}, 300);
+      }}, estMs);
     }}
 
     async function sendStepJog(axis, delta, feed) {{
@@ -7405,6 +8166,11 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
     function startFigContJog(dirs, feed) {{
       stopFigContJog(false);
       if (!dirs || !dirs.length) return;
+      if (figJogState.jogTimer) {{
+        clearTimeout(figJogState.jogTimer);
+        figJogState.jogTimer = null;
+      }}
+      figJogState.lastMoveType = 'jog';
       figJogState.contDirs = dirs;
       figJogState.isJogging = true;
       updateFigCenterReadout();
@@ -7439,10 +8205,30 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       updateFigCenterReadout();
     }}
 
-    function cancelFigJogNow() {{
+    function stopMovementNow() {{
       stopFigContJog(false);
-      sendFluidNCRealtime('JOG_CANCEL');
-      setTimeout(refreshLiveBedTool, 300);
+      figJogState.pressedKeys.clear();
+      if (figJogState.jogTimer) {{
+        clearTimeout(figJogState.jogTimer);
+        figJogState.jogTimer = null;
+      }}
+      figJogState.isJogging = false;
+      updateFigCenterReadout();
+      const st = String(fluidncMachineState || '').toLowerCase();
+      let cmd = 'STOP_JOG';
+      if (st.startsWith('run')) {{
+        cmd = '!';
+      }} else if (st.startsWith('jog')) {{
+        cmd = 'JOG_CANCEL';
+      }} else if (figJogState.lastMoveType === 'move') {{
+        cmd = 'STOP_MOVE';
+      }}
+      sendFluidNCRealtime(cmd);
+      setTimeout(refreshLiveBedTool, 250);
+    }}
+
+    function cancelFigJogNow() {{
+      stopMovementNow();
     }}
 
     function updateFigCenterReadout() {{
@@ -7807,21 +8593,37 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
 
     async function goToWorkZero(axes) {{
       const mode = String(axes || '').toUpperCase();
+      const markMove = () => {{
+        if (figJogState.jogTimer) clearTimeout(figJogState.jogTimer);
+        figJogState.lastMoveType = 'move';
+        figJogState.isJogging = true;
+        updateFigCenterReadout();
+      }};
       if (mode === 'Z') {{
         if (!confirm('Move Z to Work Z=0 (G90 G1 Z0 F300)? Ensure tool is clear and Z0 is calibrated.')) return;
+        markMove();
         await sendFluidNCRealtime('G90 G1 Z0 F300');
       }} else if (mode === 'XYZ') {{
         if (!confirm('Move to Work X0 Y0 first, then move Z to Work Z=0 (F300)? Ensure path is clear.')) return;
+        markMove();
         await sendFluidNCRealtime('G90 G0 X0 Y0');
         await sendFluidNCRealtime('G90 G1 Z0 F300');
       }} else if (mode === 'X') {{
+        markMove();
         await sendFluidNCRealtime('G90 G0 X0');
       }} else if (mode === 'Y') {{
+        markMove();
         await sendFluidNCRealtime('G90 G0 Y0');
       }} else if (mode === 'XY') {{
+        markMove();
         await sendFluidNCRealtime('G90 G0 X0 Y0');
       }}
-      setTimeout(refreshLiveBedTool, 450);
+      figJogState.jogTimer = setTimeout(() => {{
+        figJogState.jogTimer = null;
+        figJogState.isJogging = false;
+        updateFigCenterReadout();
+        refreshLiveBedTool();
+      }}, 450);
     }}
 
     let uiConfigState = {{
@@ -8284,6 +9086,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
       updateChecklistProgress();
       initFluidNCDispatcher();
       initGCodeCanvasEvents();
+      initLiveStreamCanvasEvents();
       loadUIConfig();
       loadMacrosAndHeightMap();
       loadBoardAlignment();
@@ -8616,15 +9419,28 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
 
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
           <div class="lg:col-span-8 bg-[#05070d] rounded-xl border border-slate-800/90 p-2 flex flex-col">
-            <div class="flex items-center justify-between text-[10px] font-mono text-slate-400 px-1 pb-1">
-              <span>Live Toolpath Preview &amp; CNC Tracking (Preview Mode)</span>
-              <div class="flex items-center gap-3">
-                <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-400"></span>Done</span>
-                <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-cyan-400"></span>Current</span>
-                <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-fuchsia-400"></span>CNC Head</span>
+            <div class="flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono text-slate-400 px-1 pb-1.5">
+              <span>Live Toolpath Preview &amp; CNC Tracking</span>
+              <div class="flex flex-wrap items-center gap-1.5">
+                <div class="inline-flex items-center rounded border border-slate-700 bg-slate-900/90 overflow-hidden">
+                  <button type="button" onclick="zoomLivePreview(0.75)" class="px-1.5 py-0.5 hover:bg-slate-800 text-slate-200 cursor-pointer" data-tip="Zoom Out">−</button>
+                  <span id="live-preview-zoom-lbl" class="px-1.5 py-0.5 text-cyan-300 border-x border-slate-700 min-w-[38px] text-center">1.0x</span>
+                  <button type="button" onclick="zoomLivePreview(1.35)" class="px-1.5 py-0.5 hover:bg-slate-800 text-slate-200 cursor-pointer" data-tip="Zoom In">+</button>
+                </div>
+                <button type="button" onclick="zoomLivePreviewToPath()" class="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 cursor-pointer" data-tip="Zoom directly to active G-code bounds">Path</button>
+                <button type="button" onclick="resetLivePreviewZoom()" class="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 cursor-pointer" data-tip="Reset view to full CNC bed">Fit</button>
+                <button type="button" id="btn-live-follow" onclick="toggleLivePreviewFollow()" class="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-100 border border-slate-700 cursor-pointer" data-tip="Auto-center camera on live CNC head">Follow</button>
+                <span class="hidden sm:inline-flex items-center gap-2 ml-1">
+                  <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-400"></span>Done</span>
+                  <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-cyan-400"></span>Cur</span>
+                  <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-fuchsia-400"></span>Head</span>
+                </span>
               </div>
             </div>
-            <canvas id="dispatch-live-canvas" class="w-full h-[260px] rounded-lg bg-[#04060b]"></canvas>
+            <div class="relative">
+              <canvas id="dispatch-live-canvas" class="w-full h-[280px] sm:h-[310px] rounded-lg bg-[#04060b] cursor-grab"></canvas>
+              <span id="live-preview-cursor-mm" class="pointer-events-none absolute bottom-1.5 right-2 px-1.5 py-0.5 rounded bg-slate-950/80 border border-slate-800/80 font-mono text-[10px] text-slate-400">Wheel: Zoom · Drag: Pan</span>
+            </div>
           </div>
 
           <div class="lg:col-span-4 flex flex-col gap-2">
@@ -8864,6 +9680,8 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
         <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded bg-emerald-950 border border-emerald-500"></span>PCB</span>
         <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded bg-amber-500/40 border border-amber-500"></span>5mm Tag</span>
         <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-red-500/40 border border-red-400"></span>Clamp Keep-Out</span>
+        <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-teal-500/40 border border-fuchsia-400"></span>4-Pt Clamp Pins</span>
+        <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-orange-500 border border-orange-200"></span>Edge-Cut Drills</span>
         <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded bg-emerald-500/60 border border-emerald-400"></span>Tabs</span>
         <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded bg-sky-500/30 border border-sky-400"></span>Guides</span>
       </div>
@@ -9036,7 +9854,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
               <button type="button" onclick="sendJog('X', -1)" class="p-2 rounded-lg bg-slate-800 hover:bg-red-600 text-red-300 hover:text-white border border-slate-700 font-semibold cursor-pointer" data-tip="Jog X-">X-</button>
               <button type="button" onclick="goToWorkZero('XY')" class="p-2 rounded-lg bg-slate-800 hover:bg-amber-600/30 text-amber-300 border border-slate-700 cursor-pointer" data-tip="Go to Work X0 Y0">XY0</button>
               <button type="button" onclick="sendJog('X', 1)" class="p-2 rounded-lg bg-slate-800 hover:bg-red-600 text-red-300 hover:text-white border border-slate-700 font-semibold cursor-pointer" data-tip="Jog X+">X+</button>
-              <button type="button" onclick="cancelFigJogNow()" class="p-2 rounded-lg bg-red-950/50 hover:bg-red-600 text-red-300 hover:text-white border border-red-500/30 cursor-pointer" data-tip="Cancel Jog (0x85)">Stop</button>
+              <button type="button" onclick="stopMovementNow()" class="p-2 rounded-lg bg-red-600/25 hover:bg-red-600 text-red-200 hover:text-white border border-red-500/50 font-semibold cursor-pointer" data-tip="Stop Movement (Jog Cancel 0x85 / Feed Hold ! — Not E-Stop)">Stop</button>
 
               <button type="button" onclick="sendJogDiag(-1, -1)" class="p-2 rounded-lg bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-800 cursor-pointer" data-tip="Jog X- Y-">&#8601;</button>
               <button type="button" onclick="sendJog('Y', -1)" class="p-2 rounded-lg bg-slate-800 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-slate-700 font-semibold cursor-pointer" data-tip="Jog Y-">Y-</button>
@@ -9052,31 +9870,39 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
             </div>
           </div>
 
-          <!-- FigUI Separate XY & Z Feedrates -->
-          <div class="flex items-center justify-between gap-2 text-[11px] font-mono">
-            <label class="flex items-center gap-1.5 text-slate-300">
-              <span class="text-slate-400">XY</span>
-              <select id="fig-xy-feed" onchange="setFigJogFeed('xy', this.value)" class="bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-slate-200 font-mono text-[11px]">
-                <option value="50">50</option>
-                <option value="100">100</option>
-                <option value="200">200</option>
-                <option value="500">500</option>
-                <option value="1000" selected>1000</option>
-                <option value="2000">2000</option>
-                <option value="3000">3000</option>
-              </select>
-            </label>
-            <label class="flex items-center gap-1.5 text-slate-300">
-              <span class="text-slate-400">Z</span>
-              <select id="fig-z-feed" onchange="setFigJogFeed('z', this.value)" class="bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-slate-200 font-mono text-[11px]">
-                <option value="50">50</option>
-                <option value="100">100</option>
-                <option value="200" selected>200</option>
-                <option value="400">400</option>
-                <option value="800">800</option>
-              </select>
-            </label>
-            <span class="text-[10px] text-slate-500">mm/min</span>
+          <!-- FigUI Separate XY & Z Feedrates + Dedicated Movement Stop Button (Not E-Stop) -->
+          <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
+            <div class="flex items-center gap-2">
+              <label class="flex items-center gap-1.5 text-slate-300">
+                <span class="text-slate-400">XY</span>
+                <select id="fig-xy-feed" onchange="setFigJogFeed('xy', this.value)" class="bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-slate-200 font-mono text-[11px]">
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="200">200</option>
+                  <option value="500">500</option>
+                  <option value="1000" selected>1000</option>
+                  <option value="2000">2000</option>
+                  <option value="3000">3000</option>
+                </select>
+              </label>
+              <label class="flex items-center gap-1.5 text-slate-300">
+                <span class="text-slate-400">Z</span>
+                <select id="fig-z-feed" onchange="setFigJogFeed('z', this.value)" class="bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-slate-200 font-mono text-[11px]">
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="200" selected>200</option>
+                  <option value="400">400</option>
+                  <option value="800">800</option>
+                </select>
+              </label>
+              <span class="text-[10px] text-slate-500">mm/min</span>
+            </div>
+            <button type="button" id="btn-jog-stop-move" onclick="stopMovementNow()"
+                    class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-600/25 hover:bg-red-600 text-red-200 hover:text-white border border-red-500/50 font-semibold text-[11px] transition cursor-pointer shrink-0"
+                    data-tip="Stop Movement (Jog Cancel 0x85 / Feed Hold ! — NOT E-Stop)" aria-label="Stop Movement">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+              <span>Stop Move</span>
+            </button>
           </div>
 
           <!-- Go to Work Zero Row -->
@@ -9098,7 +9924,7 @@ def build_html_dashboard_content(sheets, holders_mgr: HolderManager, generated_f
               <button type="button" id="btn-macro-zero-z" onclick="sendFluidNCRealtime('G10 L20 P1 Z0')" class="px-2 py-1 rounded bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 cursor-pointer" data-tip="Zero Z">0 Z</button>
               <button type="button" onclick="sendFluidNCRealtime('!')" class="px-2 py-1 rounded bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white border border-red-500/30 cursor-pointer" data-tip="Feed Hold (!)">!</button>
               <button type="button" onclick="sendFluidNCRealtime('~')" class="px-2 py-1 rounded bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/30 cursor-pointer" data-tip="Resume (~)">~</button>
-              <button type="button" onclick="cancelFigJogNow()" class="px-2 py-1 rounded bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 cursor-pointer" data-tip="Cancel Jog (0x85)">Cancel Jog</button>
+              <button type="button" onclick="stopMovementNow()" class="px-2 py-1 rounded bg-rose-600/25 hover:bg-rose-600 text-rose-200 hover:text-white border border-rose-500/45 font-semibold cursor-pointer" data-tip="Stop Movement (Jog Cancel 0x85 / Feed Hold ! — NOT E-Stop)">Stop Move</button>
             </div>
           </div>
           <div id="jog-status-lbl" class="text-[11px] font-mono text-slate-400 truncate">Ready</div>
@@ -9729,8 +10555,15 @@ class _BaseGrblLink:
             return False, str(e)
 
     def send_command(self, cmd: str, timeout: float = 8.0, expect_probe: bool = False) -> Tuple[bool, str]:
-        if cmd == "\x85" or (cmd or "").strip().upper() == "JOG_CANCEL":
+        raw_upper = (cmd or "").strip().upper() if cmd != "\x85" else "\x85"
+        if cmd == "\x85" or raw_upper == "JOG_CANCEL":
             return self.send_realtime("\x85")
+        if raw_upper == "STOP_JOG":
+            st = (self.state or "").lower()
+            return self.send_realtime("!" if st.startswith("run") else "\x85")
+        if raw_upper == "STOP_MOVE":
+            st = (self.state or "").lower()
+            return self.send_realtime("\x85" if st.startswith("jog") else "!")
         cmd_clean = (cmd or "").strip()
         if not cmd_clean:
             return True, "ok"
@@ -10330,7 +11163,8 @@ class CNCBridgeManager:
     def send_command(self, ip: str, cmd: str, timeout: float = 5.0, expect_probe: bool = False) -> Tuple[bool, str]:
         if ip and ip.strip():
             self.ip = ip.strip()
-        cmd_clean = (cmd or "").strip()
+        is_raw_jog_cancel = (cmd == "\x85")
+        cmd_clean = "\x85" if is_raw_jog_cancel else (cmd or "").strip()
         link = self._resolve_active_link()
         if link is None and self.transport_mode == "usb":
             self.usb_bridge.connect(self.serial_port, self.baudrate)
@@ -10345,10 +11179,20 @@ class CNCBridgeManager:
         if self.transport_mode == "usb":
             return False, self.usb_bridge.last_error or "USB Serial not connected"
 
+        upper_cmd = cmd_clean.upper() if not is_raw_jog_cancel else "JOG_CANCEL"
+        if upper_cmd in ("JOG_CANCEL", "STOP_JOG"):
+            wire_bytes = b"\x85"
+            encoded = urllib.parse.quote_from_bytes(wire_bytes)
+        elif upper_cmd == "STOP_MOVE":
+            wire_bytes = b"!"
+            encoded = urllib.parse.quote_from_bytes(wire_bytes)
+        else:
+            wire_bytes = (cmd_clean + "\n").encode("utf-8")
+            encoded = urllib.parse.quote(cmd_clean)
+
         # HTTP /command?plain=... then Telnet :23 fallback
-        is_long = cmd_clean.upper().startswith("$H") or "G38." in cmd_clean.upper()
+        is_long = upper_cmd.startswith("$H") or "G38." in upper_cmd
         eff_timeout = max(timeout, 45.0 if is_long else 5.0)
-        encoded = urllib.parse.quote(cmd_clean)
         try:
             url = f"http://{self.ip}/command?plain={encoded}"
             req = urllib.request.Request(url, headers={"User-Agent": "PCBPanelizer/2.0"})
@@ -10358,7 +11202,9 @@ class CNCBridgeManager:
             try:
                 with socket.create_connection((self.ip, 23), timeout=eff_timeout) as s:
                     s.settimeout(eff_timeout)
-                    s.sendall((cmd_clean + "\n").encode("utf-8"))
+                    s.sendall(wire_bytes)
+                    if wire_bytes in (b"\x85", b"!"):
+                        return True, f"Sent {'Jog Cancel (0x85)' if wire_bytes == b'\x85' else 'Feed Hold (!)'} via Telnet"
                     buf = ""
                     t0 = time.time()
                     while time.time() - t0 < eff_timeout:
@@ -10418,21 +11264,21 @@ class CNCBridgeManager:
             code = raw.split(";")[0].strip()
             if not code:
                 continue
-            m_msg = re.match(r"^\(\s*MSG\s*,\s*(.+?)\s*\)$", code, re.IGNORECASE)
+            m_msg = re.match(r"^\(\s*MSG\s*,\s*(.+)\s*\)$", code, re.IGNORECASE)
             if m_msg:
                 pending_msg = m_msg.group(1).strip()
                 continue
-            if code.startswith("(") and code.endswith(")"):
+            base_cmd = _strip_gcode_parens(code).strip().upper()
+            if not base_cmd:
                 continue
-            base_cmd = re.sub(r"\([^)]*\)", "", code).strip().upper()
-            if base_cmd in ("M0", "M1"):
-                m_inline = re.search(r"\(([^)]+)\)", code)
-                if m_inline and not pending_msg:
-                    pending_msg = m_inline.group(1).strip()
-                parsed_lines.append((base_cmd, pending_msg))
+            if base_cmd in ("M0", "M00", "M1", "M01"):
+                if not pending_msg:
+                    pending_msg = _extract_gcode_paren_comment(code)
+                norm_cmd = "M0" if base_cmd in ("M0", "M00") else "M1"
+                parsed_lines.append((norm_cmd, pending_msg))
                 pending_msg = ""
             else:
-                parsed_lines.append((code, pending_msg))
+                parsed_lines.append((_flatten_gcode_inline_comments(code), ""))
 
         if not parsed_lines:
             return {"success": False, "error": "No executable G-code lines found"}
@@ -10653,11 +11499,15 @@ def stream_gcode_to_fluidnc(ip: str, gcode_text: str, timeout: float = 20.0) -> 
     lines = []
     for raw in gcode_text.splitlines():
         line = raw.split(";")[0].strip()
-        if not line or (line.startswith("(") and line.endswith(")")):
+        if not line:
             continue
-        base = re.sub(r"\([^)]*\)", "", line).strip().upper()
-        if base in ("M0", "M1"):
+        base = _strip_gcode_parens(line).strip().upper()
+        if not base:
+            continue
+        if base in ("M0", "M00", "M1", "M01"):
             line = "G4 P0"
+        else:
+            line = _flatten_gcode_inline_comments(line)
         lines.append(line)
     if not lines:
         return False, "No executable G-code lines found"
@@ -10957,6 +11807,8 @@ def _render_switch_probe_macro(
     done_msg: str,
 ) -> str:
     """Render a safe G38.2 Z-limit-switch probing macro in machine XY with incremental Z probing."""
+    safe_prompt = _sanitize_gcode_comment_text(prompt_msg)
+    safe_done = _sanitize_gcode_comment_text(done_msg)
     return (
         f"{header_comment}"
         "G21 ; Millimeters\n"
@@ -10965,8 +11817,8 @@ def _render_switch_probe_macro(
         "S0 ; Ensure spindle RPM is zero\n"
         "G53 G0 Z10.000 ; Retract spindle to machine top safe Z\n"
         f"G53 G0 X{sx:.3f} Y{sy:.3f} ; Move over fixed Z-Zero limit switch\n"
-        f"(MSG, {prompt_msg})\n"
-        f"M0 ({prompt_msg})\n"
+        f"(MSG, {safe_prompt})\n"
+        f"M0 ({safe_prompt})\n"
         "G91 ; Incremental probing moves\n"
         "G38.2 Z-25.000 F80.0 ; Probe down until limit switch triggers\n"
         "G0 Z2.000 ; Back off 2mm\n"
@@ -10974,7 +11826,7 @@ def _render_switch_probe_macro(
         "G90 ; Restore absolute positioning\n"
         f"G10 L20 P1 Z{datum_z_mm:.3f} ; {datum_comment}\n"
         "G53 G0 Z10.000 ; Retract to safe machine Z\n"
-        f"(MSG, {done_msg})\n"
+        f"(MSG, {safe_done})\n"
     )
 
 
@@ -11894,7 +12746,7 @@ class ChecklistHandler(http.server.SimpleHTTPRequestHandler):
                             if folder == "macros":
                                 is_macro = True
                             break
-                if not is_macro and fname not in ("edge_4pt_align.gcode", "z_tool_zero.gcode", "bed_height_scan.gcode", "pcb_z_zero_thickness.gcode", "pcb_z_zero_switch.gcode"):
+                if not is_macro and fname not in ("edge_4pt_align.gcode", "z_tool_zero.gcode", "bed_height_scan.gcode", "pcb_z_zero_thickness.gcode", "pcb_z_zero_switch.gcode") and "_Step0P_" not in fname and "_Step0V_" not in fname:
                     al = load_board_alignment()
                     gcode_text = apply_alignment_to_gcode(gcode_text, al)
                     ucfg = load_ui_config()

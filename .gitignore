@@ -13,3 +13,4 @@ Bed_mods_gcode/*
 manufacture_gcode/*
 manufacture_guides/*
 manufacture_svg/*
+.config_backups/*

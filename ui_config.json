@@ -7,7 +7,7 @@
   "enable_pcb_z_offset": true,
   "enable_heightmap_leveling": true,
   "pcb_thickness_mm": 1.6,
-  "z_switch_above_bed_mm": 6.8,
+  "z_switch_above_bed_mm": 7.27,
   "cnc_transport": "auto",
   "cnc_serial_port": "auto",
   "cnc_baudrate": 115200
